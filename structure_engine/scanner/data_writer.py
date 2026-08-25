@@ -17,6 +17,29 @@ DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
 # ===== 全局数据库连接（复用，避免锁冲突） =====
 _global_conn = None
 
+# ===== 批量写入模式（性能优化，2026-08-26 小二陈） =====
+# 扫描器在 scan_symbol 开始时开启批量模式，写库攒批后统一 commit：
+#   1. 消除每记录一次 fsync 的 IO 瓶颈（之前 3 万+ 条 × 逐条 commit）
+#   2. 批量模式外（低频/独立操作）保持逐条 commit，不影响其他调用方
+_batch_mode = False
+
+# ===== 表结构版本号 =====
+# 修改任何建表/加字段逻辑时 +1，使 _init_tables 缓存失效并重新初始化
+SCHEMA_VERSION = 1
+_initialized_version = None
+
+
+def set_batch_mode(enabled: bool):
+    """开启/关闭批量写入模式。批量模式下 commit 由调用方统一控制。"""
+    global _batch_mode
+    _batch_mode = bool(enabled)
+
+
+def _maybe_commit(conn):
+    """批量模式下不自动 commit（攒批），非批量模式保持逐条 commit"""
+    if not _batch_mode:
+        conn.commit()
+
 
 def _get_connection():
     """获取数据库连接，确保目录存在"""
@@ -42,7 +65,22 @@ def close_global_connection():
 
 
 def _init_tables():
-    """初始化所有表（首次运行时自动创建），并兼容新增字段"""
+    """初始化所有表（首次运行时自动创建），并兼容新增字段。
+    性能优化：按 SCHEMA_VERSION 缓存，版本未变时跳过重复 DDL（原来每次写入都跑全套建表检查）。
+    数据库文件被替换时，通过关键表存在性检查兜底重建。"""
+    global _initialized_version
+    if _initialized_version == SCHEMA_VERSION:
+        # 版本未变：快速检查关键表是否仍在（防止库文件被替换后缺表）
+        try:
+            conn = get_global_connection()
+            row = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pattern_history'"
+            ).fetchone()
+            if row:
+                return
+        except Exception:
+            pass
+        # 关键表缺失 → 继续执行完整初始化
     conn = get_global_connection()
     cursor = conn.cursor()
 
@@ -227,6 +265,7 @@ def _init_tables():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cloud_index_position ON electron_cloud_index(band_position)")
 
     conn.commit()
+    _initialized_version = SCHEMA_VERSION  # 记录已初始化版本，后续写入跳过重复 DDL
 
 
 def write_pattern_history(
@@ -263,6 +302,18 @@ def write_pattern_history(
     conn = get_global_connection()
     cursor = conn.cursor()
 
+    # 幂等写入：同一股票 + 同一形态 + 同一日期只保留一条
+    # （消除相邻波段右窗重叠、重复扫描导致的重复记录；match_date 按日期前缀匹配，
+    #   兼容 'YYYY-MM-DD' 与 'YYYY-MM-DD HH:MM:SS' 两种格式）
+    cursor.execute("""
+        SELECT record_id FROM pattern_history
+        WHERE symbol = ? AND pattern_id = ? AND substr(match_date, 1, 10) = ?
+        LIMIT 1
+    """, (symbol, pattern_id, str(match_date)[:10]))
+    existing = cursor.fetchone()
+    if existing:
+        return existing[0]
+
     cursor.execute("""
         INSERT INTO pattern_history (
             record_id, symbol, pattern_id, pattern_name, category,
@@ -283,7 +334,7 @@ def write_pattern_history(
         signed_score, base_score, scan_version, datetime.now().isoformat()
     ))
 
-    conn.commit()
+    _maybe_commit(conn)
     return record_id
 
 
@@ -304,6 +355,16 @@ def write_atomic_features(
     conn = get_global_connection()
     cursor = conn.cursor()
 
+    # 幂等写入：同一股票同一日期同一形态只保留一条原子特征
+    cursor.execute("""
+        SELECT record_id FROM atomic_features
+        WHERE symbol = ? AND date = ? AND pattern_id = ?
+        LIMIT 1
+    """, (symbol, date, pattern_id))
+    existing = cursor.fetchone()
+    if existing:
+        return existing[0]
+
     cursor.execute("""
         INSERT INTO atomic_features (
             record_id, symbol, date, pattern_id,
@@ -323,7 +384,7 @@ def write_atomic_features(
         datetime.now().isoformat()
     ))
 
-    conn.commit()
+    _maybe_commit(conn)
     return record_id
 
 
@@ -349,7 +410,7 @@ def update_scan_progress(
         datetime.now().isoformat()
     ))
 
-    conn.commit()
+    _maybe_commit(conn)
 
 
 def get_last_scan_progress(symbol: str) -> Optional[Dict[str, Any]]:
@@ -428,7 +489,9 @@ def update_band_position(
     band_direction: str,
 ) -> int:
     """
-    回填单条记录的 band_position，同时设置 band_position_ready = 1
+    回填单条记录的 band_position，同时设置 band_position_ready：
+    位置有效 → ready=1；位置为 unknown（映射失败）→ ready=0（回到 pending）
+    修复：此前映射失败把位置改成 unknown 但 ready 未同步，导致 unknown+ready=1 的脏数据
     返回更新的记录数
     """
     _init_tables()
@@ -436,23 +499,26 @@ def update_band_position(
     conn = get_global_connection()
     cursor = conn.cursor()
 
+    ready = 0 if band_position == 'unknown' else 1
+
     cursor.execute("""
             UPDATE pattern_history
             SET band_position = ?,
                 band_progress = ?,
                 band_direction = ?,
-                band_position_ready = 1,
+                band_position_ready = ?,
                 band_position_updated_at = ?
             WHERE record_id = ?
     """, (
         band_position,
         band_progress,
         band_direction,
+        ready,
         datetime.now().isoformat(),
         record_id
     ))
 
-    conn.commit()
+    _maybe_commit(conn)
     return cursor.rowcount
 
 def write_wave_history(symbol: str, wave: dict, scan_version: int = 1) -> str:
@@ -481,6 +547,16 @@ def write_wave_history(symbol: str, wave: dict, scan_version: int = 1) -> str:
     # 计算波段总收益
     total_return = (end_price - start_price) / start_price if start_price != 0 else 0.0
 
+    # 幂等写入：同一股票同一波段（类型 + 起止日期）只保留一条
+    cursor.execute("""
+        SELECT wave_id FROM wave_history
+        WHERE symbol = ? AND wave_type = ? AND start_date = ? AND end_date = ?
+        LIMIT 1
+    """, (symbol, wave_type, start_date, end_date))
+    existing = cursor.fetchone()
+    if existing:
+        return existing[0]
+
     cursor.execute("""
         INSERT INTO wave_history (
             wave_id, symbol, wave_type, start_date, start_price, end_date, end_price,
@@ -507,6 +583,6 @@ def write_wave_history(symbol: str, wave: dict, scan_version: int = 1) -> str:
         datetime.now().isoformat()
     ))
 
-    conn.commit()
+    _maybe_commit(conn)
     return wave_id
 

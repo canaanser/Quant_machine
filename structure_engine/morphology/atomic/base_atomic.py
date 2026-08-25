@@ -22,3 +22,11 @@ class AtomicFeature(ABC):
     @property
     def name(self) -> str:
         return self.__class__.__name__
+
+    def normalize(self, value: float) -> float:
+        """
+        将原始原子值归一化到 [0, 1]。
+        默认实现直接截断（大多数原子天然 0~1）；
+        值域可超过 1 的原子（影线类、连续K线等）需覆盖此方法。
+        """
+        return min(1.0, max(0.0, value))

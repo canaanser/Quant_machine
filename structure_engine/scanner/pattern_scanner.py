@@ -15,6 +15,12 @@ from structure_engine.morphology.atomic import (
     InsideDetector,
     ConsecutiveBars,
     VolumeSpike,
+    DirectionalBody,
+    HammerDetector,
+    PiercingDetector,
+    StarDetector,
+    ThreeMethodsDetector,
+    ShadowBodyDetector,
 )
 
 from .score_calculator import signed_log_score, calc_base_score, calc_composite_return
@@ -28,6 +34,12 @@ ATOMIC_CLASSES = {
     "InsideDetector": InsideDetector,
     "ConsecutiveBars": ConsecutiveBars,
     "VolumeSpike": VolumeSpike,
+    "DirectionalBody": DirectionalBody,
+    "HammerDetector": HammerDetector,
+    "PiercingDetector": PiercingDetector,
+    "StarDetector": StarDetector,
+    "ThreeMethodsDetector": ThreeMethodsDetector,
+    "ShadowBodyDetector": ShadowBodyDetector,
 }
 
 
@@ -95,7 +107,7 @@ def scan_patterns(
     if patterns is None:
         patterns = REGISTRY.list_all()
     else:
-        patterns = [REGISTRY.get(p) for p in patterns if REGISTRY.get(p)]
+        patterns = [{"id": p, **REGISTRY.get(p)} for p in patterns if REGISTRY.get(p)]
 
     if debug:
         print(f"   📋 形态数量: {len(patterns)}")
@@ -137,12 +149,14 @@ def scan_patterns(
 
             atom_values = {}
             atom_valid = {}
+            atom_instances = {}
             for atom_cfg in atomics:
                 atom_class = ATOMIC_CLASSES.get(atom_cfg['class'])
                 if not atom_class:
                     continue
                 params = atom_cfg.get('params', {})
                 atom = atom_class(**params)
+                atom_instances[atom_cfg['class']] = atom
                 result = atom.check(klines, i, context)
                 atom_values[atom_cfg['class']] = result.get('value', 0.0)
                 atom_valid[atom_cfg['class']] = result.get('is_valid', False)
@@ -174,8 +188,12 @@ def scan_patterns(
                 matched = any(cond_results)
 
             if matched:
-                all_values = list(atom_values.values())
-                overall_strength = sum(all_values) / len(all_values) if all_values else 0.0
+                # strength = 各原子归一化后的均值（统一 0~1，跨形态可比）
+                norm_values = [
+                    atom_instances[c].normalize(atom_values[c])
+                    for c in atom_instances if c in atom_values
+                ]
+                overall_strength = sum(norm_values) / len(norm_values) if norm_values else 0.0
 
                 match_date = klines[i]['date']
                 match_price = klines[i]['close']
@@ -257,7 +275,7 @@ def scan_patterns(
 
                 if debug:
                     print(f"      ✅ 匹配成功! 日期={match_date}, strength={overall_strength:.4f}")
-                break  # 每个形态只取第一个匹配（测试模式）
+                # 生产扫描：收集片段内全部匹配点（不 break），重复由 data_writer 幂等写入去重
 
     if debug:
         print(f"\n   📊 匹配结果总数: {len(results)}")

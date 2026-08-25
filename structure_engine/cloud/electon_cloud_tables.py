@@ -5,9 +5,9 @@
 import sqlite3
 from pathlib import Path
 
-# 获取当前文件所在目录的父目录的父目录的 tests/data/index_store/
+# 获取当前文件所在目录的父目录的父目录的 data/index_store/（真实库）
 BASE_DIR = Path(__file__).parent.parent.parent
-DB_PATH = BASE_DIR / "tests" / "data" / "index_store" / "pattern_history.db"
+DB_PATH = BASE_DIR / "data" / "index_store" / "pattern_history.db"
 
 
 def create_electron_cloud_tables():

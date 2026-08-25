@@ -39,3 +39,7 @@ class ConsecutiveBars(AtomicFeature):
                 "target_count": self.count
             }
         }
+
+    def normalize(self, value: float) -> float:
+        """连续数/目标数（匹配时 >=1，可到 1.67）：达到目标数即满格"""
+        return min(1.0, max(0.0, value))

@@ -19,10 +19,19 @@ BAND_POSITIONS = {
     "unknown": "位置未知（数据不足或波段未闭合）",
 }
 
+# 邻域定义：距波段端点 ±N 根K线 → 归入 valley/peak（放大端点样本量）
+NEIGHBOR_WINDOW = 3
 
-def map_position(match_date: str, match_price: float, waves: List[Dict]) -> Dict:
+
+def map_position(
+    match_date: str,
+    match_price: float,
+    waves: List[Dict],
+    trading_dates=None,
+) -> Dict:
     """
     输入：形态匹配日期、匹配价格、该股票的波段列表
+          trading_dates（可选）: 交易日序列（DatetimeIndex），用于邻域端点判定
     输出：位置标签 + 进度值 + 波段方向
     """
     if not waves or not match_date:
@@ -71,6 +80,28 @@ def map_position(match_date: str, match_price: float, waves: List[Dict]) -> Dict
                 position = "rise_lower" if wave.get('direction') == 'up' else "fall_upper"
             else:
                 position = "rise_upper" if wave.get('direction') == 'up' else "fall_lower"
+
+            # ===== 邻域定义（动态窗口）：距波段端点 ±window 根K线 → valley/peak =====
+            # 短波段缩窄邻域（保护中间位置语义，数据实证：≤7根波段99%被固定±3邻域吞掉），
+            # 长波段保持较宽邻域（保证端点样本量）
+            if trading_dates is not None and len(trading_dates) > 0:
+                try:
+                    pos_idx = trading_dates.get_loc(pd.Timestamp(match_date_str))
+                    peak_idx = trading_dates.get_loc(pd.Timestamp(str(peak_date)[:10]))
+                    valley_idx = trading_dates.get_loc(pd.Timestamp(str(valley_date)[:10]))
+                    band_len = abs(peak_idx - valley_idx) + 1  # 波段K线数
+                    if band_len <= 7:
+                        window = 1
+                    elif band_len <= 15:
+                        window = 2
+                    else:
+                        window = NEIGHBOR_WINDOW  # 3
+                    if abs(pos_idx - valley_idx) <= window:
+                        position = "valley"
+                    elif abs(pos_idx - peak_idx) <= window:
+                        position = "peak"
+                except (KeyError, TypeError):
+                    pass  # 日期不在交易日序列中（停牌/边界），保持按进度映射的结果
 
             return {
                 "band_position": position,
@@ -152,8 +183,8 @@ def backfill_band_positions(
             except Exception:
                 continue
 
-        # 计算位置信息
-        pos_info = map_position(match_date, match_price, waves)
+        # 计算位置信息（含邻域端点定义）
+        pos_info = map_position(match_date, match_price, waves, trading_dates=ohlc.index)
 
         if pos_info['band_position'] == 'unknown':
             continue

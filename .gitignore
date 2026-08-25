@@ -1,0 +1,25 @@
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== 数据库（本地数据，不上传） =====
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/index_store/*.db
+
+# ===== 行情缓存 =====
+data/cache/
+
+# ===== 回测输出 =====
+outputs/backtest_results/
+outputs/logs/
+
+# ===== 个人参考文档（不上传） =====
+参考/
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db

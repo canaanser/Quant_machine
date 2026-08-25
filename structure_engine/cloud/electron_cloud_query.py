@@ -7,9 +7,9 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-# ===== 统一数据库路径（与 data_writer.py 保持一致） =====
-# 测试环境下数据库在 tests/data/index_store/pattern_history.db
-DB_PATH = Path(__file__).parent.parent.parent / "tests" / "data" / "index_store" / "pattern_history.db"
+# ===== 统一数据库路径（与 data_writer.py 保持一致：真实库） =====
+# 修复：原指向 tests/data/ 测试路径，改为项目真实库
+DB_PATH = Path(__file__).parent.parent.parent / "data" / "index_store" / "pattern_history.db"
 
 
 def get_connection():
@@ -137,6 +137,53 @@ def query_electron_cloud(pattern_id: str, band_position: str) -> Dict:
         "positive_ratio": dist["positive_ratio"],
         "decision_value": dist["mean_return"],
         "reason": "OK",
+    }
+
+
+def query_progress_cloud(pattern_id: str, band_direction: str, progress: float) -> Dict:
+    """
+    查询连续位置（progress 桶）的收益分布——动态位置编码的早期参考。
+    输入：形态ID + 波段方向(up/down) + progress(0~1 连续进度)
+    输出：该 progress 桶的历史收益分布（样本/均值/胜率/分位数/置信度）。
+    与 8 格位置权重并存，互为补充（短波段的位置参考走这里）。
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    bucket = min(int(float(progress) * 10), 9)
+    cursor.execute("""
+        SELECT sample_count, mean_return, std_return, positive_ratio, percentiles_json, confidence_level
+        FROM progress_return_map
+        WHERE pattern_id = ? AND band_direction = ? AND progress_bucket = ?
+    """, (pattern_id, band_direction, bucket))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return {
+            "confidence": "low",
+            "reason": f"无 {pattern_id} {band_direction} 桶{bucket} 样本",
+            "sample_count": 0,
+            "progress": progress,
+            "progress_bucket": bucket,
+        }
+
+    percentiles = {}
+    try:
+        import json
+        percentiles = json.loads(row[4] or "{}")
+    except Exception:
+        pass
+
+    return {
+        "confidence": row[5],
+        "sample_count": row[0],
+        "mean_return": row[1],
+        "std_return": row[2],
+        "positive_ratio": row[3],
+        "percentiles": percentiles,
+        "progress": progress,
+        "progress_bucket": bucket,
     }
 
 

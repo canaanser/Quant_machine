@@ -27,6 +27,20 @@ class BaseStrategy(ABC):
         """
         pass
 
+    def fuse_with_patterns(self, traditional_score: float, pattern_strength: float, w: float = 0.3) -> float:
+        """
+        形态融合（基类默认实现，2026-08-26 小二陈）：
+        传统评分与形态强度的加权融合，输出归一到 [0,1]。
+        所有策略继承此接口，回测管线可统一调用（TrendStrengthStrategy 等无需各自实现）。
+        - traditional_score < 0（强清仓信号）时保持原值，形态不干预
+        - pattern_strength 截断到 [0,1]（已标准化）
+        """
+        if traditional_score < 0:
+            return traditional_score
+        pattern_clipped = min(1.0, max(0.0, pattern_strength))
+        final = (1 - w) * traditional_score + w * pattern_clipped
+        return min(1.0, max(0.0, final))
+
 
 class AlphaScoreStrategy(BaseStrategy):
     """

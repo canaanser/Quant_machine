@@ -1,5 +1,11 @@
 """
-测试全链路：滑动窗口波段探测 → 形态扫描 → 位置映射回写 → 波段写入 → pending回填（支持全量/增量）
+测试全链路：波段探测 → 形态扫描 → 位置映射回写 → 波段写入 → pending回填（支持全量/增量）
+
+修复说明（2026-08-26 小二陈）：
+  原滑动窗口法（window=150, step=100）存在覆盖空洞——
+  range(0, total-window+1, step) 的最后一个窗口截断后，数据尾部约 60 个交易日
+  不在任何窗口内，导致 5 月之后的波段/形态整体漏报（长上影线断点根因）。
+  改为全量 detect_waves 一次识别：无遗漏、无重复（同时消除重复写入）。
 """
 
 import sys
@@ -25,7 +31,8 @@ from structure_engine.scanner.data_writer import (
     get_global_connection,
     get_pending_records_in_range,
     update_band_position,
-    write_wave_history
+    write_wave_history,
+    set_batch_mode,
 )
 
 # ===== 调试开关 =====
@@ -38,19 +45,20 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
 
     参数：
         mode: "full" 全量扫描 / "incremental" 增量扫描（默认）
-        window_days: 滑动窗口大小（默认150天）
-        step: 滑动步长（默认100天）
+        window_days: 兼容参数（保留，全量识别时取全部数据）
+        step: 兼容参数（保留，不再使用）
     """
     print("=" * 60)
-    print(f"测试全链路：滑动窗口波段探测 → 形态扫描 → 位置映射回写 → pending回填（模式：{mode}）")
+    print(f"测试全链路：波段探测 → 形态扫描 → 位置映射回写 → pending回填（模式：{mode}）")
     print("=" * 60)
+    set_batch_mode(True)  # 批量写入模式（性能优化）
 
     # 1. 加载数据
     print("\n[1] 加载数据...")
     market_data = load_data(
         source='freestockdb',
         tickers=['000063'],
-        start='2016-01-01',
+        start='2023-01-01',
         end="2027-01-01"
     )
     symbol = '000063'
@@ -78,112 +86,73 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
         print("    ⚠️ 新增数据不足5天，跳过扫描")
         return
 
-    # ===== 3. 滑动窗口遍历全部历史数据 =====
-    print(f"\n[3] 滑动窗口扫描（窗口={window_days}天，步长={step}天）...")
-    total_days = len(ohlc)
-    all_waves = []          # 收集所有窗口识别的波段
-    all_results = []        # 收集所有窗口的形态匹配结果
+    # ===== 3. 全量波段识别（一次识别全部，避免滑动窗口覆盖空洞） =====
+    print(f"\n[3] 全量波段识别（window_days={len(ohlc)}）...")
+    all_waves = detect_waves(
+        df=ohlc,
+        window_days=len(ohlc),
+        lookback=5,
+        min_amplitude=0.08
+    )
+    all_results = []
 
-    for start_idx in range(0, total_days - window_days + 1, step):
-        end_idx = min(start_idx + window_days, total_days)
-        window_df = ohlc.iloc[start_idx:end_idx]
+    # 写入波段历史表
+    for wave in all_waves:
+        try:
+            write_wave_history(symbol, wave, scan_version=1)
+        except Exception as e:
+            if debug:
+                print(f"   ⚠️ 写入波段失败: {e}")
 
-        if len(window_df) < 20:
+    # ===== 扫描每个波段的形态 =====
+    for wave in all_waves:
+        peak_date = wave.get('peak_date')
+        valley_date = wave.get('valley_date')
+
+        if not peak_date or not valley_date:
             continue
 
-        # 识别波段
-        waves = detect_waves(
-            df=window_df,
-            window_days=window_days,
-            lookback=5,
-            min_amplitude=0.08
+        start_date = peak_date if wave.get('direction') == 'down' else valley_date
+        end_date = valley_date if wave.get('direction') == 'down' else peak_date
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        # 截取波段片段（右窗延伸20日）
+        try:
+            end_idx_global = ohlc.index.get_loc(end_date) if end_date in ohlc.index else -1
+            if end_idx_global == -1:
+                continue
+            start_idx_global = ohlc.index.get_loc(start_date)
+            extended_end_idx_global = min(end_idx_global + 20, len(ohlc) - 1)
+            wave_df = ohlc.iloc[start_idx_global:extended_end_idx_global + 1]
+        except Exception:
+            continue
+
+        if len(wave_df) < 5:
+            continue
+
+        # 扫描形态
+        results = scan_patterns(
+            df=wave_df,
+            debug=False,
+            write_to_db=True,
+            symbol=symbol,
+            peak_date=wave['peak_date'],
+            valley_date=wave['valley_date'],
+            band_position=None
         )
 
-        if not waves:
-            continue
-
-        # ===== 处理每个波段 =====
-        for wave in waves:
-            # 收集到全局列表
-            all_waves.append(wave)
-
-            # 写入波段历史表
-            try:
-                write_wave_history(symbol, wave, scan_version=1)
-            except Exception as e:
-                if debug:
-                    print(f"   ⚠️ 写入波段失败: {e}")
-
-        # ===== 扫描形态（按波段） =====
-        for wave in waves:
-            peak_date = wave.get('peak_date')
-            valley_date = wave.get('valley_date')
-
-            if not peak_date or not valley_date:
-                continue
-
-            start_date = peak_date if wave.get('direction') == 'down' else valley_date
-            end_date = valley_date if wave.get('direction') == 'down' else peak_date
-            if start_date > end_date:
-                start_date, end_date = end_date, start_date
-
-            # 截取波段片段（右窗延伸20日）
-            try:
-                end_idx_global = ohlc.index.get_loc(end_date) if end_date in ohlc.index else -1
-                if end_idx_global == -1:
-                    continue
-                start_idx_global = ohlc.index.get_loc(start_date)
-                extended_end_idx_global = min(end_idx_global + 20, len(ohlc) - 1)
-                wave_df = ohlc.iloc[start_idx_global:extended_end_idx_global + 1]
-            except Exception:
-                continue
-
-            if len(wave_df) < 5:
-                continue
-
-            # 扫描形态
-            results = scan_patterns(
-                df=wave_df,
-                debug=False,
-                write_to_db=True,
-                symbol=symbol,
-                peak_date=wave['peak_date'],
-                valley_date=wave['valley_date'],
-                band_position=None
-            )
-
-            for r in results:
-                r['_wave'] = wave
-                all_results.append(r)
+        for r in results:
+            r['_wave'] = wave
+            all_results.append(r)
 
     print(f"    ✅ 识别到 {len(all_waves)} 个波段，匹配到 {len(all_results)} 个形态")
-    # ===== 【在这里插入下方代码】 =====
-    # 补扫：对可能被滑动窗口遗漏的下跌段单独识别
-    print("\n[补扫] 单独识别下跌段波段...")
-    debug_df = ohlc.loc['2026-05-01':'2026-08-19']
-    debug_waves = detect_waves(debug_df, window_days=150, lookback=5, min_amplitude=0.08)
-    for w in debug_waves:
-        # 检查是否已在 all_waves 中
-        exists = False
-        for existing in all_waves:
-            if existing.get('peak_date') == w.get('peak_date') and existing.get('valley_date') == w.get('valley_date'):
-                exists = True
-                break
-        if not exists:
-            all_waves.append(w)
-            try:
-                write_wave_history(symbol, w, scan_version=1)
-                print(f"  ✅ 补充写入波段: {w.get('peak_date')} → {w.get('valley_date')}")
-            except Exception as e:
-                if debug:
-                    print(f"  ⚠️ 写入失败: {e}")
-    print("  [补扫] 完成")
-    # ===== 插入结束 =====
+
     # ===== 4. 位置映射回写（计算精确 band_position） =====
     print("\n[4] 位置映射回写（计算精确 band_position）...")
     update_count = 0
     fail_count = 0
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_global_connection()  # 修复：用全局连接，避免批量模式下独立连接被写锁阻塞
     cursor = conn.cursor()
 
     for r in all_results:
@@ -198,7 +167,7 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
                 else:
                     continue
 
-            pos_info = map_position(match_date, match_price, all_waves)
+            pos_info = map_position(match_date, match_price, all_waves, trading_dates=ohlc.index)
 
             if hasattr(match_date, 'strftime'):
                 match_date_str = match_date.strftime('%Y-%m-%d')
@@ -216,14 +185,17 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
             row = cursor.fetchone()
             if row:
                 record_id = row[0]
+                # 位置映射失败（unknown）时同步置 ready=0，避免脏数据
+                ready = 0 if pos_info['band_position'] == 'unknown' else 1
                 cursor.execute("""
                     UPDATE pattern_history
-                    SET band_position = ?, band_progress = ?, band_direction = ?
+                    SET band_position = ?, band_progress = ?, band_direction = ?, band_position_ready = ?
                     WHERE record_id = ?
                 """, (
                     pos_info['band_position'],
                     pos_info['band_progress'],
                     pos_info['band_direction'],
+                    ready,
                     record_id
                 ))
                 update_count += cursor.rowcount
@@ -234,8 +206,7 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
             print(f"      ⚠️ 位置映射失败: {match_date} | {e}")
             fail_count += 1
 
-    conn.commit()
-    conn.close()
+    # 不在此 commit/close——由 close_global_connection 统一提交（批量模式）
     print(f"    ✅ 更新了 {update_count} 条记录的 band_position")
     if fail_count > 0:
         print(f"    ⚠️ {fail_count} 条记录未匹配到")
@@ -292,6 +263,7 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
         print(f"    ✅ 最新记录: {row[0]} | match={row[1]} | peak={row[2]} | valley={row[3]} | 位置={row[4]} | 进度={row[5] if row[5] is not None else 0.0:.2f} | 5d={row[6]} | 10d={row[7]} | 20d={row[8]}")
 
     close_global_connection()
+    set_batch_mode(False)
 
     print("\n" + "=" * 60)
     print("✅ 全链路测试完成")

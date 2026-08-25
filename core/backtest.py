@@ -165,13 +165,24 @@ class BacktestPipeline:
             from structure_engine.scanner import scan_patterns
 
             for symbol in score_series.index:
-                print(f"🔍 形态扫描入口: {symbol}, verbose={self.verbose}")   # ← 强制打印，不受 verbose 控制
+                # 修复：原来无条件打印刷屏，改为仅 verbose 模式输出
+                if self.verbose:
+                    print(f"🔍 形态扫描入口: {symbol}, verbose={self.verbose}")
                 try:
                     ohlc = market_data.get_ohlc(symbol)
                     if ohlc is None or ohlc.empty:
                         continue
 
-                    hist_ohlc = ohlc.loc[:today]
+                    # 性能优化（2026-08-26 小二陈）：形态扫描只取最近窗口
+                    # 原实现 hist_ohlc = ohlc.loc[:today] 每天扫全历史 → O(N²)
+                    # 形态是局部的（窗口≤5根）+ 回测只取当天信号 → 60 根窗口足够，O(N²)→O(N)
+                    SCAN_WINDOW = 60  # 交易日
+                    try:
+                        today_pos = ohlc.index.get_loc(today)
+                        start_pos = max(0, today_pos - SCAN_WINDOW)
+                        hist_ohlc = ohlc.iloc[start_pos:today_pos + 1]
+                    except (KeyError, TypeError):
+                        hist_ohlc = ohlc.loc[:today]  # 兜底：找不到 today 时退回全历史
                     if len(hist_ohlc) < 5:
                         continue
 
@@ -189,12 +200,20 @@ class BacktestPipeline:
 
                     if pattern_strength > 0:
                         traditional_score = score_series.get(symbol, 0.0)
-                        fused_score = self.strategy.fuse_with_patterns(
-                            traditional_score, pattern_strength, w=0.3
-                        )
-                        score_series[symbol] = fused_score
-                        if self.verbose:
-                            print(f"   🔄 形态融合: {symbol} 传统={traditional_score:.4f} + 形态={pattern_strength:.4f} → {fused_score:.4f}")
+                        # 位置权重接入（方向级降级：回测当前无波段位置信息；
+                        # 权重来源由 config.WEIGHT_SOURCE 控制：legacy=现有表 / data=数据驱动表）
+                        from config.config import WEIGHT_SOURCE
+                        from structure_engine.signals.signal_weights import get_direction_weight
+                        direction = r.get('category', 'neutral')
+                        w = get_direction_weight(direction, source=WEIGHT_SOURCE)
+                        effective_strength = pattern_strength * w
+                        if effective_strength > 0:
+                            fused_score = self.strategy.fuse_with_patterns(
+                                traditional_score, effective_strength, w=0.3
+                            )
+                            score_series[symbol] = fused_score
+                            if self.verbose:
+                                print(f"   🔄 形态融合: {symbol} 传统={traditional_score:.4f} + 形态×权重({w:.2f})={effective_strength:.4f} → {fused_score:.4f}")
 
                 except Exception as e:
                     if not hasattr(self, '_pattern_scan_warning_printed'):
