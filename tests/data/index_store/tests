@@ -1,0 +1,25 @@
+import sqlite3
+import json
+from pathlib import Path
+
+# 明确指定绝对路径
+DB_PATH = Path("e:/stockgate/Quant_Alpha_System/tests/data/index_store/pattern_history.db")
+conn = sqlite3.connect(str(DB_PATH))
+cursor = conn.cursor()
+
+cursor.execute("""
+    SELECT distribution_id, grid_id, sample_list, mean_return, sample_count
+    FROM electron_cloud_distribution
+    ORDER BY created_at DESC
+    LIMIT 5
+""")
+rows = cursor.fetchall()
+conn.close()
+
+for row in rows:
+    print(f"dist_id: {row[0]}")
+    print(f"  grid_id: {row[1]}")
+    print(f"  sample_list: {row[2]}")
+    print(f"  mean_return: {row[3]}")
+    print(f"  sample_count: {row[4]}")
+    print()
