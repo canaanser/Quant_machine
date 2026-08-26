@@ -3,6 +3,10 @@
 职责：接收策略信号，结合账户资产、预设风控规则及全局优先级，审批资金并生成交易指令
 """
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 from dataclasses import dataclass, field
 from typing import Dict, Optional, List
 import pandas as pd
@@ -66,15 +70,15 @@ class RiskManager:
             
             if signal.get('tag') == 'high_volatility' and pnl <= -self.stop_loss_aggressive:
                 if self.verbose:
-                    print(f"   🔴 触发妖股硬止损: {symbol}, 盈亏={pnl:.2%}")
+                    logger.debug(f"   🔴 触发妖股硬止损: {symbol}, 盈亏={pnl:.2%}")
                 return self._gen_order(symbol, 'SELL', pos.shares, priority=9, reason='妖股硬止损')
             if signal.get('tag') == 'blue_chip' and pnl <= -self.stop_loss_gentle:
                 if self.verbose:
-                    print(f"   🔴 触发蓝筹软止损: {symbol}, 盈亏={pnl:.2%}")
+                    logger.debug(f"   🔴 触发蓝筹软止损: {symbol}, 盈亏={pnl:.2%}")
                 return self._gen_order(symbol, 'SELL', pos.shares, priority=4, reason='蓝筹软止损')
             if pnl >= self.profit_take:
                 if self.verbose:
-                    print(f"   🟢 触发止盈: {symbol}, 盈亏={pnl:.2%}")
+                    logger.debug(f"   🟢 触发止盈: {symbol}, 盈亏={pnl:.2%}")
                 return self._gen_order(symbol, 'SELL', pos.shares, priority=3, reason='止盈')
         
         # ---------- Step 2: 买入审批 ----------
@@ -83,7 +87,7 @@ class RiskManager:
             
             if abs(raw_score) < self.dead_zone:
                 if self.verbose:
-                    print(f"   ❌ 买入被拒: {symbol}, 评分={raw_score:.4f} 低于死区 {self.dead_zone}")
+                    logger.debug(f"   ❌ 买入被拒: {symbol}, 评分={raw_score:.4f} 低于死区 {self.dead_zone}")
                 return None
             
             if raw_score > 0:
@@ -99,7 +103,7 @@ class RiskManager:
                 
                 if remaining_slot <= 0:
                     if self.verbose:
-                        print(f"   ❌ 买入被拒: {symbol}, 仓位已满")
+                        logger.debug(f"   ❌ 买入被拒: {symbol}, 仓位已满")
                     return None
                 
                 target_amount = min(target_amount, remaining_slot)
@@ -107,33 +111,33 @@ class RiskManager:
                 if target_amount > account.available_cash:
                     target_amount = account.available_cash
                     if self.verbose:
-                        print(f"   ⚠️ 现金不足, 缩减至可用现金: {target_amount:.2f}")
+                        logger.debug(f"   ⚠️ 现金不足, 缩减至可用现金: {target_amount:.2f}")
                 
                 target_volume = int(target_amount / current_price / 100) * 100
                 if target_volume < 100:
                     if self.verbose:
-                        print(f"   ❌ 买入被拒: {symbol}, 目标股数={target_volume} 小于100股")
+                        logger.debug(f"   ❌ 买入被拒: {symbol}, 目标股数={target_volume} 小于100股")
                     return None
                 
                 actual_amount = target_volume * current_price
                 if actual_amount < self.min_order_amount:
                     if self.verbose:
-                        print(f"   ❌ 买入被拒: {symbol}, 订单金额={actual_amount:.2f} 低于最小下单金额 {self.min_order_amount}")
+                        logger.debug(f"   ❌ 买入被拒: {symbol}, 订单金额={actual_amount:.2f} 低于最小下单金额 {self.min_order_amount}")
                     return None
                 
                 if actual_amount > account.available_cash:
                     if self.verbose:
-                        print(f"   ❌ 买入被拒: {symbol}, 现金不足")
+                        logger.debug(f"   ❌ 买入被拒: {symbol}, 现金不足")
                     return None
                 
                 priority = self._calc_priority(signal)
                 if self.verbose:
-                    print(f"   ✅ 买入审批通过: {symbol} {target_volume}股, 金额={actual_amount:.2f}, 评分={raw_score:.4f}")
+                    logger.debug(f"   ✅ 买入审批通过: {symbol} {target_volume}股, 金额={actual_amount:.2f}, 评分={raw_score:.4f}")
                 return self._gen_order(symbol, 'BUY', target_volume, priority, 
                                        target_amount=actual_amount, reason='策略买入')
             else:
                 if self.verbose:
-                    print(f"   ❌ 买入被拒: {symbol}, 评分为负 {raw_score:.4f}")
+                    logger.debug(f"   ❌ 买入被拒: {symbol}, 评分为负 {raw_score:.4f}")
                 return None
         
         # ---------- Step 3: 卖出审批 ----------
@@ -141,19 +145,19 @@ class RiskManager:
             pos = account.positions.get(symbol)
             if not pos or pos.shares <= 0:
                 if self.verbose:
-                    print(f"   ⚠️ 卖出失败: {symbol} 无持仓")
+                    logger.debug(f"   ⚠️ 卖出失败: {symbol} 无持仓")
                 return None
             
             available = pos.shares - pos.frozen_shares
             if available <= 0:
                 if self.verbose:
-                    print(f"   ⚠️ 卖出失败: {symbol} 可用持仓为0")
+                    logger.debug(f"   ⚠️ 卖出失败: {symbol} 可用持仓为0")
                 return None
             
             sell_volume = available
             priority = 7
             if self.verbose:
-                print(f"   ✅ 卖出审批通过: {symbol} {sell_volume}股, 优先级={priority}")
+                logger.debug(f"   ✅ 卖出审批通过: {symbol} {sell_volume}股, 优先级={priority}")
             return self._gen_order(symbol, 'SELL', sell_volume, priority, 
                                    target_amount=sell_volume * current_price, reason='死叉卖出')
         

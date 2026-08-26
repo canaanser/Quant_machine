@@ -3,6 +3,10 @@
 兼容现有调用方（backtest.py 等），输出格式不变
 """
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from datetime import datetime
@@ -102,7 +106,7 @@ def scan_patterns(
         })
 
     if debug:
-        print(f"   📊 K线数量: {len(klines)}")
+        logger.debug(f"   📊 K线数量: {len(klines)}")
 
     if patterns is None:
         patterns = REGISTRY.list_all()
@@ -110,7 +114,7 @@ def scan_patterns(
         patterns = [{"id": p, **REGISTRY.get(p)} for p in patterns if REGISTRY.get(p)]
 
     if debug:
-        print(f"   📋 形态数量: {len(patterns)}")
+        logger.debug(f"   📋 形态数量: {len(patterns)}")
 
     results = []
 
@@ -141,8 +145,8 @@ def scan_patterns(
                     threshold['max'] = params['max']
 
         if debug:
-            print(f"\n   🔍 形态: {human_readable}")
-            print(f"      window={window}, threshold={threshold}, 原子数={len(atomics)}")
+            logger.debug(f"\n   🔍 形态: {human_readable}")
+            logger.debug(f"      window={window}, threshold={threshold}, 原子数={len(atomics)}")
 
         for i in range(window - 1, len(klines)):
             context = {'idx': i, 'ma20': None}
@@ -162,7 +166,7 @@ def scan_patterns(
                 atom_valid[atom_cfg['class']] = result.get('is_valid', False)
 
             if debug and i == window - 1:
-                print(f"      📌 第 {i} 根K线: atom_values={atom_values}, atom_valid={atom_valid}")
+                logger.debug(f"      📌 第 {i} 根K线: atom_values={atom_values}, atom_valid={atom_valid}")
 
             # 判断每个原子是否满足阈值
             cond_results = []
@@ -246,7 +250,7 @@ def scan_patterns(
                         )
                     except Exception as e:
                         if debug:
-                            print(f"      ⚠️ 写入数据库失败: {e}")
+                            logger.debug(f"      ⚠️ 写入数据库失败: {e}")
 
                 results.append({
                     "pattern_id": pattern_id,
@@ -274,11 +278,11 @@ def scan_patterns(
                 })
 
                 if debug:
-                    print(f"      ✅ 匹配成功! 日期={match_date}, strength={overall_strength:.4f}")
+                    logger.debug(f"      ✅ 匹配成功! 日期={match_date}, strength={overall_strength:.4f}")
                 # 生产扫描：收集片段内全部匹配点（不 break），重复由 data_writer 幂等写入去重
 
     if debug:
-        print(f"\n   📊 匹配结果总数: {len(results)}")
+        logger.debug(f"\n   📊 匹配结果总数: {len(results)}")
 
     # 去重
     if results:
@@ -290,7 +294,7 @@ def scan_patterns(
                 seen[key] = r
         results = list(seen.values())
         if debug:
-            print(f"   📊 去重后结果数: {len(results)}")
+            logger.debug(f"   📊 去重后结果数: {len(results)}")
 
     # 统一日期格式
     for r in results:

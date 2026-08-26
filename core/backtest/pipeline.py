@@ -6,15 +6,20 @@
 run() 主循环骨架：段落逻辑已下沉到各 Mixin 的私有方法。
 """
 
+import logging
+
 import pandas as pd
 import numpy as np
 
-from config import INITIAL_CASH
+from config import COMMISSION, INITIAL_CASH
+from core.logger import get_logger
 from ..data_structures import metadata
 from ..simulated_adapter import SimulatedBrokerAdapter
 from .base import _BacktestBase
 from .pattern_mixin import _PatternScanMixin
 from .execution_mixin import _ExecutionMixin
+
+logger = get_logger(__name__)
 
 
 class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
@@ -25,6 +30,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
     - RiskManager 只负责审批（不持有账户状态）
     """
 
+    def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False):
+        super().__init__(strategy, top_n=top_n, commission=commission,
+                         risk_config=risk_config, verbose=verbose)
+        # verbose=True 时，本包 logger 提升到 DEBUG 级（调试细节可见，保持原有行为）
+        if verbose:
+            logging.getLogger("core.backtest").setLevel(logging.DEBUG)
+
     def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True):
         if initial_cash is None:
             initial_cash = INITIAL_CASH
@@ -33,7 +45,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         market_ret_raw = market_data.benchmark
 
         if hasattr(self.strategy, "__class__") and self.strategy.__class__.__name__ == "FullFitStrategy":
-            print("🔗 完全拟合模式：直接使用原始价格作为净值曲线")
+            logger.info("🔗 完全拟合模式：直接使用原始价格作为净值曲线")
             first_stock = price_data.columns[0]
             raw_prices = price_data[first_stock].dropna()
             normalized = raw_prices / raw_prices.iloc[0]
@@ -80,9 +92,9 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             price_data=price_data
         )
 
-        print(f"开始回测: {dates[0].strftime('%Y-%m-%d')} 至 {dates[-1].strftime('%Y-%m-%d')}")
+        logger.info(f"开始回测: {dates[0].strftime('%Y-%m-%d')} 至 {dates[-1].strftime('%Y-%m-%d')}")
         account_info = self.adapter.get_account_info()
-        print(f"初始资金: {account_info.cash:,.2f} 元")
+        logger.info(f"初始资金: {account_info.cash:,.2f} 元")
 
         for i, today in enumerate(dates):
             if i < warmup_days:
@@ -114,13 +126,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                             current_prices[symbol] = float(price_data.loc[today, symbol])
             else:
                 if self.verbose:
-                    print("⚠️ 未加载开盘价数据，所有价格将使用收盘价")
+                    logger.debug("⚠️ 未加载开盘价数据，所有价格将使用收盘价")
             for symbol in price_data.columns:
                 if symbol not in current_prices and today in price_data.index:
                     current_prices[symbol] = float(price_data.loc[today, symbol])
                     if symbol not in current_prices:
                         if self.verbose:
-                            print(f"⚠️ 价格完全缺失 ({symbol} at {today})，使用前一日价格")
+                            logger.debug(f"⚠️ 价格完全缺失 ({symbol} at {today})，使用前一日价格")
 
             holdings_dict = {}
             for pos in account.positions:
@@ -147,9 +159,9 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 market_trend = self.factor_modulator.get_market_trend(market_data.benchmark_price.loc[hist_returns.index])
 
             if self.verbose:
-                print(f"📊 大盘因子: 沪深300 MA20 {'向上 ✅' if market_trend == 1.0 else '向下 ❌'} (值: {market_trend})")
+                logger.debug(f"📊 大盘因子: 沪深300 MA20 {'向上 ✅' if market_trend == 1.0 else '向下 ❌'} (值: {market_trend})")
                 if market_trend == 0.0:
-                    print("   ⏳ 大盘向下，买入信号将被过滤")
+                    logger.debug("   ⏳ 大盘向下，买入信号将被过滤")
 
             if hasattr(self, 'signal_modulator'):
                 signal_df = pd.DataFrame({
@@ -180,7 +192,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             if i % 50 == 0:
                 acc = self.adapter.get_account_info()
                 if self.verbose:
-                    print(f"  {today.strftime('%Y-%m-%d')} 总资产: {acc.total_asset:,.2f} 元")
+                    logger.debug(f"  {today.strftime('%Y-%m-%d')} 总资产: {acc.total_asset:,.2f} 元")
 
         self._extract_results(dates, auto_save)
         return self

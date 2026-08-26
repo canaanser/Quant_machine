@@ -3,6 +3,10 @@
 适配 AccountInfo 的 positions 为 List[PositionInfo] 格式
 """
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Optional
@@ -107,4 +111,4 @@ class PerformanceAnalyzer:
         for name, df in reports.items():
             if not df.empty:
                 df.to_csv(os.path.join(output_dir, f"{name}.csv"), index=False)
-                print(f"💾 已保存: {name}.csv")
+                logger.info(f"💾 已保存: {name}.csv")

@@ -8,7 +8,10 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
+from core.logger import get_logger
 from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
+
+logger = get_logger(__name__)
 
 
 def get_connection():
@@ -92,7 +95,7 @@ def insert_sample(pattern_id: str, band_position: str, return_value: float):
 
     conn.commit()
     conn.close()
-    print(f"   ✅ 插入: {pattern_id} | {band_position} | return={return_value:.3f} | 总样本={new_count}")
+    logger.info(f"   ✅ 插入: {pattern_id} | {band_position} | return={return_value:.3f} | 总样本={new_count}")
 
 
 def insert_sample_data():

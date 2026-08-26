@@ -3,6 +3,10 @@
 职责：接收交易指令，完成挂单、监控、撤单的全生命周期管理，返回成交回执
 """
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 from typing import Dict, Optional
 from dataclasses import dataclass, field
 import pandas as pd
@@ -48,7 +52,7 @@ class OrderExecutor:
             cost = volume * current_price
             # 检查可用资金是否充足
             if account.available_cash < cost:
-                print(f"❌ 资金不足: 需要 {cost:.2f}, 可用 {account.available_cash:.2f}")
+                logger.error(f"❌ 资金不足: 需要 {cost:.2f}, 可用 {account.available_cash:.2f}")
                 return None
             # 执行冻结
             account.cash -= cost
@@ -57,11 +61,11 @@ class OrderExecutor:
             # 检查可用持仓是否充足
             pos = account.positions.get(symbol)
             if not pos:
-                print(f"❌ 无持仓: {symbol}")
+                logger.error(f"❌ 无持仓: {symbol}")
                 return None
             available = pos.shares - pos.frozen_shares
             if available < volume:
-                print(f"❌ 可用持仓不足: 需要 {volume}, 可用 {available}")
+                logger.error(f"❌ 可用持仓不足: 需要 {volume}, 可用 {available}")
                 return None
             # 执行冻结
             pos.shares -= volume
@@ -83,7 +87,7 @@ class OrderExecutor:
             time_window=order.get('time_window', '09:30-14:50')
         )
         
-        print(f"📋 订单已提交: {order_id} {action} {symbol} {volume}股 @ {current_price:.2f}")
+        logger.info(f"📋 订单已提交: {order_id} {action} {symbol} {volume}股 @ {current_price:.2f}")
         return order_id
     
     def execute_order(self, order_id: str, account, fill_price: float, commission: float, trade_date=None) -> Optional[dict]:
@@ -91,7 +95,7 @@ class OrderExecutor:
         成交回执 -> 执行交割，释放冻结标记
         """
         if order_id not in self.pending_orders:
-            print(f"❌ 订单不存在: {order_id}")
+            logger.error(f"❌ 订单不存在: {order_id}")
             return None
         
         pending = self.pending_orders.pop(order_id)
@@ -139,7 +143,7 @@ class OrderExecutor:
                 # 卖出后总持仓不变（因为冻结时已减少，成交后保持）
                 # 但我们需要记录盈亏
                 realized_pnl = (fill_price - pos.avg_cost) * volume
-                print(f"📊 卖出盈亏: {realized_pnl:.2f}")
+                logger.info(f"📊 卖出盈亏: {realized_pnl:.2f}")
             
             account.cash += proceed
             account.total_asset = account.cash + sum(
@@ -159,7 +163,7 @@ class OrderExecutor:
         }
         self.execution_reports.append(report)
         
-        print(f"✅ 成交: {order_id} {action} {symbol} {volume}股 @ {fill_price:.2f}")
+        logger.info(f"✅ 成交: {order_id} {action} {symbol} {volume}股 @ {fill_price:.2f}")
         return report
     
     def cancel_order(self, order_id: str, account) -> bool:
@@ -167,7 +171,7 @@ class OrderExecutor:
         撤单 -> 立即解冻资产
         """
         if order_id not in self.pending_orders:
-            print(f"❌ 订单不存在: {order_id}")
+            logger.error(f"❌ 订单不存在: {order_id}")
             return False
         
         pending = self.pending_orders.pop(order_id)
@@ -188,7 +192,7 @@ class OrderExecutor:
                 pos.shares += volume
         
         pending.status = 'CANCELLED'
-        print(f"🗑️ 撤单: {order_id} {action} {symbol}")
+        logger.info(f"🗑️ 撤单: {order_id} {action} {symbol}")
         return True
     
     def expire_all_pending(self, account):

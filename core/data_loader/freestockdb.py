@@ -3,6 +3,10 @@
 freestockdb 数据源（SDK + HTTP 适配 + 缓存）
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 from config import START_DATE, END_DATE
 from ..data_structures import metadata
@@ -62,7 +66,7 @@ def fetch_data_stockdb_http(
                 with _opener.open(url, timeout=30) as resp:
                     raw = _json.loads(resp.read().decode("utf-8"))
             except Exception as e:
-                print(f"⚠️ HTTP 获取 {code} {year} 失败: {e}")
+                logger.error(f"⚠️ HTTP 获取 {code} {year} 失败: {e}")
                 continue
             if isinstance(raw, list):
                 for item in raw:
@@ -88,7 +92,7 @@ def fetch_data_stockdb_http(
                     df = new_df
 
         if df is None or df.empty:
-            print(f"⚠️ {code} 未获取到数据（HTTP）")
+            logger.warning(f"⚠️ {code} 未获取到数据（HTTP）")
             continue
 
         # 5. 写缓存（合并后的全量）
@@ -97,12 +101,12 @@ def fetch_data_stockdb_http(
         # 6. 按请求区间过滤
         df = df.loc[str(start):str(end)]
         if df.empty:
-            print(f"⚠️ {code} 在区间 {start}~{end} 内无数据")
+            logger.warning(f"⚠️ {code} 在区间 {start}~{end} 内无数据")
             continue
         all_frames[code] = df
 
     if not all_frames:
-        print("❌ HTTP 数据加载失败：未获取到任何股票数据")
+        logger.error("❌ HTTP 数据加载失败：未获取到任何股票数据")
         return metadata(price=pd.DataFrame(), benchmark=pd.Series())
 
     # 统一索引（取各股票日期的并集再按交易日排序）
@@ -133,10 +137,10 @@ def fetch_data_stockdb_http(
     benchmark = price_df.mean(axis=1)
     benchmark.name = 'EqualWeight'
 
-    print(f"✅ HTTP 成功加载 {len(price_df.columns)} 只股票，{len(price_df)} 个交易日（缓存: {'命中' if cached_df is not None else '首次'}）")
-    print(f"📅 日期范围: {price_df.index.min()} 至 {price_df.index.max()}")
+    logger.info(f"✅ HTTP 成功加载 {len(price_df.columns)} 只股票，{len(price_df)} 个交易日（缓存: {'命中' if cached_df is not None else '首次'}）")
+    logger.info(f"📅 日期范围: {price_df.index.min()} 至 {price_df.index.max()}")
     if fq != 'none':
-        print("ℹ️ 提示: HTTP 接口返回原始价，未做复权折算（fq 参数仅兼容保留）")
+        logger.info("ℹ️ 提示: HTTP 接口返回原始价，未做复权折算（fq 参数仅兼容保留）")
 
     return metadata(
         price=price_df,
@@ -170,16 +174,16 @@ def fetch_data_freestockdb(
         from stock_sdk import rd, init
     except ImportError:
         # 非 Windows 环境（如 WSL/Linux）没有 stockdb.pyd，自动回退 HTTP 协议
-        print("⚠️ free-stockdb SDK 不可用（当前非 Windows 环境），自动回退 HTTP 协议...")
+        logger.warning("⚠️ free-stockdb SDK 不可用（当前非 Windows 环境），自动回退 HTTP 协议...")
         return fetch_data_stockdb_http(
             stock_list, start=start, end=end, frequency=frequency, fq=fq
         )
 
     try:
         init(host="127.0.0.1", port=7899, warm=False)
-        print("🔗 已连接到 free-stockdb 本地服务: 127.0.0.1:7899")
+        logger.info("🔗 已连接到 free-stockdb 本地服务: 127.0.0.1:7899")
     except Exception as e:
-        print(f"❌ 连接 free-stockdb 服务失败: {e}")
+        logger.error(f"❌ 连接 free-stockdb 服务失败: {e}")
         raise
 
     start_clean = start.replace('-', '')
@@ -198,19 +202,19 @@ def fetch_data_freestockdb(
         )
 
         if result is None or result.empty:
-            print("❌ 未获取到任何数据")
+            logger.error("❌ 未获取到任何数据")
             return metadata(price=pd.DataFrame(), benchmark=pd.Series())
 
         # 日期转换
         if 'date' in result.columns:
             result['date'] = pd.to_datetime(result['date'].astype(str), format='%Y%m%d', errors='coerce')
         else:
-            print("⚠️ 返回数据中没有 'date' 列")
+            logger.warning("⚠️ 返回数据中没有 'date' 列")
             return metadata(price=pd.DataFrame(), benchmark=pd.Series())
 
         result = result.dropna(subset=['date'])
         if result.empty:
-            print("❌ 日期转换后数据为空")
+            logger.error("❌ 日期转换后数据为空")
             return metadata(price=pd.DataFrame(), benchmark=pd.Series())
 
         # ---------- 构建完整 OHLCV ----------
@@ -221,7 +225,7 @@ def fetch_data_freestockdb(
             high_price_df = result.pivot_table(index='date', columns='code', values='high')
             low_price_df = result.pivot_table(index='date', columns='code', values='low')
             volume_df = result.pivot_table(index='date', columns='code', values='volume')
-            print(f"📊 批量加载: {len(price_df.columns)} 只股票，{len(price_df)} 个交易日")
+            logger.info(f"📊 批量加载: {len(price_df.columns)} 只股票，{len(price_df)} 个交易日")
         else:
             code = stock_list[0]
             name = result['name'].iloc[0] if 'name' in result.columns else code
@@ -237,10 +241,10 @@ def fetch_data_freestockdb(
             low_price_df.columns = [code]
             volume_df = result[['volume']].copy()
             volume_df.columns = [code]
-            print(f"📊 单只股票 {code} 加载完成，{len(price_df)} 个交易日")
+            logger.info(f"📊 单只股票 {code} 加载完成，{len(price_df)} 个交易日")
 
         if price_df.empty:
-            print("❌ 价格数据为空")
+            logger.error("❌ 价格数据为空")
             return metadata(price=pd.DataFrame(), benchmark=pd.Series())
 
         # 数据类型转换
@@ -251,8 +255,8 @@ def fetch_data_freestockdb(
         benchmark = price_df.mean(axis=1)
         benchmark.name = 'EqualWeight'
 
-        print(f"✅ 成功加载 {len(price_df.columns)} 只股票，{len(price_df)} 个交易日")
-        print(f"📅 日期范围: {price_df.index.min()} 至 {price_df.index.max()}")
+        logger.info(f"✅ 成功加载 {len(price_df.columns)} 只股票，{len(price_df)} 个交易日")
+        logger.info(f"📅 日期范围: {price_df.index.min()} 至 {price_df.index.max()}")
 
         return metadata(
             price=price_df,
@@ -265,7 +269,7 @@ def fetch_data_freestockdb(
         ).align()
 
     except Exception as e:
-        print(f"❌ 查询失败: {e}")
+        logger.error(f"❌ 查询失败: {e}")
         import traceback
         traceback.print_exc()
         return metadata(price=pd.DataFrame(), benchmark=pd.Series())

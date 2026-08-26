@@ -3,6 +3,10 @@
 baostock 数据源
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 from config import START_DATE, END_DATE
 from ..data_structures import metadata
@@ -10,8 +14,8 @@ from ..data_structures import metadata
 def fetch_data_baostock(stock_list, start=START_DATE, end=END_DATE) -> metadata:
     import baostock as bs
     lg = bs.login()
-    print('BaoStock login respond error_code:' + lg.error_code)
-    print('BaoStock login respond error_msg:' + lg.error_msg)
+    logger.warning('BaoStock login respond error_code:' + lg.error_code)
+    logger.warning('BaoStock login respond error_msg:' + lg.error_msg)
     all_close = {}
     fields = "date,code,open,high,low,close,volume,amount"
     for code in stock_list:
@@ -28,7 +32,7 @@ def fetch_data_baostock(stock_list, start=START_DATE, end=END_DATE) -> metadata:
             while (rs.error_code == '0') and rs.next():
                 data_list.append(rs.get_row_data())
             if not data_list:
-                print(f"警告: {code} 未获取到数据")
+                logger.warning(f"警告: {code} 未获取到数据")
                 continue
             df = pd.DataFrame(data_list, columns=rs.fields)
             for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
@@ -37,12 +41,12 @@ def fetch_data_baostock(stock_list, start=START_DATE, end=END_DATE) -> metadata:
             df = df.set_index('date')
             all_close[code] = df['close']
         except Exception as e:
-            print(f"获取 {code} 失败: {e}")
+            logger.error(f"获取 {code} 失败: {e}")
             continue
     bs.logout()
     price_df = pd.DataFrame(all_close)
     if price_df.empty:
-        print("错误: 未获取到任何股票数据")
+        logger.warning("未获取到任何股票数据")
         return metadata(price=pd.DataFrame(), benchmark=pd.Series())
     benchmark = price_df.mean(axis=1)
     benchmark.name = 'EqualWeight'

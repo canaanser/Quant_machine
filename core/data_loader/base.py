@@ -3,6 +3,10 @@
 数据加载公共工具（缓存等）
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 from pathlib import Path
 
@@ -36,5 +40,5 @@ def _save_stockdb_cache(symbol: str, frequency: str, df) -> None:
         _STOCKDB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         df.to_csv(_cache_path(symbol, frequency), encoding='utf-8')
     except Exception as e:
-        print(f"⚠️ 缓存写入失败 {symbol}: {e}")
+        logger.error(f"⚠️ 缓存写入失败 {symbol}: {e}")
 

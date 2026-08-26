@@ -4,6 +4,10 @@
 职责：回测主循环中的形态扫描融合、每日投票权重更新。
 """
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class _PatternScanMixin:
     """形态扫描与权重更新（run 主循环内两段独立逻辑）"""
@@ -15,7 +19,7 @@ class _PatternScanMixin:
         for symbol in score_series.index:
             # 修复：原来无条件打印刷屏，改为仅 verbose 模式输出
             if self.verbose:
-                print(f"🔍 形态扫描入口: {symbol}, verbose={self.verbose}")
+                logger.debug(f"🔍 形态扫描入口: {symbol}, verbose={self.verbose}")
             try:
                 ohlc = market_data.get_ohlc(symbol)
                 if ohlc is None or ohlc.empty:
@@ -61,12 +65,12 @@ class _PatternScanMixin:
                         )
                         score_series[symbol] = fused_score
                         if self.verbose:
-                            print(f"   🔄 形态融合: {symbol} 传统={traditional_score:.4f} + 形态×权重({w:.2f})={effective_strength:.4f} → {fused_score:.4f}")
+                            logger.debug(f"   🔄 形态融合: {symbol} 传统={traditional_score:.4f} + 形态×权重({w:.2f})={effective_strength:.4f} → {fused_score:.4f}")
 
             except Exception as e:
                 if not hasattr(self, '_pattern_scan_warning_printed'):
                     if self.verbose:
-                        print(f"   ⚠️ 形态扫描跳过 {symbol}: {e}")
+                        logger.debug(f"   ⚠️ 形态扫描跳过 {symbol}: {e}")
                     self._pattern_scan_warning_printed = True
                 continue
         return score_series
@@ -88,5 +92,5 @@ class _PatternScanMixin:
         except Exception as e:
             if not hasattr(self, '_weight_update_warning'):
                 if self.verbose:
-                    print(f"   ⚠️ 权重更新跳过: {e}")
+                    logger.debug(f"   ⚠️ 权重更新跳过: {e}")
                 self._weight_update_warning = True

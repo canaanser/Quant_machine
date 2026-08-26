@@ -5,9 +5,13 @@
 import sqlite3
 from pathlib import Path
 
+from core.logger import get_logger
+
 # 获取当前文件所在目录的父目录的父目录的 data/index_store/（真实库）
 BASE_DIR = Path(__file__).parent.parent.parent
 from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
+
+logger = get_logger(__name__)
 
 
 def create_electron_cloud_tables():
@@ -71,7 +75,7 @@ def create_electron_cloud_tables():
 
     conn.commit()
     conn.close()
-    print(f"✅ 电子云三层表创建完成，数据库路径：{DB_PATH}")
+    logger.info(f"✅ 电子云三层表创建完成，数据库路径：{DB_PATH}")
 
 
 if __name__ == "__main__":

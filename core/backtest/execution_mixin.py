@@ -6,7 +6,10 @@
 
 import pandas as pd
 
+from core.logger import get_logger
 from ..risk_manager import create_default_account, Position
+
+logger = get_logger(__name__)
 
 
 class _ExecutionMixin:
@@ -41,7 +44,7 @@ class _ExecutionMixin:
                 tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
 
                 if self.verbose:
-                    print(f"🔔 死叉信号触发卖出: {symbol}, 持仓={pos['shares']}股, 评分={score:.4f}")
+                    logger.debug(f"🔔 死叉信号触发卖出: {symbol}, 持仓={pos['shares']}股, 评分={score:.4f}")
 
                 temp_account = create_default_account(account.cash)
                 temp_account.positions = {
@@ -78,7 +81,7 @@ class _ExecutionMixin:
                                 self.performance_analyzer.record_trade(exec_report)
                                 pnl = (status['filled_price'] - avg_cost) * status['filled_volume']
                                 if self.verbose:
-                                    print(f"   ✅ 卖出成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}，总资产: {pnl:+.2f}")
+                                    logger.debug(f"   ✅ 卖出成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}，总资产: {pnl:+.2f}")
 
     def _execute_buys(self, buy_list, final_scores, market_data, account, current_prices, today):
         # ---------- 买入 ----------
@@ -125,4 +128,4 @@ class _ExecutionMixin:
                             }
                             self.performance_analyzer.record_trade(exec_report)
                             if self.verbose:
-                                print(f"   ✅ 买入成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}")
+                                logger.debug(f"   ✅ 买入成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}")

@@ -3,6 +3,10 @@
 akshare 数据源
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 from config import START_DATE, END_DATE
 from ..data_structures import metadata
@@ -21,7 +25,7 @@ def fetch_data_akshare(stock_list, benchmark_code="sh000300", start=START_DATE, 
                 df = df.set_index('日期')
                 all_close[code] = df['收盘']
         except Exception as e:
-            print(f"获取 {code} 失败: {e}")
+            logger.error(f"获取 {code} 失败: {e}")
             continue
     price_df = pd.DataFrame(all_close)
     try:
@@ -35,7 +39,7 @@ def fetch_data_akshare(stock_list, benchmark_code="sh000300", start=START_DATE, 
         else:
             raise Exception("获取基准数据为空")
     except Exception as e:
-        print(f"获取基准失败: {e}, 使用等权平均替代")
+        logger.error(f"获取基准失败: {e}, 使用等权平均替代")
         benchmark = price_df.mean(axis=1)
         benchmark.name = 'EqualWeight'
     return metadata(price=price_df, benchmark=benchmark, open_price=pd.DataFrame()).align()

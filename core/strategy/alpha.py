@@ -3,6 +3,10 @@
 Alpha 剥离策略（滚动OLS残差动量）
 （2026-08-26 小二陈：从 core/strategy.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 from statsmodels.regression.rolling import RollingOLS
 import statsmodels.api as sm
@@ -29,7 +33,7 @@ class AlphaScoreStrategy(BaseStrategy):
         
         # ----- 特殊情况：只有1只股票时，改用趋势跟踪策略 -----
         if len(stock_codes) <= 2:
-            print(f"📊 股票池仅有 {len(stock_codes)} 只股票，使用趋势跟踪策略")
+            logger.debug(f"📊 股票池仅有 {len(stock_codes)} 只股票，使用趋势跟踪策略")
             for code in stock_codes:
                 y = returns_df[code].dropna()
                 if len(y) < self.window + self.lookback:
@@ -91,7 +95,7 @@ class AlphaScoreStrategy(BaseStrategy):
                 if not hasattr(self, '_error_printed'):
                     self._error_printed = set()
                 if code not in self._error_printed:
-                    print(f"⚠️ {code} 回归失败: {e}")
+                    logger.debug(f"⚠️ {code} 回归失败: {e}")
                     self._error_printed.add(code)
                 continue
         

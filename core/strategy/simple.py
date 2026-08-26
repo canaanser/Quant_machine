@@ -3,6 +3,10 @@
 双均线金叉策略（立即交叉响应）
 （2026-08-26 小二陈：从 core/strategy.py 拆出，接口不变）
 """
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
 import pandas as pd
 import numpy as np
 from config.risk_config import EARLY_SCORE_THRESHOLD, EARLY_SCORE_MAGNITUDE, EARLY_SCORE_NEUTRAL
@@ -61,13 +65,13 @@ class SimpleStrategy(BaseStrategy):
                 is_death_zone = False
                 self._buy_count[code] = 0
                 if self.verbose:
-                    print(f"🔔 {code} 金叉发生，重置买入计数")
+                    logger.debug(f"🔔 {code} 金叉发生，重置买入计数")
             elif prev_diff >= 0 and curr_diff < 0:
                 is_golden_zone = False
                 is_death_zone = True
                 self._buy_count[code] = 0
                 if self.verbose:
-                    print(f"🔔 {code} 死叉发生，重置买入计数")
+                    logger.debug(f"🔔 {code} 死叉发生，重置买入计数")
             else:
                 is_golden_zone = curr_ma5 > curr_ma20
                 is_death_zone = curr_ma5 < curr_ma20
@@ -106,7 +110,7 @@ class SimpleStrategy(BaseStrategy):
                     
                     if final_score > 0.001:
                         if self.verbose:
-                            print(f"   📍 买入: 第{buy_count}次, 权重={weight:.0%}, 评分={final_score:.3f}")
+                            logger.debug(f"   📍 买入: 第{buy_count}次, 权重={weight:.0%}, 评分={final_score:.3f}")
                         scores[code] = final_score
                     else:
                         scores[code] = 0
