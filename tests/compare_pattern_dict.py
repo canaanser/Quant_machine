@@ -95,47 +95,81 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
     if mode == 'plain':
         return engine
 
-    orig_fuse = engine._scan_and_fuse_patterns
+    # 共用：计算某股票当日的形态强弱分（0.4~1.6）
+    def get_strength(market_data, symbol, today):
+        try:
+            ohlc = market_data.get_ohlc(symbol)
+            if ohlc is None or ohlc.empty or today not in ohlc.index:
+                return 1.0
+            today_pos = ohlc.index.get_loc(today)
+            hist = ohlc.iloc[max(0, today_pos - 60):today_pos + 1]
+            if len(hist) < 5:
+                return 1.0
+            results = scan_patterns(hist, debug=False)
+            today_str = today.strftime('%Y-%m-%d')
+            window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
+            if len(window) < 30:
+                return 1.0
+            lo, hi = float(window.min()), float(window.max())
+            if hi <= lo:
+                return 1.0
+            pos = (float(ohlc['close'].iloc[today_pos]) - lo) / (hi - lo)
+            zone = ('valley' if pos < 0.2 else 'rise_lower' if pos < 0.4
+                    else 'rise_upper' if pos < 0.6 else 'peak' if pos < 0.8 else 'fall_upper')
+            best = 1.0
+            for r in results:
+                if r.get('date', '')[:10] == today_str:
+                    name = r.get('pattern_type', '')
+                    s = strength_dict.get((name, zone), 1.0)
+                    best = max(best, s)
+            return best
+        except Exception:
+            return 1.0
 
-    def fuse_with_dict(score_series, market_data, today):
-        # 原融合
-        score_series = orig_fuse(score_series, market_data, today)
-        # 叠加强弱字典：对当日出现形态的股票，查字典强弱分加权
-        for symbol in list(score_series.index):
-            try:
-                ohlc = market_data.get_ohlc(symbol)
-                if ohlc is None or ohlc.empty or today not in ohlc.index:
-                    continue
-                today_pos = ohlc.index.get_loc(today)
-                hist = ohlc.iloc[max(0, today_pos - 60):today_pos + 1]
-                if len(hist) < 5:
-                    continue
-                results = scan_patterns(hist, debug=False)
-                today_str = today.strftime('%Y-%m-%d')
-                # 位置代理：近120日区间位置
-                window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
-                if len(window) < 30:
-                    continue
-                lo, hi = float(window.min()), float(window.max())
-                if hi <= lo:
-                    continue
-                pos = (float(ohlc['close'].iloc[today_pos]) - lo) / (hi - lo)
-                zone = ('valley' if pos < 0.2 else 'rise_lower' if pos < 0.4
-                        else 'rise_upper' if pos < 0.6 else 'peak' if pos < 0.8 else 'fall_upper')
-                # 当日形态的强弱分（取最强的）
-                best = 1.0
-                for r in results:
-                    if r.get('date', '')[:10] == today_str:
-                        name = r.get('pattern_type', '')
-                        s = strength_dict.get((name, zone), 1.0)
-                        best = max(best, s)  # 保守：只取正向强分
-                if best != 1.0:
-                    score_series[symbol] = score_series[symbol] * best
-            except Exception:
-                continue
-        return score_series
+    if mode == 'dict':
+        # 模式A（已证不行）：乘分数（对照保留）
+        orig_fuse = engine._scan_and_fuse_patterns
+        def fuse_with_dict(score_series, market_data, today):
+            score_series = orig_fuse(score_series, market_data, today)
+            for symbol in list(score_series.index):
+                s = get_strength(market_data, symbol, today)
+                if s != 1.0:
+                    score_series[symbol] = score_series[symbol] * s
+            return score_series
+        engine._scan_and_fuse_patterns = fuse_with_dict
+        return engine
 
-    engine._scan_and_fuse_patterns = fuse_with_dict
+    if mode == 'dict_pos':
+        # 模式B：独立仓位维度（不改分数/排序）——强弱分 → 仓位系数
+        engine._pos_caps = {}
+        orig_fuse = engine._scan_and_fuse_patterns
+        def fuse_record_caps(score_series, market_data, today):
+            score_series = orig_fuse(score_series, market_data, today)
+            caps = {}
+            for symbol in list(score_series.index):
+                s = get_strength(market_data, symbol, today)
+                # 强弱分 0.4~1.6 → 仓位系数 0.5~1.3（温和，克制）
+                caps[symbol] = 0.5 + (s - 0.4) / 1.2 * 0.8
+            engine._pos_caps = caps
+            return score_series
+        engine._scan_and_fuse_patterns = fuse_record_caps
+
+        orig_approve = engine.risk_manager.approve_order
+        def approve_with_caps(signal, account, current_price):
+            symbol = signal.get('symbol')
+            if signal.get('action') == 'BUY' and symbol in engine._pos_caps:
+                cap = engine._pos_caps[symbol]
+                if cap < 1.0:
+                    orig_max = engine.risk_manager.max_pos_ratio
+                    engine.risk_manager.max_pos_ratio = orig_max * cap
+                    try:
+                        return orig_approve(signal, account, current_price)
+                    finally:
+                        engine.risk_manager.max_pos_ratio = orig_max
+            return orig_approve(signal, account, current_price)
+        engine.risk_manager.approve_order = approve_with_caps
+        return engine
+
     return engine
 
 
@@ -167,6 +201,8 @@ def main():
     parser.add_argument("--start", default=DEFAULT_START)
     parser.add_argument("--end", default=DEFAULT_END)
     parser.add_argument("--source", default="freestockdb")
+    parser.add_argument("--mode", default="all",
+                        help="all(三模式对比) / dict_pos(仅仓位维度) / dict(仅乘分数)")
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
@@ -174,37 +210,54 @@ def main():
     strength = build_strength_dict()
     print(f"  ✅ 字典格子数: {len(strength)}")
 
-    print(f"▶ 对比: 现状 vs 强弱字典加权 | {tickers} | {args.start}~{args.end}")
+    print(f"▶ 对比: 现状 vs 强弱字典接入 | {tickers} | {args.start}~{args.end}")
 
     print("▶ 第 1 轮: 现状（形态融合 w=0.3）...")
     plain, t1 = run_one(tickers, args.start, args.end, 'plain', strength)
     print(f"  ✅ 完成 {t1:.1f}s 收益={plain['total_return']:.2%} 夏普={plain['sharpe']:.4f} 交易={plain['trades']}")
 
-    print("▶ 第 2 轮: +强弱字典加权 ...")
-    dct, t2 = run_one(tickers, args.start, args.end, 'dict', strength)
-    print(f"  ✅ 完成 {t2:.1f}s 收益={dct['total_return']:.2%} 夏普={dct['sharpe']:.4f} 交易={dct['trades']}")
+    results = [('plain', plain, t1)]
+    if args.mode in ('all', 'dict'):
+        print("▶ 第 2 轮: 强弱字典乘分数（对照，已证不行）...")
+        dct, t2 = run_one(tickers, args.start, args.end, 'dict', strength)
+        print(f"  ✅ 完成 {t2:.1f}s 收益={dct['total_return']:.2%} 夏普={dct['sharpe']:.4f} 交易={dct['trades']}")
+        results.append(('dict', dct, t2))
+
+    if args.mode in ('all', 'dict_pos'):
+        print("▶ 第 3 轮: 强弱字典→仓位维度（不改分数）...")
+        dpos, t3 = run_one(tickers, args.start, args.end, 'dict_pos', strength)
+        print(f"  ✅ 完成 {t3:.1f}s 收益={dpos['total_return']:.2%} 夏普={dpos['sharpe']:.4f} 交易={dpos['trades']}")
+        results.append(('dict_pos', dpos, t3))
 
     lines = []
     lines.append("=" * 60)
     lines.append(f"形态×位置强弱字典回测（{tickers} | {args.start}~{args.end}）")
     lines.append(f"字典格子: {len(strength)}")
     lines.append("=" * 60)
-    lines.append(f"{'指标':<14} {'现状':>12} {'+强弱字典':>14} {'差值':>12}")
+    header = f"{'指标':<14}"
+    for name, _, _ in results:
+        header += f" {name:>14}"
+    lines.append(header)
     for k in ['total_return', 'sharpe', 'max_drawdown', 'trades']:
-        a, b = plain[k], dct[k]
-        lines.append(f"{k:<14} {a:>12.4f} {b:>14.4f} {b-a:>+12.4f}")
+        row = f"{k:<14}"
+        for _, r, _ in results:
+            row += f" {r[k]:>14.4f}"
+        lines.append(row)
     lines.append("")
     verdict = []
-    if dct['sharpe'] > plain['sharpe']: verdict.append("夏普↑")
-    if dct['total_return'] > plain['total_return']: verdict.append("收益↑")
-    if dct['max_drawdown'] >= plain['max_drawdown']: verdict.append("回撤改善")
-    if not verdict: verdict = ["无提升"]
-    lines.append(f"结论: {', '.join(verdict)}")
+    if len(results) > 1:
+        best = max(results[1:], key=lambda x: x[1]['sharpe'])
+        if best[1]['sharpe'] > plain['sharpe']:
+            verdict.append(f"最佳={best[0]}（夏普{best[1]['sharpe']:.4f} > 现状{plain['sharpe']:.4f}）")
+        else:
+            verdict.append(f"均未超现状（最佳{best[0]} 夏普{best[1]['sharpe']:.4f}）")
+    lines.append(f"结论: {', '.join(verdict) if verdict else '仅现状'}")
     out_path = PROJECT_ROOT / "outputs" / "pattern_dict_result.txt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines), encoding='utf-8')
     print("\n✅ 完成！完整对比已写入 outputs/pattern_dict_result.txt")
-    print(f"   夏普: {plain['sharpe']:.4f} → {dct['sharpe']:.4f} | 收益: {plain['total_return']:.2%} → {dct['total_return']:.2%}")
+    for name, r, t in results:
+        print(f"   {name:<10} 夏普={r['sharpe']:.4f} 收益={r['total_return']:.2%} 耗时={t:.0f}s")
 
 
 if __name__ == "__main__":
