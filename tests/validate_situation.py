@@ -101,7 +101,10 @@ def main():
             window = ohlc['close'].iloc[max(0, i - LOOKBACK):i + 1]
             peak = float(window.max())
             drawdown = base / peak - 1 if peak > 0 else 0.0
-            # 回撤档
+            # 连续加权（老板思路）：回撤越深 → 越接近波谷 → 位置确认信号越强 → 权重越大
+            # 权重 = 1 + |回撤|/10% （-5%→1.5, -20%→3, -40%→5）
+            weight = 1.0 + abs(drawdown) / 0.10
+            # 回撤档（保留分档作对照）
             if drawdown < -0.20:
                 dd_band = 'deep'
             elif drawdown < -0.10:
@@ -118,52 +121,62 @@ def main():
             # 逐日收益
             daily = [float(ohlc['close'].iloc[i+j]) / base - 1 for j in range(1, 6)]
             matched += 1
-            agg[(pat_cls, dd_band)].append(daily)
-            agg_base[dd_band].append(daily)
+            # 存 (逐日收益, 回撤深度权重)
+            agg[(pat_cls, dd_band)].append((daily, weight))
+            agg_base[dd_band].append((daily, weight))
         except Exception:
             skipped += 1
             continue
 
+    def wmean(lst, col):
+        """回撤深度加权均值：weight 大的样本（回撤深=接近波谷）说话分量重"""
+        vals = np.array([x[0][col] for x in lst])
+        ws = np.array([x[1] for x in lst])
+        return float(np.average(vals, weights=ws))
+
+    def wmean_winrate(lst, col=0):
+        """加权胜率"""
+        vals = np.array([x[0][col] for x in lst])
+        ws = np.array([x[1] for x in lst])
+        return float(np.average(vals > 0, weights=ws))
+
     # ===== 4. 输出 =====
     lines = []
-    lines.append("=" * 76)
-    lines.append(f"处境特征 × 形态（回撤深度替代位置，实盘视角）")
-    lines.append(f"样本: {matched} 条 | 回撤=近{LOOKBACK}日高点回撤 | 无未来函数")
-    lines.append("=" * 76)
+    lines.append("=" * 80)
+    lines.append(f"处境特征 × 形态（回撤深度替代位置 + 深度加权，实盘视角）")
+    lines.append(f"样本: {matched} 条 | 回撤=近{LOOKBACK}日高点回撤 | 权重=1+|回撤|/10%（回撤越深越接近波谷，权重越大）")
+    lines.append("=" * 80)
 
-    lines.append("\n【基准】所有形态记录按回撤档（无形态区分）")
+    lines.append("\n【基准】所有形态记录按回撤档（加权统计）")
     lines.append(f"{'回撤档':<10} {'样本':>6} {'D+1':>8} {'D+2':>8} {'D+3':>8} {'D+5':>8} {'D+1胜率':>8}")
     for dd in ['deep', 'mid', 'shallow']:
         lst = agg_base.get(dd, [])
         if len(lst) < 20:
             continue
-        arr = np.array(lst)
-        lines.append(f"{dd:<10} {len(lst):>6} {arr[:,0].mean():>8.2%} {arr[:,1].mean():>8.2%} "
-                     f"{arr[:,2].mean():>8.2%} {arr[:,4].mean():>8.2%} {(arr[:,0]>0).mean():>8.0%}")
+        lines.append(f"{dd:<10} {len(lst):>6} {wmean(lst,0):>8.2%} {wmean(lst,1):>8.2%} "
+                     f"{wmean(lst,2):>8.2%} {wmean(lst,4):>8.2%} {wmean_winrate(lst):>8.0%}")
 
-    lines.append("\n【形态 × 回撤档】")
+    lines.append("\n【形态 × 回撤档】（加权统计）")
     lines.append(f"{'形态':<8} {'回撤档':<10} {'样本':>6} {'D+1':>8} {'D+2':>8} {'D+3':>8} {'D+5':>8} {'D+1胜率':>8}")
     for pat in ['十字星', '乌云盖顶', '其他形态']:
         for dd in ['deep', 'mid', 'shallow']:
             lst = agg.get((pat, dd), [])
             if len(lst) < 10:
                 continue
-            arr = np.array(lst)
-            lines.append(f"{pat:<8} {dd:<10} {len(lst):>6} {arr[:,0].mean():>8.2%} {arr[:,1].mean():>8.2%} "
-                         f"{arr[:,2].mean():>8.2%} {arr[:,4].mean():>8.2%} {(arr[:,0]>0).mean():>8.0%}")
+            lines.append(f"{pat:<8} {dd:<10} {len(lst):>6} {wmean(lst,0):>8.2%} {wmean(lst,1):>8.2%} "
+                         f"{wmean(lst,2):>8.2%} {wmean(lst,4):>8.2%} {wmean_winrate(lst):>8.0%}")
 
-    lines.append("\n【关键对比】深回撤处境的形态价值")
-    lines.append("（若 十字星/乌云盖顶 在 deep 档显著异于 基准deep → 形态有条件价值）")
-    base_deep = np.array(agg_base.get('deep', []))
+    lines.append("\n【关键对比】深回撤处境的形态价值（加权）")
+    lines.append("（十字星/乌云盖顶@deep 加权均值 vs 基准deep 加权均值 → 形态有条件价值？）")
+    base_deep = agg_base.get('deep', [])
     if len(base_deep) > 20:
         for pat in ['十字星', '乌云盖顶']:
             lst = agg.get((pat, 'deep'), [])
             if len(lst) < 10:
                 continue
-            arr = np.array(lst)
-            diff = arr[:, 0].mean() - base_deep[:, 0].mean()
-            lines.append(f"  {pat}@deep: D+1={arr[:,0].mean():+.2%} vs 基准deep D+1={base_deep[:,0].mean():+.2%} "
-                         f"→ 差异 {diff:+.2%}")
+            diff = wmean(lst, 0) - wmean(base_deep, 0)
+            lines.append(f"  {pat}@deep: D+1加权={wmean(lst,0):+.2%} vs 基准deep D+1={wmean(base_deep,0):+.2%} "
+                         f"→ 差异 {diff:+.2%} {'（形态有价值✅）' if diff > 0.003 else '（无额外价值）'}")
 
     out_path = PROJECT_ROOT / "outputs" / "situation_result.txt"
     out_path.parent.mkdir(parents=True, exist_ok=True)
