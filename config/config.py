@@ -74,6 +74,11 @@ SCAN_TICKERS = [
     '000977', '002465',                # 浪潮信息、海格通信
 ]
 
+# ===== 数据库路径统一（2026-08-26 小二陈） =====
+# 消除多处重复定义（data_writer/electron_cloud_query/weight_estimator/signal_weights 各写一份）
+PROJECT_ROOT = Path(__file__).parent.parent
+PATTERN_DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
+
 # ===== 辅助函数 =====
 def get_data_path(subdir: str = "") -> Path:
     """获取数据目录路径"""
@@ -91,3 +96,17 @@ def ensure_dirs():
     ]
     for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
+
+
+# ===== 导出清单（供 config/__init__.py 转发，单一事实源） =====
+__all__ = [
+    'START_DATE', 'END_DATE', 'INITIAL_CASH', 'COMMISSION', 'TOP_N', 'WINDOW', 'LOOKBACK',
+    'SCAN_WINDOW', 'MIN_AMPLITUDE', 'PEAK_VALLEY_LOOKBACK',
+    'INDEX_STORE_PATH', 'INDEX_SIMILARITY_TOLERANCE', 'INDEX_TOP_K', 'INDEX_AUTO_REBUILD',
+    'FEATURE_KLINE_DIM', 'FEATURE_MA_DIM',
+    'VOTE_POOL_PATH', 'VOTE_DORMANCY_THRESHOLD', 'VOTE_MIN_OCCURRENCES', 'VOTE_CHECK_INTERVAL',
+    'TREND_STRATEGY_WEIGHTS', 'TREND_THRESHOLD', 'TREND_CURVE_POWER',
+    'PATTERN_WEIGHT_LEARNING_RATE', 'PATTERN_MIN_SAMPLES',
+    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'PATTERN_DB_PATH',
+    'get_data_path', 'ensure_dirs',
+]

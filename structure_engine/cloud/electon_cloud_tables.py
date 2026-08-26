@@ -7,7 +7,7 @@ from pathlib import Path
 
 # 获取当前文件所在目录的父目录的父目录的 data/index_store/（真实库）
 BASE_DIR = Path(__file__).parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
 
 
 def create_electron_cloud_tables():

@@ -26,7 +26,7 @@ from typing import Dict
 
 # ===== 数据库路径（真实库） =====
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
 
 # 收缩强度（初始值，后续按数据积累调整）
 KAPPA = 15.0

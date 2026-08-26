@@ -66,7 +66,7 @@ def get_signal_weights_for_position(band_position: str) -> dict:
 # ============================================================
 # 数据驱动权重（signal_weight_table，贝叶斯收缩生成）
 # ============================================================
-_DATA_DB_PATH = Path(__file__).parent.parent.parent / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as _DATA_DB_PATH  # 统一路径（2026-08-26）
 _data_weights_cache = None
 
 

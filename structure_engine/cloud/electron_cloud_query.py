@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 # ===== 统一数据库路径（与 data_writer.py 保持一致：真实库） =====
 # 修复：原指向 tests/data/ 测试路径，改为项目真实库
-DB_PATH = Path(__file__).parent.parent.parent / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
 
 
 def get_connection():

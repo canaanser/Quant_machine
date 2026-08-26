@@ -30,7 +30,7 @@ import numpy as np
 
 # ===== 统一数据库路径（与 data_writer.py 一致：真实库） =====
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
 
 MIN_SAMPLES_HIGH = 20      # 置信度 high 阈值
 MIN_SAMPLES_MEDIUM = 5     # 置信度 medium 阈值

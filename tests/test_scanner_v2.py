@@ -21,7 +21,9 @@ import pandas as pd
 from core.data_loader import load_data
 from structure_engine.scanner.wave_detector import detect_waves
 from structure_engine.scanner.pattern_scanner import scan_patterns
-from structure_engine.scanner.position_mapper import map_position, backfill_band_positions
+from structure_engine.scanner.position_mapper import (
+    map_position, backfill_band_positions, backfill_positions_for_results,
+)
 from structure_engine.scanner.data_writer import (
     get_pattern_history_count,
     update_scan_progress,
@@ -149,64 +151,10 @@ def test_full_pipeline(mode: str = "incremental", window_days: int = 150, step: 
     print(f"    ✅ 识别到 {len(all_waves)} 个波段，匹配到 {len(all_results)} 个形态")
 
     # ===== 4. 位置映射回写（计算精确 band_position） =====
-    print("\n[4] 位置映射回写（计算精确 band_position）...")
-    update_count = 0
-    fail_count = 0
-    conn = get_global_connection()  # 修复：用全局连接，避免批量模式下独立连接被写锁阻塞
-    cursor = conn.cursor()
-
-    for r in all_results:
-        match_date = r['date']
-        try:
-            if match_date in ohlc.index:
-                match_price = ohlc.loc[match_date, 'close']
-            else:
-                match_date_dt = pd.to_datetime(match_date)
-                if match_date_dt in ohlc.index:
-                    match_price = ohlc.loc[match_date_dt, 'close']
-                else:
-                    continue
-
-            pos_info = map_position(match_date, match_price, all_waves, trading_dates=ohlc.index)
-
-            if hasattr(match_date, 'strftime'):
-                match_date_str = match_date.strftime('%Y-%m-%d')
-            else:
-                match_date_str = str(match_date)[:10]
-
-            cursor.execute("""
-                SELECT record_id FROM pattern_history
-                WHERE symbol = ? AND pattern_id = ? AND match_date LIKE ?
-            """, (
-                symbol,
-                r['pattern_id'],
-                f"{match_date_str}%"
-            ))
-            row = cursor.fetchone()
-            if row:
-                record_id = row[0]
-                # 位置映射失败（unknown）时同步置 ready=0，避免脏数据
-                ready = 0 if pos_info['band_position'] == 'unknown' else 1
-                cursor.execute("""
-                    UPDATE pattern_history
-                    SET band_position = ?, band_progress = ?, band_direction = ?, band_position_ready = ?
-                    WHERE record_id = ?
-                """, (
-                    pos_info['band_position'],
-                    pos_info['band_progress'],
-                    pos_info['band_direction'],
-                    ready,
-                    record_id
-                ))
-                update_count += cursor.rowcount
-            else:
-                fail_count += 1
-
-        except Exception as e:
-            print(f"      ⚠️ 位置映射失败: {match_date} | {e}")
-            fail_count += 1
-
-    # 不在此 commit/close——由 close_global_connection 统一提交（批量模式）
+    print("\n[4] 位置映射回写（计算精确 band_position，公共函数）...")
+    update_count, fail_count = backfill_positions_for_results(
+        symbol, all_results, ohlc, all_waves
+    )
     print(f"    ✅ 更新了 {update_count} 条记录的 band_position")
     if fail_count > 0:
         print(f"    ⚠️ {fail_count} 条记录未匹配到")

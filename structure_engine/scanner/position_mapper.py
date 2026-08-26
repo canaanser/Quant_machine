@@ -247,6 +247,82 @@ def is_position_ready(position_info: Dict) -> bool:
     return position_info.get('band_position') not in (None, 'unknown')
 
 
+def backfill_positions_for_results(
+    symbol: str,
+    results: List[Dict],
+    ohlc: pd.DataFrame,
+    waves: List[Dict],
+    conn=None,
+) -> tuple:
+    """
+    位置映射回写公共函数（2026-08-26 小二陈提取，消除 test_scanner_v2 / scanner_scheduler 重复）：
+    遍历形态扫描结果，计算每条 band_position 并 UPDATE pattern_history。
+    位置为 unknown（映射失败）时同步置 ready=0，避免脏数据。
+
+    参数：
+        symbol: 股票代码
+        results: 形态扫描结果列表（含 date / pattern_id / _wave 等）
+        ohlc: 完整 OHLCV（用于取价格和交易日序列）
+        waves: 波段列表（位置映射用）
+        conn: 数据库连接（默认用 data_writer 全局连接，配合批量模式）
+
+    返回：(update_count, fail_count)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    if conn is None:
+        from .data_writer import get_global_connection
+        conn = get_global_connection()
+
+    update_count = 0
+    fail_count = 0
+    cursor = conn.cursor()
+
+    for r in results:
+        match_date = r['date']
+        try:
+            if match_date in ohlc.index:
+                match_price = ohlc.loc[match_date, 'close']
+            else:
+                match_date_dt = pd.to_datetime(match_date)
+                if match_date_dt in ohlc.index:
+                    match_price = ohlc.loc[match_date_dt, 'close']
+                else:
+                    continue
+
+            pos_info = map_position(match_date, match_price, waves, trading_dates=ohlc.index)
+
+            if hasattr(match_date, 'strftime'):
+                match_date_str = match_date.strftime('%Y-%m-%d')
+            else:
+                match_date_str = str(match_date)[:10]
+
+            cursor.execute("""
+                SELECT record_id FROM pattern_history
+                WHERE symbol = ? AND pattern_id = ? AND match_date LIKE ?
+            """, (symbol, r['pattern_id'], f"{match_date_str}%"))
+            row = cursor.fetchone()
+            if row:
+                record_id = row[0]
+                # 位置映射失败（unknown）时同步置 ready=0，避免脏数据
+                ready = 0 if pos_info['band_position'] == 'unknown' else 1
+                cursor.execute("""
+                    UPDATE pattern_history
+                    SET band_position = ?, band_progress = ?, band_direction = ?, band_position_ready = ?
+                    WHERE record_id = ?
+                """, (pos_info['band_position'], pos_info['band_progress'],
+                      pos_info['band_direction'], ready, record_id))
+                update_count += cursor.rowcount
+            else:
+                fail_count += 1
+        except Exception as e:
+            logger.warning("  位置映射失败 %s: %s", match_date, e)
+            fail_count += 1
+
+    return update_count, fail_count
+
+
 def get_position_label(position_info: Dict) -> str:
     """获取位置标签的友好名称"""
     pos = position_info.get('band_position', 'unknown')

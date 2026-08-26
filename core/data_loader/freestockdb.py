@@ -1,137 +1,16 @@
-import pandas as pd
+# -*- coding: utf-8 -*-
+"""
+freestockdb 数据源（SDK + HTTP 适配 + 缓存）
+（2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
+"""
+import json
+import urllib.request
+import urllib.parse
 from pathlib import Path
+import pandas as pd
 from config import START_DATE, END_DATE
-from .data_structures import metadata
-
-
-def fetch_data_yfinance(tickers, start=START_DATE, end=END_DATE) -> metadata:
-    # 延迟导入：避免在未安装 yfinance 的环境（如 WSL/Linux）import 本模块失败
-    import yfinance as yf
-    if isinstance(tickers, str):
-        tickers = [tickers]
-    data = yf.download(tickers, start=start, end=end, progress=False)
-    price_df = data['Adj Close']
-    if isinstance(price_df, pd.Series):
-        price_df = price_df.to_frame(tickers[0])
-    benchmark = yf.download('SPY', start=start, end=end, progress=False)['Adj Close']
-    benchmark.name = 'SPY'
-    return metadata(price=price_df, benchmark=benchmark, open_price=pd.DataFrame()).align()
-
-
-def fetch_data_akshare(stock_list, benchmark_code="sh000300", start=START_DATE, end=END_DATE) -> metadata:
-    import akshare as ak
-    all_close = {}
-    start_str = start.replace('-', '')
-    end_str = end.replace('-', '')
-    for code in stock_list:
-        try:
-            df = ak.stock_zh_a_hist(symbol=code, period="daily",
-                                    start_date=start_str, end_date=end_str)
-            if df is not None and not df.empty:
-                df['日期'] = pd.to_datetime(df['日期'])
-                df = df.set_index('日期')
-                all_close[code] = df['收盘']
-        except Exception as e:
-            print(f"获取 {code} 失败: {e}")
-            continue
-    price_df = pd.DataFrame(all_close)
-    try:
-        index_df = ak.index_zh_a_hist(symbol=benchmark_code, period="daily",
-                                      start_date=start_str, end_date=end_str)
-        if index_df is not None and not index_df.empty:
-            index_df['日期'] = pd.to_datetime(index_df['日期'])
-            index_df = index_df.set_index('日期')
-            benchmark = index_df['收盘']
-            benchmark.name = benchmark_code
-        else:
-            raise Exception("获取基准数据为空")
-    except Exception as e:
-        print(f"获取基准失败: {e}, 使用等权平均替代")
-        benchmark = price_df.mean(axis=1)
-        benchmark.name = 'EqualWeight'
-    return metadata(price=price_df, benchmark=benchmark, open_price=pd.DataFrame()).align()
-
-
-def fetch_data_baostock(stock_list, start=START_DATE, end=END_DATE) -> metadata:
-    import baostock as bs
-    lg = bs.login()
-    print('BaoStock login respond error_code:' + lg.error_code)
-    print('BaoStock login respond error_msg:' + lg.error_msg)
-    all_close = {}
-    fields = "date,code,open,high,low,close,volume,amount"
-    for code in stock_list:
-        try:
-            code_str = str(code).zfill(6)
-            if code_str.startswith(('6', '5')):
-                bs_code = f"sh.{code_str}"
-            else:
-                bs_code = f"sz.{code_str}"
-            rs = bs.query_history_k_data_plus(bs_code, fields,
-                                              start_date=start, end_date=end,
-                                              frequency="d", adjustflag="3")
-            data_list = []
-            while (rs.error_code == '0') and rs.next():
-                data_list.append(rs.get_row_data())
-            if not data_list:
-                print(f"警告: {code} 未获取到数据")
-                continue
-            df = pd.DataFrame(data_list, columns=rs.fields)
-            for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.set_index('date')
-            all_close[code] = df['close']
-        except Exception as e:
-            print(f"获取 {code} 失败: {e}")
-            continue
-    bs.logout()
-    price_df = pd.DataFrame(all_close)
-    if price_df.empty:
-        print("错误: 未获取到任何股票数据")
-        return metadata(price=pd.DataFrame(), benchmark=pd.Series())
-    benchmark = price_df.mean(axis=1)
-    benchmark.name = 'EqualWeight'
-    return metadata(price=price_df, benchmark=benchmark, open_price=pd.DataFrame()).align()
-
-
-# ===== stockdb HTTP 数据本地缓存（2026-08-26 小二陈） =====
-# 拉取过的 K 线缓存到 data/cache/stockdb/，二次扫描直接读缓存（零 HTTP 请求），
-# 仅对缓存缺失的年份增量拉取。避免"每跑一次重拉一遍"。
-_STOCKDB_CACHE_DIR = Path(__file__).parent.parent / "data" / "cache" / "stockdb"
-
-
-def _cache_path(symbol: str, frequency: str):
-    freq_tag = "1d" if frequency in (None, "1d", "1D") else str(frequency)
-    return _STOCKDB_CACHE_DIR / f"{symbol}_{freq_tag}.csv"
-
-
-def _load_stockdb_cache(symbol: str, frequency: str):
-    """读缓存，返回 date 索引的 DataFrame，无缓存/损坏返回 None"""
-    p = _cache_path(symbol, frequency)
-    if not p.exists():
-        return None
-    try:
-        df = pd.read_csv(p)
-        if 'date' not in df.columns or df.empty:
-            return None
-        df['date'] = pd.to_datetime(df['date'], errors='coerce')
-        df = df.dropna(subset=['date']).set_index('date').sort_index()
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
-    except Exception:
-        return None
-
-
-def _save_stockdb_cache(symbol: str, frequency: str, df) -> None:
-    """写缓存（覆盖合并后的全量结果）"""
-    try:
-        _STOCKDB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        df.to_csv(_cache_path(symbol, frequency), encoding='utf-8')
-    except Exception as e:
-        print(f"⚠️ 缓存写入失败 {symbol}: {e}")
-
+from ..data_structures import metadata
+from .base import _STOCKDB_CACHE_DIR, _cache_path, _load_stockdb_cache, _save_stockdb_cache
 
 def fetch_data_stockdb_http(
     stock_list,
@@ -273,7 +152,6 @@ def fetch_data_stockdb_http(
         info=info_df
     ).align()
 
-
 def fetch_data_freestockdb(
     stock_list,
     start=START_DATE,
@@ -395,26 +273,3 @@ def fetch_data_freestockdb(
         import traceback
         traceback.print_exc()
         return metadata(price=pd.DataFrame(), benchmark=pd.Series())
-
-
-def load_data(source='yfinance', **kwargs) -> metadata:
-    if source == 'yfinance':
-        return fetch_data_yfinance(**kwargs)
-    elif source == 'akshare':
-        if 'tickers' in kwargs:
-            kwargs['stock_list'] = kwargs.pop('tickers')
-        return fetch_data_akshare(**kwargs)
-    elif source == 'baostock':
-        if 'tickers' in kwargs:
-            kwargs['stock_list'] = kwargs.pop('tickers')
-        return fetch_data_baostock(**kwargs)
-    elif source == 'freestockdb':
-        if 'tickers' in kwargs:
-            kwargs['stock_list'] = kwargs.pop('tickers')
-        return fetch_data_freestockdb(**kwargs)
-    elif source == 'stockdb_http':
-        if 'tickers' in kwargs:
-            kwargs['stock_list'] = kwargs.pop('tickers')
-        return fetch_data_stockdb_http(**kwargs)
-    else:
-        raise ValueError("source 只支持 'yfinance', 'akshare', 'baostock', 'freestockdb' 或 'stockdb_http'")

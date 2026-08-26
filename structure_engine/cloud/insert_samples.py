@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path(__file__).parent.parent.parent / "tests" / "data" / "index_store" / "pattern_history.db"
+from config.config import PATTERN_DB_PATH as DB_PATH  # 统一路径（2026-08-26）
 
 
 def get_connection():
