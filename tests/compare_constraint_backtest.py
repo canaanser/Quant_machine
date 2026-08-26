@@ -102,7 +102,10 @@ def run_one(tickers, start, end, apply_constraint, source='freestockdb'):
         engine = make_constrained_engine(strategy)
     else:
         engine = BacktestPipeline(strategy, top_n=10, verbose=False)
-    engine.run(market_data, initial_cash=INITIAL_CASH)
+    # 抑制交易明细打印（只保留核心指标），避免终端刷屏
+    import contextlib, io
+    with contextlib.redirect_stdout(io.StringIO()):
+        engine.run(market_data, initial_cash=INITIAL_CASH)
     elapsed = time.perf_counter() - t0
     return {
         'total_return': engine.total_return,
@@ -124,47 +127,52 @@ def main():
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
 
-    print("=" * 66)
-    print(f"有约束 vs 无约束 · 回测对比（{len(tickers)} 只: {tickers}）")
-    print(f"区间: {args.start} ~ {args.end} | 数据源: {args.source}")
-    print("约束: 价格近120日区间位置加权（低位1.15/中低0.70/中高0.89/高位1.16，全量标定）")
-    print("=" * 66)
-    print()
+    print(f"▶ 回测 {len(tickers)} 只: {tickers} | {args.start}~{args.end} | {args.source}")
 
     # 无约束
-    print("▶ 第 1 轮：无约束回测 ...")
+    print("▶ 第 1 轮：无约束 ...")
     base, t_base = run_one(tickers, args.start, args.end, False, source=args.source)
-    print(f"  完成，耗时 {t_base:.1f}s")
-    print(f"  累计收益: {base['total_return']:.2%}  夏普: {base['sharpe']:.4f}  "
-          f"回撤: {base['max_drawdown']:.2%}  交易: {base['trades']}")
-    print()
+    print(f"  ✅ 完成 {t_base:.1f}s 收益={base['total_return']:.2%} 夏普={base['sharpe']:.4f}")
 
     # 有约束
-    print("▶ 第 2 轮：有约束回测（位置权重） ...")
+    print("▶ 第 2 轮：有约束 ...")
     cons, t_cons = run_one(tickers, args.start, args.end, True, source=args.source)
-    print(f"  完成，耗时 {t_cons:.1f}s")
-    print(f"  累计收益: {cons['total_return']:.2%}  夏普: {cons['sharpe']:.4f}  "
-          f"回撤: {cons['max_drawdown']:.2%}  交易: {cons['trades']}")
-    print()
+    print(f"  ✅ 完成 {t_cons:.1f}s 收益={cons['total_return']:.2%} 夏普={cons['sharpe']:.4f}")
 
     # 对比
-    print("=" * 66)
-    print("对比")
-    print("=" * 66)
-    print(f"{'指标':<12} {'无约束':>12} {'有约束':>12} {'差值':>12}")
+    lines = []
+    lines.append("=" * 66)
+    lines.append(f"有约束 vs 无约束 · 回测对比（{len(tickers)} 只: {tickers}）")
+    lines.append(f"区间: {args.start} ~ {args.end} | 数据源: {args.source}")
+    lines.append("约束: 价格近120日区间位置加权（低位1.15/中低0.70/中高0.89/高位1.16）")
+    lines.append("=" * 66)
+    lines.append(f"{'指标':<12} {'无约束':>12} {'有约束':>12} {'差值':>12}")
     for k in ['total_return', 'sharpe', 'max_drawdown', 'trades']:
         b, c = base[k], cons[k]
-        print(f"{k:<12} {b:>12.4f} {c:>12.4f} {c-b:>+12.4f}")
-    print()
-    print(f"耗时: 无约束 {t_base:.1f}s | 有约束 {t_cons:.1f}s | 合计 {t_base+t_cons:.1f}s")
-    print(f"速度评估: 单只约 {(t_base+t_cons)/len(tickers):.1f}s/只 "
-          f"→ 10只约 {(t_base+t_cons)/len(tickers)*10:.0f}s, 20只约 {(t_base+t_cons)/len(tickers)*20:.0f}s")
-    print()
+        lines.append(f"{k:<12} {b:>12.4f} {c:>12.4f} {c-b:>+12.4f}")
+    lines.append("")
+    lines.append(f"耗时: 无约束 {t_base:.1f}s | 有约束 {t_cons:.1f}s | 合计 {t_base+t_cons:.1f}s")
+    lines.append(f"速度评估: 单只约 {(t_base+t_cons)/len(tickers):.1f}s/只 "
+                 f"→ 10只约 {(t_base+t_cons)/len(tickers)*10:.0f}s, 20只约 {(t_base+t_cons)/len(tickers)*20:.0f}s")
+    lines.append("")
     if cons['sharpe'] > base['sharpe']:
-        print("结论: 夏普率提升 ✅（约束方向正确）")
+        lines.append("结论: 夏普率提升 ✅（约束方向正确）")
     else:
-        print("结论: 夏普率未提升 ❌（需调整权重或约束逻辑）")
-    print("⚠️ 注意: 权重映射为初步标定，正式接入需训练/测试分割校准。")
+        lines.append("结论: 夏普率未提升 ❌（需调整权重或约束逻辑）")
+    lines.append("⚠️ 注意: 权重映射为初步标定，正式接入需训练/测试分割校准。")
+    report = "\n".join(lines)
+
+    # 写文件（与终端共享目录，老板跑完我直接读）
+    out_path = PROJECT_ROOT / "outputs" / "constraint_result.txt"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report, encoding='utf-8')
+
+    # 终端只显示精简结果
+    print("\n✅ 回测完成！完整对比已写入 outputs/constraint_result.txt")
+    print(f"   夏普: 无约束 {base['sharpe']:.4f} → 有约束 {cons['sharpe']:.4f} "
+          f"({cons['sharpe']-base['sharpe']:+.4f})")
+    print(f"   收益: 无约束 {base['total_return']:.2%} → 有约束 {cons['total_return']:.2%}")
+    print(f"   交易: {base['trades']} → {cons['trades']}  耗时: {t_base+t_cons:.0f}s")
 
 
 if __name__ == "__main__":
