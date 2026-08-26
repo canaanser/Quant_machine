@@ -108,7 +108,7 @@ class _BacktestBase:
         self.total_return = eq.iloc[-1] / eq.iloc[0] - 1
         days = len(eq)
         self.annual_return = (1 + self.total_return) ** (252 / days) - 1
-        daily_ret = eq.pct_change().dropna()
+        daily_ret = eq.pct_change(fill_method=None).dropna()
         self.sharpe = (daily_ret.mean() / daily_ret.std()) * np.sqrt(252) if daily_ret.std() != 0 else 0
         rolling_max = eq.expanding().max()
         drawdown = (eq - rolling_max) / rolling_max
@@ -130,7 +130,7 @@ class _BacktestBase:
         fig.add_trace(go.Scatter(x=eq.index, y=eq, mode='lines', name='策略资金', line=dict(color='blue', width=2)), row=1, col=1)
         fig.add_trace(go.Scatter(x=benchmark_curve.index, y=benchmark_curve, mode='lines', name='基准(MA20)', line=dict(color='gray', width=1.5, dash='dash')), row=1, col=1)
         fig.add_trace(go.Scatter(x=drawdown.index, y=drawdown, mode='lines', name='回撤', fill='tozeroy', line=dict(color='red', width=1), fillcolor='rgba(255,0,0,0.2)'), row=2, col=1)
-        daily_ret = eq.pct_change().dropna()
+        daily_ret = eq.pct_change(fill_method=None).dropna()
         fig.add_trace(go.Histogram(x=daily_ret, nbinsx=30, name='日收益率', marker_color='green', opacity=0.7), row=3, col=1)
         fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="black", row=3, col=1)
         fig.update_layout(height=800, showlegend=True, hovermode='x unified', template='plotly_white')

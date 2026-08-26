@@ -55,7 +55,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             self.total_return = normalized.iloc[-1] / normalized.iloc[0] - 1
             days = len(normalized)
             self.annual_return = (1 + self.total_return) ** (252 / days) - 1
-            daily_ret = normalized.pct_change().dropna()
+            daily_ret = normalized.pct_change(fill_method=None).dropna()
             self.sharpe = (daily_ret.mean() / daily_ret.std()) * np.sqrt(252) if daily_ret.std() != 0 else 0
             rolling_max = normalized.expanding().max()
             drawdown = (normalized - rolling_max) / rolling_max
@@ -70,8 +70,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             return self
 
         market_data.validate()
-        returns = price_data.pct_change().dropna(how='all')
-        market_ret = market_ret_raw.pct_change().dropna()
+        returns = price_data.pct_change(fill_method=None).dropna(how='all')
+        market_ret = market_ret_raw.pct_change(fill_method=None).dropna()
         common_idx = returns.index.intersection(market_ret.index)
         returns = returns.loc[common_idx]
         market_ret = market_ret.loc[common_idx]
