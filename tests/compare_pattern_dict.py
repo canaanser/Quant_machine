@@ -98,7 +98,7 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
 
     if mode == 'dict':
         # 模式A（已证不行）：乘分数（对照保留，独立扫描一次）
-        def fuse_with_dict(score_series, market_data, today):
+        def fuse_with_dict(self, score_series, market_data, today):
             from structure_engine.scanner import scan_patterns
             score_series = orig_fuse(score_series, market_data, today)
             for symbol in list(score_series.index):
@@ -132,7 +132,7 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
                 except Exception:
                     continue
             return score_series
-        engine._scan_and_fuse_patterns = fuse_with_dict
+        engine._scan_and_fuse_patterns = fuse_with_dict.__get__(engine, type(engine))
         return engine
 
     if mode == 'dict_pos':
@@ -141,7 +141,7 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
         engine._pos_caps = {}
         import pandas as _pd
 
-        def fuse_record_caps(score_series, market_data, today):
+        def fuse_record_caps(self, score_series, market_data, today):
             from structure_engine.scanner import scan_patterns
             caps = {}
             for symbol in score_series.index:
@@ -159,7 +159,26 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
                         continue
                     scan_results = scan_patterns(hist_ohlc, debug=False)
                     today_str = today.strftime('%Y-%m-%d') if hasattr(today, 'strftime') else str(today)
-                    # 强弱分：当日形态查字典
+                    # 融合（复制主循环逻辑，一次扫描两用——不重复调用 orig_fuse）
+                    from config.config import WEIGHT_SOURCE
+                    from structure_engine.signals.signal_weights import get_direction_weight
+                    pattern_strength = 0.0
+                    direction = 'neutral'
+                    for r in scan_results:
+                        if r.get('date', '')[:10] == today_str:
+                            st = r.get('strength', 0.0)
+                            if st > pattern_strength:
+                                pattern_strength = st
+                                direction = r.get('category', 'neutral')
+                    if pattern_strength > 0:
+                        traditional_score = score_series.get(symbol, 0.0)
+                        w = get_direction_weight(direction, source=WEIGHT_SOURCE)
+                        effective = pattern_strength * w
+                        if effective > 0:
+                            score_series[symbol] = self.strategy.fuse_with_patterns(
+                                traditional_score, effective, w=0.3
+                            )
+                    # 强弱分 → 仓位系数
                     window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
                     best = 1.0
                     if len(window) >= 30:
@@ -177,10 +196,9 @@ def make_engine(strategy, mode, strength_dict, verbose=False):
                 except Exception:
                     continue
             engine._pos_caps = caps
-            # 仍执行原融合（保持与现状一致的行为基础）
-            return orig_fuse(score_series, market_data, today)
+            return score_series
 
-        engine._scan_and_fuse_patterns = fuse_record_caps
+        engine._scan_and_fuse_patterns = fuse_record_caps.__get__(engine, type(engine))
 
         orig_approve = engine.risk_manager.approve_order
         def approve_with_caps(signal, account, current_price):
