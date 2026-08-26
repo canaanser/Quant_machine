@@ -62,7 +62,8 @@ def main():
             continue
 
     # 收集: (形态类, 冷却天数, 回撤, 逐日收益[1..5], symbol)
-    prev = {}
+    # 冷却 = 距该股该形态【上一个不同日期】的天数（同一天多条记录去重）
+    prev_date = {}  # (sym, pat) -> 上一次出现的日期
     samples = []
     for sym, mdate, mprice, pname in recs:
         if sym not in ohlc_map:
@@ -81,17 +82,24 @@ def main():
             window = ohlc['close'].iloc[max(0, i - LOOKBACK):i + 1]
             peak = float(window.max())
             dd = base / peak - 1 if peak > 0 else 0.0
-            # 冷却天数
-            gap = None
-            if sym in prev:
-                gap = (dt - prev[sym]).days
-            prev[sym] = dt
             if '乌云' in pname:
                 pat = '乌云盖顶'
             elif '十字星' in pname:
                 pat = '十字星'
             else:
                 pat = '其他'
+            key = (sym, pat)
+            gap = None
+            if key in prev_date:
+                # 同一天多条记录：gap 保持上次非同日值；不同日才算冷却
+                if prev_date[key] != dt.date():
+                    gap = (dt.date() - prev_date[key]).days
+                    prev_date[key] = dt.date()
+                # 同日记录：gap 沿用 None（视为同一次出现的重复），跳过不计
+                else:
+                    continue
+            else:
+                prev_date[key] = dt.date()
             daily = [float(ohlc['close'].iloc[i+j]) / base - 1 for j in range(1, 6)]
             samples.append({'pat': pat, 'gap': gap, 'dd': dd, 'd': daily, 'sym': sym})
         except Exception:
