@@ -91,6 +91,11 @@ class RiskManager:
                 return None
             
             if raw_score > 0:
+                if current_price is None or pd.isna(current_price):
+                    # 防御：NaN 价格（停牌/数据缺失）直接拒绝买入
+                    if self.verbose:
+                        logger.debug(f"   ❌ 买入被拒: {symbol}, 当前价格无效 (NaN)")
+                    return None
                 effective_score = min(1.0, raw_score)
                 min_ratio = self.min_position_ratio
                 max_ratio = self.base_position_ratio

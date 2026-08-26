@@ -129,7 +129,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     logger.debug("⚠️ 未加载开盘价数据，所有价格将使用收盘价")
             for symbol in price_data.columns:
                 if symbol not in current_prices and today in price_data.index:
-                    current_prices[symbol] = float(price_data.loc[today, symbol])
+                    val = price_data.loc[today, symbol]
+                    if pd.isna(val):  # 停牌/数据缺失：跳过 NaN，避免下游 int(NaN) 崩溃
+                        continue
+                    current_prices[symbol] = float(val)
                     if symbol not in current_prices:
                         if self.verbose:
                             logger.debug(f"⚠️ 价格完全缺失 ({symbol} at {today})，使用前一日价格")
