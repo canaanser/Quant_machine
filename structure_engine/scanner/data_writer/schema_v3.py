@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS pattern_history (
     occurrence_rank INTEGER,             -- 该股该形态第几次出现（首现=1）
 
     -- ===== 逐日收益（新增，5列替代复合） =====
+    -- 口径（2026-08-27 老板确认）：存【累计收益】而非每日收益率
+    --   return_1d = close[+1]/close[0]-1  （第1天相对匹配日的累计）
+    --   return_5d = close[+5]/close[0]-1  （第5天相对匹配日的累计）
+    -- 理由：累计的相邻差值 = 每日收益率（return_2d-return_1d=第2天日收益），
+    --       存累计可反推每日，存每日反而推不出累计（信息最全的选择）
     return_1d REAL, return_2d REAL, return_3d REAL, return_4d REAL, return_5d REAL,
 
     -- ===== 旧评分（保留兼容，新评分另立） =====
