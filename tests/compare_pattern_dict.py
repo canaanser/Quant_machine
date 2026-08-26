@@ -92,66 +92,94 @@ def build_strength_dict(db_path=None):
 
 def make_engine(strategy, mode, strength_dict, verbose=False):
     engine = BacktestPipeline(strategy, top_n=10, verbose=verbose)
+    orig_fuse = engine._scan_and_fuse_patterns
     if mode == 'plain':
         return engine
 
-    # 共用：计算某股票当日的形态强弱分（0.4~1.6）
-    def get_strength(market_data, symbol, today):
-        try:
-            ohlc = market_data.get_ohlc(symbol)
-            if ohlc is None or ohlc.empty or today not in ohlc.index:
-                return 1.0
-            today_pos = ohlc.index.get_loc(today)
-            hist = ohlc.iloc[max(0, today_pos - 60):today_pos + 1]
-            if len(hist) < 5:
-                return 1.0
-            results = scan_patterns(hist, debug=False)
-            today_str = today.strftime('%Y-%m-%d')
-            window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
-            if len(window) < 30:
-                return 1.0
-            lo, hi = float(window.min()), float(window.max())
-            if hi <= lo:
-                return 1.0
-            pos = (float(ohlc['close'].iloc[today_pos]) - lo) / (hi - lo)
-            zone = ('valley' if pos < 0.2 else 'rise_lower' if pos < 0.4
-                    else 'rise_upper' if pos < 0.6 else 'peak' if pos < 0.8 else 'fall_upper')
-            best = 1.0
-            for r in results:
-                if r.get('date', '')[:10] == today_str:
-                    name = r.get('pattern_type', '')
-                    s = strength_dict.get((name, zone), 1.0)
-                    best = max(best, s)
-            return best
-        except Exception:
-            return 1.0
-
     if mode == 'dict':
-        # 模式A（已证不行）：乘分数（对照保留）
-        orig_fuse = engine._scan_and_fuse_patterns
+        # 模式A（已证不行）：乘分数（对照保留，独立扫描一次）
         def fuse_with_dict(score_series, market_data, today):
+            from structure_engine.scanner import scan_patterns
             score_series = orig_fuse(score_series, market_data, today)
             for symbol in list(score_series.index):
-                s = get_strength(market_data, symbol, today)
-                if s != 1.0:
-                    score_series[symbol] = score_series[symbol] * s
+                try:
+                    ohlc = market_data.get_ohlc(symbol)
+                    if ohlc is None or ohlc.empty or today not in ohlc.index:
+                        continue
+                    today_pos = ohlc.index.get_loc(today)
+                    hist = ohlc.iloc[max(0, today_pos - 60):today_pos + 1]
+                    if len(hist) < 5:
+                        continue
+                    results = scan_patterns(hist, debug=False)
+                    window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
+                    if len(window) < 30:
+                        continue
+                    lo, hi = float(window.min()), float(window.max())
+                    if hi <= lo:
+                        continue
+                    pos = (float(ohlc['close'].iloc[today_pos]) - lo) / (hi - lo)
+                    zone = ('valley' if pos < 0.2 else 'rise_lower' if pos < 0.4
+                            else 'rise_upper' if pos < 0.6 else 'peak' if pos < 0.8 else 'fall_upper')
+                    today_str = today.strftime('%Y-%m-%d')
+                    best = 1.0
+                    for r in results:
+                        if r.get('date', '')[:10] == today_str:
+                            name = r.get('pattern_type', '')
+                            s = strength_dict.get((name, zone), 1.0)
+                            best = max(best, s)
+                    if best != 1.0:
+                        score_series[symbol] = score_series[symbol] * best
+                except Exception:
+                    continue
             return score_series
         engine._scan_and_fuse_patterns = fuse_with_dict
         return engine
 
     if mode == 'dict_pos':
         # 模式B：独立仓位维度（不改分数/排序）——强弱分 → 仓位系数
+        # 优化：完全接管扫描（复制主循环逻辑 + 记录强弱分），一次扫描两处用
         engine._pos_caps = {}
-        orig_fuse = engine._scan_and_fuse_patterns
+        import pandas as _pd
+
         def fuse_record_caps(score_series, market_data, today):
-            score_series = orig_fuse(score_series, market_data, today)
+            from structure_engine.scanner import scan_patterns
             caps = {}
-            for symbol in list(score_series.index):
-                s = get_strength(market_data, symbol, today)
-                # 强弱分 0.4~1.6 → 仓位系数 0.5~1.3（温和，克制）
-                caps[symbol] = 0.5 + (s - 0.4) / 1.2 * 0.8
+            for symbol in score_series.index:
+                try:
+                    ohlc = market_data.get_ohlc(symbol)
+                    if ohlc is None or ohlc.empty:
+                        continue
+                    try:
+                        today_pos = ohlc.index.get_loc(today)
+                        start_pos = max(0, today_pos - 60)
+                        hist_ohlc = ohlc.iloc[start_pos:today_pos + 1]
+                    except (KeyError, TypeError):
+                        hist_ohlc = ohlc.loc[:today]
+                    if len(hist_ohlc) < 5:
+                        continue
+                    scan_results = scan_patterns(hist_ohlc, debug=False)
+                    today_str = today.strftime('%Y-%m-%d') if hasattr(today, 'strftime') else str(today)
+                    # 强弱分：当日形态查字典
+                    window = ohlc['close'].iloc[max(0, today_pos - RANGE_LOOKBACK):today_pos + 1]
+                    best = 1.0
+                    if len(window) >= 30:
+                        lo, hi = float(window.min()), float(window.max())
+                        if hi > lo:
+                            pos = (float(ohlc['close'].iloc[today_pos]) - lo) / (hi - lo)
+                            zone = ('valley' if pos < 0.2 else 'rise_lower' if pos < 0.4
+                                    else 'rise_upper' if pos < 0.6 else 'peak' if pos < 0.8 else 'fall_upper')
+                            for r in scan_results:
+                                if r.get('date', '')[:10] == today_str:
+                                    name = r.get('pattern_type', '')
+                                    s = strength_dict.get((name, zone), 1.0)
+                                    best = max(best, s)
+                    caps[symbol] = 0.5 + (best - 0.4) / 1.2 * 0.8  # 强弱分→仓位系数
+                except Exception:
+                    continue
             engine._pos_caps = caps
-            return score_series
+            # 仍执行原融合（保持与现状一致的行为基础）
+            return orig_fuse(score_series, market_data, today)
+
         engine._scan_and_fuse_patterns = fuse_record_caps
 
         orig_approve = engine.risk_manager.approve_order
