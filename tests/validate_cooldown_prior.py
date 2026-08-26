@@ -6,16 +6,15 @@ import sqlite3
 import numpy as np
 import pandas as pd
 from collections import defaultdict
+from pathlib import Path
 
-PROJECT_ROOT = '/mnt/e/stockgate/Quant_Alpha_System'
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+PROJECT_ROOT = Path(__file__).parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-conn = sqlite3.connect('data/index_store/pattern_history.db')
+conn = sqlite3.connect(str(PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"))
 cur = conn.cursor()
 
-# 需要日线算回撤——用缓存数据（000063/601728）或全量需Windows。
-# 先看缓存能覆盖多少
 from core.data_loader import load_data
 parser = argparse.ArgumentParser()
 parser.add_argument("--tickers", default="000063,601728")
@@ -86,7 +85,6 @@ for pid, name in [('1_neutral_0_doji','十字星'), ('2_bearish_0_dark_cloud','�
                 arr = np.array(lst)
                 print(f"{gb:<10} {db:<12} {len(lst):>5} {(arr>0).mean():>6.0%} {arr.mean():>+8.2%}")
 conn.close()
-out = PROJECT_ROOT + "/outputs/cooldown_prior_result.txt"
-import os
-os.makedirs(os.path.dirname(out), exist_ok=True)
+out = PROJECT_ROOT / "outputs" / "cooldown_prior_result.txt"
+out.parent.mkdir(parents=True, exist_ok=True)
 print(f"✅ 完成，结果见 outputs/cooldown_prior_result.txt")
