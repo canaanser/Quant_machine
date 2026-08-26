@@ -7,7 +7,7 @@
 
 约束逻辑（数据驱动 + 无未来函数）：
   - 位置代理：当日价格在"近120日区间"的位置（只用截至当日数据）
-  - 权重映射（数据实证）：低位1.4 / 中低1.2 / 中高0.7 / 高位0.4
+  - 权重映射（全量 20 只 3.5 年标定）：低位1.15 / 中低0.70 / 中高0.89 / 高位1.16
   - 回测中每次形态融合后，按当日位置权重乘到融合分数上
 
 用法（Windows，数据走 stockdb SDK）：
@@ -31,20 +31,20 @@ from core.data_loader import load_data
 from core.backtest import BacktestPipeline
 from core.strategy import TrendStrengthStrategy
 
-DEFAULT_START, DEFAULT_END = "2025-01-01", "2026-07-31"
+DEFAULT_START, DEFAULT_END = "2023-01-01", "2026-07-31"  # 全量 3.5 年
 INITIAL_CASH = 500000
 
 
-# ===== 位置权重（回测可用版：价格在近 N 日区间的位置，无未来函数） =====
-# 数据实证（000063 一年，240 个形态触发日）：
-#   区间位置 0.00-0.25 → +1.39% | 0.25-0.50 → +2.34% | 0.50-0.75 → -2.15% | 0.75-1.00 → -2.53%
-# 权重映射：低位加权、高位降权（低买高卖）
+# ===== 位置权重（全量 20 只 3.5 年标定，数据驱动） =====
+# 数据实证（34651 样本）：区间位置 0-0.25 → +1.16% | 0.25-0.5 → +0.27%
+#   | 0.5-0.75 → +0.64% | 0.75-1.0 → +1.18%（两端强、中间弱）
+# 权重 = 1 + 超额收益/2%，clip [0.4, 1.5]
 RANGE_LOOKBACK = 120  # 近 120 日区间
 RANGE_WEIGHTS = [
-    (0.00, 0.25, 1.4),   # 低位：加权
-    (0.25, 0.50, 1.2),
-    (0.50, 0.75, 0.7),   # 高位：降权
-    (0.75, 1.01, 0.4),
+    (0.00, 0.25, 1.15),   # 低位（超跌/谷底）：加权
+    (0.25, 0.50, 0.70),   # 中低（震荡）：降权
+    (0.50, 0.75, 0.89),   # 中高（震荡上沿）：略降
+    (0.75, 1.01, 1.16),   # 高位（突破新高）：加权
 ]
 
 def price_in_range_weight(ohlc, i) -> float:
@@ -94,7 +94,7 @@ def run_one(tickers, start, end, apply_constraint, source='freestockdb'):
         print("   1. stockdb 服务是否启动（127.0.0.1:7899）")
         print("   2. 股票代码是否正确（6位，如 000063）")
         print("   3. 该区间是否有数据")
-        print("   4. 或改用 --source http 走本地缓存（data/cache/stockdb/*.csv）")
+        print("   4. 或改用 --source stockdb_http 走本地缓存（data/cache/stockdb/*.csv）")
         sys.exit(1)
     strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
     t0 = time.perf_counter()
@@ -119,7 +119,7 @@ def main():
     parser.add_argument("--start", default=DEFAULT_START)
     parser.add_argument("--end", default=DEFAULT_END)
     parser.add_argument("--source", default="freestockdb",
-                        help="数据源：freestockdb(SDK) / http(本地缓存)，默认 freestockdb")
+                        help="数据源：freestockdb(SDK) / stockdb_http(本地缓存)，默认 freestockdb")
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
@@ -127,7 +127,7 @@ def main():
     print("=" * 66)
     print(f"有约束 vs 无约束 · 回测对比（{len(tickers)} 只: {tickers}）")
     print(f"区间: {args.start} ~ {args.end} | 数据源: {args.source}")
-    print("约束: 价格近120日区间位置加权（低位1.4/中低1.2/中高0.7/高位0.4，无未来函数）")
+    print("约束: 价格近120日区间位置加权（低位1.15/中低0.70/中高0.89/高位1.16，全量标定）")
     print("=" * 66)
     print()
 
