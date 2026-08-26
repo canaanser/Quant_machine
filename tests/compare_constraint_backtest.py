@@ -2,13 +2,14 @@
 """
 有约束 vs 无约束 · 回测对比脚本（速度测试版）
 ==============================================
-用途：单只（默认）或多只股票，对比"无约束回测"与"位置权重约束回测"的绩效，
+用途：单只（默认）或多只股票，对比"无约束回测"与"约束回测"的绩效，
       并输出耗时，用于评估约束层接入的成本与收益。
 
-约束逻辑（数据驱动 + 无未来函数）：
+约束逻辑（独立仓位维度，不改分数/排序，无未来函数）：
   - 位置代理：当日价格在"近120日区间"的位置（只用截至当日数据）
-  - 权重映射（全量 20 只 3.5 年标定）：低位1.15 / 中低0.70 / 中高0.89 / 高位1.16
-  - 回测中每次形态融合后，按当日位置权重乘到融合分数上
+  - 语义：高位区（0.75-1.0）压缩买入仓位上限 ×0.4（防追高），
+         中高（0.5-0.75）×0.8，低位/中低正常（×1.0）
+  - 实现：包装 RiskManager.approve_order，不改 score、不改 Top-N 排序
 
 用法（Windows，数据走 stockdb SDK）：
     cd E:/stockgate/Quant_Alpha_System
@@ -16,7 +17,7 @@
     python tests/compare_constraint_backtest.py --tickers 000063,600498 --start 2025-01-01 --end 2026-07-31
 
 说明：
-  - 这是"看速度 + 看方向"的版本；权重映射待正式接入时用训练/测试分割校准
+  - 这是"看速度 + 看方向"的版本；仓位系数待正式接入时用训练/测试分割校准
 """
 import argparse
 import sys
@@ -35,20 +36,20 @@ DEFAULT_START, DEFAULT_END = "2023-01-01", "2026-07-31"  # 全量 3.5 年
 INITIAL_CASH = 500000
 
 
-# ===== 位置权重（全量 20 只 3.5 年标定，数据驱动） =====
+# ===== 位置仓位系数（全量 20 只 3.5 年标定，数据驱动） =====
 # 数据实证（34651 样本）：区间位置 0-0.25 → +1.16% | 0.25-0.5 → +0.27%
-#   | 0.5-0.75 → +0.64% | 0.75-1.0 → +1.18%（两端强、中间弱）
-# 权重 = 1 + 超额收益/2%，clip [0.4, 1.5]
+#   | 0.5-0.75 → +0.64% | 0.75-1.0 → +1.18%
+# 语义：约束层不改分数/排序，只压缩高位区买入的仓位上限（防追高）
+# 低位/中低：正常仓位（系数 1.0）| 中高：0.8 | 高位：0.4（减半以上）
 RANGE_LOOKBACK = 120  # 近 120 日区间
-RANGE_WEIGHTS = [
-    (0.00, 0.25, 1.15),   # 低位（超跌/谷底）：加权
-    (0.25, 0.50, 0.70),   # 中低（震荡）：降权
-    (0.50, 0.75, 0.89),   # 中高（震荡上沿）：略降
-    (0.75, 1.01, 1.16),   # 高位（突破新高）：加权
+RANGE_POS_CAPS = [
+    (0.00, 0.50, 1.0),   # 低位/中低：正常仓位
+    (0.50, 0.75, 0.8),   # 中高：仓位上限 ×0.8
+    (0.75, 1.01, 0.4),   # 高位：仓位上限 ×0.4（防追高）
 ]
 
-def price_in_range_weight(ohlc, i) -> float:
-    """用当日价格在近 RANGE_LOOKBACK 日区间的位置映射权重（只用截至当日数据）"""
+def price_in_range_pos_cap(ohlc, i) -> float:
+    """当日价格在近 RANGE_LOOKBACK 日区间的位置 → 仓位系数（只用截至当日数据）"""
     window = ohlc['close'].iloc[max(0, i - RANGE_LOOKBACK):i + 1]
     if len(window) < 30:
         return 1.0
@@ -56,33 +57,57 @@ def price_in_range_weight(ohlc, i) -> float:
     if hi <= lo:
         return 1.0
     pos = (float(ohlc['close'].iloc[i]) - lo) / (hi - lo)
-    for lo_b, hi_b, w in RANGE_WEIGHTS:
+    for lo_b, hi_b, cap in RANGE_POS_CAPS:
         if lo_b <= pos < hi_b:
-            return w
+            return cap
     return 1.0
 
 
-# ===== 有约束引擎：包装 _scan_and_fuse_patterns =====
+# ===== 有约束引擎：不改分数/排序，包装风控层压缩高位区仓位 =====
 def make_constrained_engine(strategy, verbose=False):
     engine = BacktestPipeline(strategy, top_n=10, verbose=verbose)
+
+    # 记录当日各 symbol 的仓位系数（在形态融合时算好，供风控使用）
+    engine._pos_caps = {}
+
     orig_fuse = engine._scan_and_fuse_patterns
 
     def fused_with_constraint(score_series, market_data, today):
+        # 注意：score_series 原样返回（不改分数/排序），只预计算仓位系数
         score_series = orig_fuse(score_series, market_data, today)
+        caps = {}
         for symbol in list(score_series.index):
             try:
                 ohlc = market_data.get_ohlc(symbol)
                 if ohlc is None or ohlc.empty or today not in ohlc.index:
                     continue
                 today_pos = ohlc.index.get_loc(today)
-                w = price_in_range_weight(ohlc, today_pos)
-                if w != 1.0:
-                    score_series[symbol] = score_series[symbol] * w
+                caps[symbol] = price_in_range_pos_cap(ohlc, today_pos)
             except Exception:
                 continue
+        engine._pos_caps = caps  # 供当日风控使用
         return score_series
 
     engine._scan_and_fuse_patterns = fused_with_constraint
+
+    # 包装风控：买入审批前按当日仓位系数压缩 max_pos_ratio
+    orig_approve = engine.risk_manager.approve_order
+
+    def approve_with_constraint(signal, account, current_price):
+        symbol = signal.get('symbol')
+        if signal.get('action') == 'BUY' and symbol in engine._pos_caps:
+            cap = engine._pos_caps[symbol]
+            if cap < 1.0:
+                # 压缩该笔买入的单票仓位上限（临时修改，用完恢复）
+                orig_max = engine.risk_manager.max_pos_ratio
+                engine.risk_manager.max_pos_ratio = orig_max * cap
+                try:
+                    return orig_approve(signal, account, current_price)
+                finally:
+                    engine.risk_manager.max_pos_ratio = orig_max
+        return orig_approve(signal, account, current_price)
+
+    engine.risk_manager.approve_order = approve_with_constraint
     return engine
 
 
@@ -144,7 +169,7 @@ def main():
     lines.append("=" * 66)
     lines.append(f"有约束 vs 无约束 · 回测对比（{len(tickers)} 只: {tickers}）")
     lines.append(f"区间: {args.start} ~ {args.end} | 数据源: {args.source}")
-    lines.append("约束: 价格近120日区间位置加权（低位1.15/中低0.70/中高0.89/高位1.16）")
+    lines.append("约束: 独立仓位维度（高位×0.4/中高×0.8/低位正常，不改分数）")
     lines.append("=" * 66)
     lines.append(f"{'指标':<12} {'无约束':>12} {'有约束':>12} {'差值':>12}")
     for k in ['total_return', 'sharpe', 'max_drawdown', 'trades']:
@@ -158,8 +183,8 @@ def main():
     if cons['sharpe'] > base['sharpe']:
         lines.append("结论: 夏普率提升 ✅（约束方向正确）")
     else:
-        lines.append("结论: 夏普率未提升 ❌（需调整权重或约束逻辑）")
-    lines.append("⚠️ 注意: 权重映射为初步标定，正式接入需训练/测试分割校准。")
+        lines.append("结论: 夏普率未提升 ❌（需调整仓位系数或约束逻辑）")
+    lines.append("⚠️ 注意: 仓位系数为初步标定，正式接入需训练/测试分割校准。")
     report = "\n".join(lines)
 
     # 写文件（与终端共享目录，老板跑完我直接读）
