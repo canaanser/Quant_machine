@@ -86,9 +86,16 @@ def make_constrained_engine(strategy, verbose=False):
     return engine
 
 
-def run_one(tickers, start, end, apply_constraint):
-    market_data = load_data(source='freestockdb', tickers=tickers,
+def run_one(tickers, start, end, apply_constraint, source='freestockdb'):
+    market_data = load_data(source=source, tickers=tickers,
                             start=start, end=end, frequency='1d', fq='qfq')
+    if market_data is None or market_data.price is None or market_data.price.empty:
+        print("\n❌ 数据加载失败：返回空数据。请检查：")
+        print("   1. stockdb 服务是否启动（127.0.0.1:7899）")
+        print("   2. 股票代码是否正确（6位，如 000063）")
+        print("   3. 该区间是否有数据")
+        print("   4. 或改用 --source http 走本地缓存（data/cache/stockdb/*.csv）")
+        sys.exit(1)
     strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
     t0 = time.perf_counter()
     if apply_constraint:
@@ -111,20 +118,22 @@ def main():
     parser.add_argument("--tickers", default="000063", help="股票代码，逗号分隔（默认 000063）")
     parser.add_argument("--start", default=DEFAULT_START)
     parser.add_argument("--end", default=DEFAULT_END)
+    parser.add_argument("--source", default="freestockdb",
+                        help="数据源：freestockdb(SDK) / http(本地缓存)，默认 freestockdb")
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
 
     print("=" * 66)
     print(f"有约束 vs 无约束 · 回测对比（{len(tickers)} 只: {tickers}）")
-    print(f"区间: {args.start} ~ {args.end}")
+    print(f"区间: {args.start} ~ {args.end} | 数据源: {args.source}")
     print("约束: 价格近120日区间位置加权（低位1.4/中低1.2/中高0.7/高位0.4，无未来函数）")
     print("=" * 66)
     print()
 
     # 无约束
     print("▶ 第 1 轮：无约束回测 ...")
-    base, t_base = run_one(tickers, args.start, args.end, False)
+    base, t_base = run_one(tickers, args.start, args.end, False, source=args.source)
     print(f"  完成，耗时 {t_base:.1f}s")
     print(f"  累计收益: {base['total_return']:.2%}  夏普: {base['sharpe']:.4f}  "
           f"回撤: {base['max_drawdown']:.2%}  交易: {base['trades']}")
@@ -132,7 +141,7 @@ def main():
 
     # 有约束
     print("▶ 第 2 轮：有约束回测（位置权重） ...")
-    cons, t_cons = run_one(tickers, args.start, args.end, True)
+    cons, t_cons = run_one(tickers, args.start, args.end, True, source=args.source)
     print(f"  完成，耗时 {t_cons:.1f}s")
     print(f"  累计收益: {cons['total_return']:.2%}  夏普: {cons['sharpe']:.4f}  "
           f"回撤: {cons['max_drawdown']:.2%}  交易: {cons['trades']}")
