@@ -14,12 +14,14 @@ from conftest import cache_available
 pytestmark = pytest.mark.cache
 
 # ===== 基线指标（000063, 2025-01-01 ~ 2026-07-31, TrendStrength 5/20, top10, 50万）=====
+# 2026-08-26 更新：修复"穿越时空"bug（current_prices 统一收盘价）后的真实盘尾模型基线。
+# 修复前旧基线（含开盘价算仓位的虚高）：0.0650 / 0.0426 / 0.2946 / -0.2790 / 148
 BASELINE = {
-    "total_return": 0.06503000000000037,
-    "annual_return": 0.042551688001843724,
-    "sharpe": 0.2945632492100555,
-    "max_drawdown": -0.2790214695711906,
-    "trades": 148,
+    "total_return": 0.08178799999999997,
+    "annual_return": 0.0533730811479991,
+    "sharpe": 0.3227700768643153,
+    "max_drawdown": -0.26401849888064105,
+    "trades": 125,
 }
 
 TICKER = "000063"

@@ -110,32 +110,16 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 self._record_snapshot(today)
                 continue
 
+            # 盘尾交易模型：信号/仓位/成交全部锚定当天收盘价
+            # （2026-08-26 小二陈修复：原先 open_price 优先会导致"收盘后决策、
+            #  却用当天开盘价算仓位"——逆时间操作，违反盘尾交易原则）
             current_prices = {}
-            open_price_available = hasattr(market_data, 'open_price') and not market_data.open_price.empty
-            if open_price_available:
-                for symbol in market_data.open_price.columns:
-                    if today in market_data.open_price.index:
-                        val = market_data.open_price.loc[today, symbol]
-                        if not pd.isna(val) and val > 0:
-                            current_prices[symbol] = float(val)
-                        else:
-                            if today in price_data.index:
-                                current_prices[symbol] = float(price_data.loc[today, symbol])
-                    else:
-                        if today in price_data.index:
-                            current_prices[symbol] = float(price_data.loc[today, symbol])
-            else:
-                if self.verbose:
-                    logger.debug("⚠️ 未加载开盘价数据，所有价格将使用收盘价")
             for symbol in price_data.columns:
-                if symbol not in current_prices and today in price_data.index:
+                if today in price_data.index:
                     val = price_data.loc[today, symbol]
                     if pd.isna(val):  # 停牌/数据缺失：跳过 NaN，避免下游 int(NaN) 崩溃
                         continue
                     current_prices[symbol] = float(val)
-                    if symbol not in current_prices:
-                        if self.verbose:
-                            logger.debug(f"⚠️ 价格完全缺失 ({symbol} at {today})，使用前一日价格")
 
             holdings_dict = {}
             for pos in account.positions:
