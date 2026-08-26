@@ -11,9 +11,9 @@
   - 回测中每次形态融合后，按当日位置权重乘到融合分数上
 
 用法（Windows，数据走 stockdb SDK）：
-    cd E:\stockgate\Quant_Alpha_System
-    python tests\compare_constraint_backtest.py --tickers 000063
-    python tests\compare_constraint_backtest.py --tickers 000063,600498 --start 2025-01-01 --end 2026-07-31
+    cd E:/stockgate/Quant_Alpha_System
+    python tests/compare_constraint_backtest.py --tickers 000063
+    python tests/compare_constraint_backtest.py --tickers 000063,600498 --start 2025-01-01 --end 2026-07-31
 
 说明：
   - 这是"看速度 + 看方向"的版本；权重映射待正式接入时用训练/测试分割校准
