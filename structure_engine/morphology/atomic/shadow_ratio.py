@@ -31,4 +31,5 @@ class ShadowRatio(AtomicFeature):
     def normalize(self, value: float) -> float:
         """影线/实体比值（可到 20+）：以形态自身阈值为基准，达到 min_ratio 的 2 倍即满格"""
         cap = self.min_ratio * 2
+        value = max(0.0, value)  # 防御：负值截断到 0（check() 正常返回恒 >=0）
         return min(1.0, value / cap) if cap > 0 else min(1.0, max(0.0, value))
