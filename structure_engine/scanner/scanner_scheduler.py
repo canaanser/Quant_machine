@@ -30,14 +30,11 @@
 
 import argparse
 import logging
-import sqlite3
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
-
-import pandas as pd
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 LOG_DIR = PROJECT_ROOT / "outputs" / "logs"
@@ -47,14 +44,13 @@ from config.config import SCAN_TICKERS
 from structure_engine.scanner.wave_detector import detect_waves
 from structure_engine.scanner.pattern_scanner import scan_patterns
 from structure_engine.scanner.position_mapper import (
-    map_position, backfill_band_positions, backfill_positions_for_results,
+    backfill_band_positions, backfill_positions_for_results,
 )
 from structure_engine.scanner import data_writer as data_writer_module
 from structure_engine.scanner.data_writer import (
     get_pattern_history_count,
     update_scan_progress,
     get_last_scan_progress,
-    DB_PATH,
     close_global_connection,
     get_global_connection,
     write_wave_history,

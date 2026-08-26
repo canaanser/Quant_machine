@@ -35,7 +35,6 @@ class SimpleStrategy(BaseStrategy):
 
     def score_stocks(self, returns_df, market_ret):
         import pandas as pd
-        import math
         scores = {}
         for code in returns_df.columns:
             series = returns_df[code].dropna()

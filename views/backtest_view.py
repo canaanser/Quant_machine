@@ -318,11 +318,6 @@ def run_backtest():
                                     else:
                                         hold_prices.append(test_price)
                                 
-                                st.caption(f"📊 调试信息：数据长度 = {len(price_data)}，回看天数 = {lookback}，测试价格点数 = {len(price_range)}")
-                                st.caption(f"📊 评分结果数 = {len(scores_list)}，偏多价数 = {len(buy_prices)}，偏空价数 = {len(sell_prices)}，中性价数 = {len(hold_prices)}")
-                                if scores_list:
-                                    scores = [s[1] for s in scores_list]
-                                    st.caption(f"📊 早盘评分范围：{min(scores):.3f} ~ {max(scores):.3f}")
                                 if len(buy_prices) == 0 and len(sell_prices) == 0:
                                     st.warning("⚠️ 当前价格区间下早盘评分全部为中性，可能阈值设得偏保守。")
                                 if scores_list:

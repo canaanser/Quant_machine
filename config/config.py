@@ -2,7 +2,6 @@
 全局配置（原有 + 新增结构感知层参数 + 趋势策略参数 + 权重更新参数）
 """
 
-import os
 from pathlib import Path
 
 # ===== 原有配置 =====

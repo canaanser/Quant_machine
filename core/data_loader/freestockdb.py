@@ -3,10 +3,6 @@
 freestockdb 数据源（SDK + HTTP 适配 + 缓存）
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
-import json
-import urllib.request
-import urllib.parse
-from pathlib import Path
 import pandas as pd
 from config import START_DATE, END_DATE
 from ..data_structures import metadata

@@ -6,10 +6,8 @@
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
 
 from config import COMMISSION, INITIAL_CASH
-from ..data_structures import metadata
 from ..risk_manager import RiskManager
 from ..order_executor import OrderExecutor
 from ..performance_analyzer import PerformanceAnalyzer
@@ -78,7 +76,7 @@ class _BacktestBase:
         if not self.trades.empty:
             print("\n" + "=" * 70)
             print("📊 完整交易汇总（共 {} 笔）".format(len(self.trades)))
-            print(f"  策略：{self.strategy.__class__.__name__}")   # ← 加这一行
+            print(f"  策略：{self.strategy.__class__.__name__}")
             print("=" * 70)
             print(f"{'日期':<12} {'股票':<8} {'操作':<6} {'价格':>8} {'数量':>6} {'总资产':>14}")
             print("-" * 70)
