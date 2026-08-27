@@ -339,46 +339,59 @@ def _merge_stage(tmp_db, res):
 
 
 def _merge_stages(tmp_dbs, results_by_symbol):
-    """批量合并多个暂存库 → 主库（攒批合并，2026-08-28 小二陈）：
-    ATTACH 多个 stage_i + 逐表 INSERT OR REPLACE + 一次 commit，
-    把 ATTACH/DETACH 与事务次数从 N 次降到 1 次（利好 4000 只大池场景）"""
+    """批量合并多个暂存库 → 主库（攒批合并，2026-08-28 小二陈）。
+    注意：SQLite ATTACH 上限 10 个 → 内部按 8 个一组分批 ATTACH+INSERT+DETACH"""
     from structure_engine.scanner.data_writer import get_global_connection, _init_tables
     _init_tables()   # 确保主库表存在（否则未限定表名会被 SQLite 解析到 stage 库）
     conn = get_global_connection()
     conn.commit()
     cur = conn.cursor()
-    success = False
-    attached = []
-    try:
-        for i, tmp_db in enumerate(tmp_dbs):
-            cur.execute(f"ATTACH DATABASE ? AS stage_{i}", (str(tmp_db),))
-            attached.append(i)
-        for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
+    CHUNK = 8        # SQLite ATTACH 上限 10，留余量
+    success_all = True
+    for start in range(0, len(tmp_dbs), CHUNK):
+        chunk = tmp_dbs[start:start + CHUNK]
+        attached = []
+        ok = False
+        try:
+            for i, tmp_db in enumerate(chunk):
+                cur.execute(f"ATTACH DATABASE ? AS stage_{i}", (str(tmp_db),))
+                attached.append(i)
+            for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
+                for i in attached:
+                    cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage_{i}.{table}")
+            conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
             for i in attached:
-                cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage_{i}.{table}")
-        conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
-        for i in attached:
-            cur.execute(f"DETACH DATABASE stage_{i}")
-        conn.commit()          # ② 提交分离
-        success = True
+                cur.execute(f"DETACH DATABASE stage_{i}")
+            conn.commit()          # ② 提交分离
+            ok = True
+        except Exception as e:
+            success_all = False
+            logger.error("  ❌ 合并分组(%d个)失败: %s", len(chunk), e)
+            try:
+                for i in attached:
+                    cur.execute(f"DETACH DATABASE stage_{i}")
+                conn.commit()
+            except Exception:
+                pass
+        finally:
+            if ok:
+                for tmp_db in chunk:
+                    for suffix in ('', '-wal', '-shm', '-journal'):
+                        f = Path(str(tmp_db) + suffix)
+                        try:
+                            if f.exists():
+                                f.unlink()
+                        except Exception:
+                            pass
+    if success_all:
         for tmp_db in tmp_dbs:
             sym = Path(tmp_db).stem.split('_', 2)[-1]   # stage_{pid}_{symbol}.db
             res = results_by_symbol.get(sym)
             if res is not None:
                 res["total_records"] = get_pattern_history_count(sym)
         logger.info("  ✅ 批量合并 %d 个暂存库完成", len(tmp_dbs))
-    finally:
-        if success:
-            for tmp_db in tmp_dbs:
-                for suffix in ('', '-wal', '-shm', '-journal'):
-                    f = Path(str(tmp_db) + suffix)
-                    try:
-                        if f.exists():
-                            f.unlink()
-                    except Exception:
-                        pass
-        else:
-            logger.warning("  ⚠️ 批量合并失败，%d 个暂存库保留（可重扫恢复）", len(tmp_dbs))
+    else:
+        logger.warning("  ⚠️ 批量合并部分失败，失败组暂存库保留（可重扫恢复）")
 
 
 def scan_symbol(
@@ -554,6 +567,15 @@ class ScannerScheduler:
             from config.config import PROJECT_ROOT
             stage_dir = PROJECT_ROOT / "data" / "index_store" / "stage"
             stage_dir.mkdir(parents=True, exist_ok=True)
+            # 清空上次残留暂存库（重扫会重新生成；避免越积越多）
+            try:
+                for f in stage_dir.glob("stage_*.db*"):
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             tasks = [(s, self.start, self.end, self.mode, self.min_amplitude, self.lookback, str(stage_dir))
                      for s in self.tickers]
             with Pool(processes=self.workers) as pool:
