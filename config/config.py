@@ -73,8 +73,7 @@ SCAN_TICKERS = [
     '688256', '688271',
 ]
 
-# ===== AI 算力链龙头池（2026-08-28 小二陈，老板确认 20 只） =====
-# 英伟达财报 + 工信部算力/6G 政策双逻辑：PCB/铜缆/液冷/6G/国产算力/存储/服务器/光模块
+# ===== AI 算力链龙头池（2026-08-28 小二陈，老板确认 20 只） =====# 英伟达财报 + 工信部算力/6G 政策双逻辑：PCB/铜缆/液冷/6G/国产算力/存储/服务器/光模块
 SCAN_TICKERS_AI = [
     # 新加（不在主池）14 只
     '002463',   # 沪电股份 PCB
@@ -98,6 +97,15 @@ SCAN_TICKERS_AI = [
     '300308',   # 中际旭创 光模块
     '300502',   # 新易盛 光模块
     '600498',   # 烽火通信 光通信
+]
+
+# ===== 三大指数池（2026-08-28 小二陈，老板安排单独扫一遍） =====
+# 通达信风格代码：上证指数 999999 / 深证成指 399001 / 创业板指 399006
+# 扫描后进 pattern_history，供"大盘企稳"过滤（深跌信号 + 指数形态验证）
+SCAN_TICKERS_INDEX = [
+    '999999',   # 上证指数
+    '399001',   # 深证成指
+    '399006',   # 创业板指
 ]
 
 # ===== 数据库路径统一（2026-08-26 小二陈） =====
@@ -133,6 +141,6 @@ __all__ = [
     'VOTE_POOL_PATH', 'VOTE_DORMANCY_THRESHOLD', 'VOTE_MIN_OCCURRENCES', 'VOTE_CHECK_INTERVAL',
     'TREND_STRATEGY_WEIGHTS', 'TREND_THRESHOLD', 'TREND_CURVE_POWER',
     'PATTERN_WEIGHT_LEARNING_RATE', 'PATTERN_MIN_SAMPLES',
-    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'PATTERN_DB_PATH',
+    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH',
     'get_data_path', 'ensure_dirs',
 ]
