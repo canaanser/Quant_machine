@@ -54,8 +54,13 @@ def fetch_data_stockdb_http(
         # 2. 确定需要拉取的年份（增量：只拉缓存未覆盖的）
         need_years = list(range(start_year, end_year + 1))
         if cached_df is not None and not cached_df.empty:
-            cached_last = cached_df.index.max().year
-            need_years = [y for y in need_years if y > cached_last]
+            cached_last_date = cached_df.index.max()
+            need_years = [y for y in need_years if y > cached_last_date.year]
+            # 修复（2026-08-28）：缓存尾日期 < 请求结束日时，同一年内的新数据也要补拉
+            # （原逻辑按年份跳过，导致 stockdb 更新到 8/27 后缓存仍停在 8/19）
+            if (str(cached_last_date)[:10] < str(end)[:10]
+                    and cached_last_date.year >= start_year):
+                need_years.append(cached_last_date.year)
 
         # 3. 拉取缺失年份
         rows_all = []
