@@ -267,6 +267,76 @@ def _identify_worker(args):
         return (symbol, None, None, None, f"识别异常: {e}")
 
 
+def _stage_worker(args):
+    """暂存 worker（2026-08-28 小二陈，老板方案）：
+    在独立暂存库中完整扫描一只股票（识别+写库+回填），零锁竞争。
+    返回 (symbol, 暂存库路径, result)；失败返回 (symbol, None, {error})"""
+    import os as _os
+    symbol, start, end, mode, min_amplitude, lookback, stage_dir = args
+
+    # 该 worker 进程内把数据库路径指向独立暂存库
+    from structure_engine.scanner.data_writer import connection as _conn
+    tmp_db = Path(stage_dir) / f"stage_{_os.getpid()}_{symbol}.db"
+    for suffix in ('-wal', '-shm', '-journal'):
+        f = Path(str(tmp_db) + suffix)
+        if f.exists():
+            try:
+                f.unlink()
+            except Exception:
+                pass
+    _conn.DB_PATH = tmp_db
+    _conn._global_conn = None
+
+    try:
+        res = scan_symbol(symbol, start=start, end=end, mode=mode,
+                          min_amplitude=min_amplitude, lookback=lookback)
+        try:
+            close_global_connection()
+        except Exception:
+            pass
+        return (symbol, str(tmp_db), res)
+    except Exception as e:
+        try:
+            close_global_connection()
+        except Exception:
+            pass
+        return (symbol, None, {"symbol": symbol, "error": f"暂存异常: {e}"})
+
+
+def _merge_stage(tmp_db, res):
+    """主进程合并暂存库 → 主库（2026-08-28 小二陈）：
+    ATTACH + INSERT OR REPLACE（按 record_id 覆盖=幂等），先提交数据再 DETACH，成功后才删暂存库"""
+    from structure_engine.scanner.data_writer import get_global_connection, _init_tables
+    _init_tables()   # 确保主库表存在（否则未限定表名会被 SQLite 解析到 stage 库）
+    conn = get_global_connection()
+    conn.commit()
+    cur = conn.cursor()
+    success = False
+    try:
+        cur.execute("ATTACH DATABASE ? AS stage", (str(tmp_db),))
+        for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
+            cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage.{table}")
+        conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
+        cur.execute("DETACH DATABASE stage")
+        conn.commit()          # ② 提交分离
+        success = True
+        res = dict(res or {})
+        res["total_records"] = get_pattern_history_count(res.get("symbol"))
+        logger.info("  ✅ 合并 %s 完成（pattern 累计 %d 条）", res.get("symbol"), res["total_records"])
+    finally:
+        if success:
+            for suffix in ('', '-wal', '-shm', '-journal'):
+                f = Path(str(tmp_db) + suffix)
+                try:
+                    if f.exists():
+                        f.unlink()
+                except Exception:
+                    pass
+        else:
+            logger.warning("  ⚠️ 合并失败，暂存库保留: %s（可重扫该股恢复）", tmp_db)
+    return res
+
+
 def scan_symbol(
     symbol: str,
     start: str = "2016-01-01",
@@ -429,30 +499,28 @@ class ScannerScheduler:
 
     def run_once(self) -> dict:
         """执行一轮扫描：遍历所有配置股票，单只失败不中断整轮。
-        workers>1 时：识别阶段多进程并行（纯内存），写库阶段主进程串行（单写者=令牌语义）"""
+        workers>1 时：worker 在独立暂存库完整扫描（识别+写库并行），主进程最后合并（老板方案 2026-08-28）"""
         logger.info("\n🚀 调度器启动一轮扫描（%d 只股票，模式=%s，workers=%d）",
                     len(self.tickers), self.mode, self.workers)
         results = {}
         if self.workers > 1 and len(self.tickers) > 1:
             from multiprocessing import Pool
-            tasks = [(s, self.start, self.end, self.mode, self.min_amplitude, self.lookback)
+            from config.config import PROJECT_ROOT
+            stage_dir = PROJECT_ROOT / "data" / "index_store" / "stage"
+            stage_dir.mkdir(parents=True, exist_ok=True)
+            tasks = [(s, self.start, self.end, self.mode, self.min_amplitude, self.lookback, str(stage_dir))
                      for s in self.tickers]
             with Pool(processes=self.workers) as pool:
-                for item in pool.imap_unordered(_identify_worker, tasks):
-                    if item is None:
-                        continue
-                    symbol, ohlc, all_waves, all_results, err = item
-                    if err:
-                        logger.error("  ❌ %s 识别跳过: %s", symbol, err)
+                for symbol, tmp_db, res in pool.imap_unordered(_stage_worker, tasks):
+                    if res is None or res.get("error") or not tmp_db:
+                        err = (res or {}).get("error", "暂存返回空")
+                        logger.error("  ❌ %s 暂存失败: %s", symbol, err)
                         results[symbol] = {"symbol": symbol, "error": err}
                         continue
-                    logger.info("\n📦 写库 %s（识别 %d 波段 / %d 形态）", symbol,
-                                len(all_waves), len(all_results))
                     try:
-                        results[symbol] = _write_scan_results(
-                            symbol, ohlc, all_waves, all_results, self.mode)
+                        results[symbol] = _merge_stage(tmp_db, res)
                     except Exception as e:
-                        logger.error("  ❌ %s 写库异常: %s\n%s", symbol, e, traceback.format_exc())
+                        logger.error("  ❌ %s 合并异常: %s\n%s", symbol, e, traceback.format_exc())
                         results[symbol] = {"symbol": symbol, "error": str(e)}
         else:
             for symbol in self.tickers:
