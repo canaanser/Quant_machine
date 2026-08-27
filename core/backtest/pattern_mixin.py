@@ -12,9 +12,10 @@ logger = get_logger(__name__)
 class _PatternScanMixin:
     """形态信号接入与权重更新（run 主循环内两段独立逻辑）"""
 
-    def _load_pattern_index(self):
+    def _load_pattern_index(self, symbols=None):
         """预加载 pattern_history → 内存索引 {(symbol, date): [形态]}（2026-08-28 小二陈）
-        替代"回测每天现扫形态"：扫描器已建表（含先验 strength），回测查表 O(1)。"""
+        替代"回测每天现扫形态"：扫描器已建表（含先验 strength），回测查表 O(1)。
+        优化（2026-08-28）：只加载回测涉及的股票（原全表 36.8 万行 → 数千行）。"""
         self._pattern_index = {}
         self._pattern_index_ok = False
         try:
@@ -24,10 +25,13 @@ class _PatternScanMixin:
                 logger.warning("⚠️ pattern_history.db 不存在，回测无形态信号（先跑扫描器）")
                 return
             conn = sqlite3.connect(f"file:{PATTERN_DB_PATH}?mode=ro", uri=True)
-            rows = conn.execute("""
-                SELECT symbol, substr(match_date,1,10), pattern_id, category, strength
-                FROM pattern_history
-            """).fetchall()
+            sql = "SELECT symbol, substr(match_date,1,10), pattern_id, category, strength FROM pattern_history"
+            if symbols:
+                ph = ",".join("?" * len(symbols))
+                sql += f" WHERE symbol IN ({ph})"
+                rows = conn.execute(sql, list(symbols)).fetchall()
+            else:
+                rows = conn.execute(sql).fetchall()
             conn.close()
             for symbol, date_str, pid, cat, strength in rows:
                 self._pattern_index.setdefault((symbol, date_str), []).append({
@@ -47,7 +51,7 @@ class _PatternScanMixin:
         # 原实现每天 scan_patterns 现扫（5万次重复）+ 无波段位置信息；
         # 现查扫描器建好的 pattern_history（含先验 strength、无未来函数）
         if not getattr(self, '_pattern_index', None):
-            self._load_pattern_index()
+            self._load_pattern_index(list(score_series.index))
         if not getattr(self, '_pattern_index_ok', False):
             return score_series
 
