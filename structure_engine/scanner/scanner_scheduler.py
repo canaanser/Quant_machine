@@ -76,6 +76,197 @@ def setup_logging(verbose: bool = True):
             logger.addHandler(sh)
 
 
+def _write_scan_results(symbol, ohlc, all_waves, all_results, mode="incremental"):
+    """写库阶段（2026-08-28 小二陈）：统一在主进程执行（单写者 = 令牌语义）
+    写 wave + 批量写 pattern/atomic + 位置映射回写 + pending + 处境/冷却 + 断点 + commit"""
+    result = {"symbol": symbol, "mode": mode, "days": len(ohlc), "waves": len(all_waves),
+              "patterns": len(all_results), "updated": 0, "backfilled": 0,
+              "total_records": 0, "situation_backfilled": 0, "error": None}
+
+    from structure_engine.scanner.data_writer import write_pattern_history, write_atomic_features
+
+    # 批量写入模式（攒批减少 fsync）
+    set_batch_mode(True)
+
+    # ---------- 写波段 ----------
+    for wave in all_waves:
+        try:
+            write_wave_history(symbol, wave, scan_version=1)
+        except Exception as e:
+            logger.warning("  ⚠️ 写入波段失败: %s", e)
+
+    # ---------- 写形态 + 原子特征（results 已带全字段） ----------
+    for r in all_results:
+        try:
+            meta = r.get('meta') or {}
+            is_ready = meta.get('band_position_ready', 0)
+            updated_at = datetime.now().isoformat() if is_ready else None
+            write_pattern_history(
+                symbol=symbol,
+                pattern_id=r['pattern_id'],
+                pattern_name=r.get('pattern_type'),
+                category=r.get('category'),
+                match_date=str(r['date']),
+                match_price=r.get('match_price'),
+                open_price=r.get('open_price'),
+                peak_date=meta.get('peak_date'),
+                valley_date=meta.get('valley_date'),
+                band_position=meta.get('band_position'),
+                band_progress=0.0,
+                band_direction=None,
+                wave_id=None,
+                band_position_ready=is_ready,
+                band_position_updated_at=updated_at,
+                return_1d=r.get('r1d'), return_2d=r.get('r2d'), return_3d=r.get('r3d'),
+                return_4d=r.get('r4d'), return_5d=r.get('r5d'),
+                return_10d=meta.get('return_10d'),
+                return_20d=meta.get('return_20d'),
+                composite_return=meta.get('composite_return'),
+                signed_score=meta.get('signed_score'),
+                base_score=meta.get('base_score'),
+                scan_version=1
+            )
+            write_atomic_features(symbol=symbol, date=str(r['date']),
+                                  pattern_id=r['pattern_id'], atom_values=meta.get('atomics'))
+        except Exception as e:
+            logger.warning("  ⚠️ 形态写入失败 %s: %s", r.get('date'), e)
+
+    # ---------- 位置映射回写 ----------
+    try:
+        get_global_connection().commit()  # 解除 batch 自锁
+    except Exception:
+        pass
+    try:
+        update_count, fail_count = backfill_positions_for_results(symbol, all_results, ohlc, all_waves)
+        result["updated"] = update_count
+        logger.info("  ✅ 位置映射回写 %d 条（%d 条未匹配）", update_count, fail_count)
+    except Exception as e:
+        logger.warning("  ⚠️ 位置映射回写异常: %s", e)
+
+    # ---------- pending 回填 ----------
+    try:
+        backfill_total = 0
+        for wave in all_waves:
+            try:
+                backfill_total += backfill_band_positions(symbol, wave, ohlc, data_writer_module)
+            except Exception as e:
+                logger.warning("  ⚠️ 回填失败: %s", e)
+        result["backfilled"] = backfill_total
+        logger.info("  ✅ 共回填 %d 条记录为 ready", backfill_total)
+    except Exception as e:
+        logger.warning("  ⚠️ pending 回填异常: %s", e)
+
+    # ---------- 处境/冷却回填 ----------
+    try:
+        sit_total = backfill_situation_cooldown(symbol, ohlc, data_writer_module)
+        result["situation_backfilled"] = sit_total
+    except Exception as e:
+        logger.warning("  ⚠️ 处境/冷却回填异常: %s", e)
+
+    # ---------- 断点 + 统计 + 提交 ----------
+    if len(ohlc) > 0:
+        last_date = ohlc.index[-1]
+        last_date_str = last_date.strftime('%Y-%m-%d') if hasattr(last_date, 'strftime') else str(last_date)
+        update_scan_progress(symbol=symbol, last_scanned_date=last_date_str,
+                             last_window_start=last_date_str, scan_mode=mode, scan_version=1)
+        logger.info("  ✅ 扫描进度已更新到: %s", last_date_str)
+    result["total_records"] = get_pattern_history_count(symbol)
+    logger.info("  ✅ %s pattern_history 记录数: %d", symbol, result["total_records"])
+
+    set_batch_mode(False)
+    try:
+        get_global_connection().commit()
+    except Exception:
+        pass
+    return result
+
+
+def identify_symbol(symbol, start="2016-01-01", end=None, mode="incremental",
+                    min_amplitude=0.08, lookback=5):
+    """识别阶段（2026-08-28 小二陈）：加载 + 波段识别 + 形态匹配，纯内存不写库。
+    返回 (symbol, ohlc, all_waves, all_results, error)；error 非 None 表示该股跳过"""
+    if end is None:
+        end = datetime.now().strftime("%Y-%m-%d")
+    if symbol and symbol.isdigit() and len(symbol) < 6:
+        symbol = symbol.zfill(6)
+
+    # ---------- 1. 加载 ----------
+    market_data = load_data(
+        source='freestockdb', tickers=[symbol], start=start, end=end, frequency="1d", fq="qfq"
+    )
+    ohlc = market_data.get_ohlc(symbol)
+    if ohlc is None or ohlc.empty:
+        return (symbol, None, None, None, "无数据")
+    logger.info("  ✅ 加载 %d 个交易日（%s ~ %s）", len(ohlc), ohlc.index.min(), ohlc.index.max())
+
+    # ---------- 2. 增量截取 ----------
+    if mode == "incremental":
+        progress = get_last_scan_progress(symbol)
+        if progress:
+            last_date = progress['last_scanned_date']
+            if last_date in ohlc.index:
+                ohlc = ohlc.loc[last_date:]
+            else:
+                ohlc = ohlc[ohlc.index >= last_date]
+            logger.info("  📌 本次扫描新增 %d 个交易日", len(ohlc))
+        else:
+            logger.info("  📌 未找到扫描进度，执行全量扫描")
+    if len(ohlc) < 5:
+        return (symbol, None, None, None, "数据不足5天")
+
+    # ---------- 3. 波段识别 ----------
+    all_waves = detect_waves(
+        df=ohlc, window_days=len(ohlc), lookback=lookback, min_amplitude=min_amplitude
+    )
+
+    # ---------- 4. 形态匹配（不写库） ----------
+    all_results = []
+    for wave in all_waves:
+        peak_date = wave.get('peak_date')
+        valley_date = wave.get('valley_date')
+        if not peak_date or not valley_date:
+            continue
+        start_date = peak_date if wave.get('direction') == 'down' else valley_date
+        end_date = valley_date if wave.get('direction') == 'down' else peak_date
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+        try:
+            end_idx_global = ohlc.index.get_loc(end_date) if end_date in ohlc.index else -1
+            if end_idx_global == -1:
+                continue
+            start_idx_global = ohlc.index.get_loc(start_date)
+            extended_end_idx_global = min(end_idx_global + 20, len(ohlc) - 1)
+            wave_df = ohlc.iloc[start_idx_global:extended_end_idx_global + 1]
+        except Exception:
+            continue
+        if len(wave_df) < 5:
+            continue
+        try:
+            results = scan_patterns(
+                df=wave_df, debug=False, write_to_db=False, symbol=symbol,
+                peak_date=wave['peak_date'], valley_date=wave['valley_date'], band_position=None
+            )
+        except Exception as e:
+            logger.warning("  ⚠️ 波段扫描失败 %s~%s: %s", start_date, end_date, e)
+            continue
+        for r in results:
+            r['_wave'] = wave
+            all_results.append(r)
+
+    logger.info("  ✅ 识别到 %d 个波段，匹配到 %d 个形态", len(all_waves), len(all_results))
+    return (symbol, ohlc, all_waves, all_results, None)
+
+
+def _identify_worker(args):
+    """Pool worker 入口（Windows spawn 需要顶层函数，参数必须可 pickle）"""
+    symbol, start, end, mode, min_amplitude, lookback = args
+    try:
+        return identify_symbol(symbol, start=start, end=end, mode=mode,
+                               min_amplitude=min_amplitude, lookback=lookback)
+    except Exception as e:
+        return (symbol, None, None, None, f"识别异常: {e}")
+
+
 def scan_symbol(
     symbol: str,
     start: str = "2016-01-01",
@@ -161,14 +352,8 @@ def scan_symbol(
     result["waves"] = len(all_waves)
     result["days"] = len(ohlc)
 
-    # 写入波段历史表
-    for wave in all_waves:
-        try:
-            write_wave_history(symbol, wave, scan_version=1)
-        except Exception as e:
-            logger.warning("  ⚠️ 写入波段失败: %s", e)
-
     # ---------- 4. 按波段扫描形态 ----------
+    # 2026-08-28：写库（wave/pattern/回填）统一移到 _write_scan_results（主进程令牌写入）
     all_results = []
     for wave in all_waves:
         peak_date = wave.get('peak_date')
@@ -198,7 +383,7 @@ def scan_symbol(
             results = scan_patterns(
                 df=wave_df,
                 debug=False,
-                write_to_db=True,
+                write_to_db=False,  # 2026-08-28：识别不写库，统一主进程写
                 symbol=symbol,
                 peak_date=wave['peak_date'],
                 valley_date=wave['valley_date'],
@@ -215,59 +400,8 @@ def scan_symbol(
     result["patterns"] = len(all_results)
     logger.info("  ✅ 识别到 %d 个波段，匹配到 %d 个形态", len(all_waves), len(all_results))
 
-    # ---------- 5. 位置映射回写（公共函数，2026-08-26 消除重复） ----------
-    # 修复（2026-08-27）：batch 模式下 scan 写入未提交，同一全局连接再
-    # UPDATE 会 database is locked（单连接自锁）——先强制提交解除。
-    try:
-        from structure_engine.scanner.data_writer import get_global_connection, set_batch_mode as _sbm
-        get_global_connection().commit()
-    except Exception:
-        pass
-    update_count, fail_count = backfill_positions_for_results(
-        symbol, all_results, ohlc, all_waves
-    )
-    result["updated"] = update_count
-    logger.info("  ✅ 位置映射回写 %d 条（%d 条未匹配）", update_count, fail_count)
-
-    # ---------- 6. pending 回填 ----------
-    backfill_total = 0
-    for wave in all_waves:
-        try:
-            backfill_total += backfill_band_positions(symbol, wave, ohlc, data_writer_module)
-        except Exception as e:
-            logger.warning("  ⚠️ 回填失败: %s", e)
-    result["backfilled"] = backfill_total
-    logger.info("  ✅ 共回填 %d 条记录为 ready", backfill_total)
-
-    # ---------- 6.5 V3 处境/冷却回填（2026-08-27）----------
-    sit_total = backfill_situation_cooldown(symbol, ohlc, data_writer_module)
-    result["situation_backfilled"] = sit_total
-
-    # ---------- 7. 更新扫描进度 ----------
-    # 2026-08-27：full 模式也写断点（原来只 incremental 写），中断后可用 incremental 续扫
-    if len(ohlc) > 0:
-        last_date = ohlc.index[-1]
-        last_date_str = last_date.strftime('%Y-%m-%d') if hasattr(last_date, 'strftime') else str(last_date)
-        update_scan_progress(
-            symbol=symbol,
-            last_scanned_date=last_date_str,
-            last_window_start=last_date_str,
-            scan_mode=mode,
-            scan_version=1
-        )
-        logger.info("  ✅ 扫描进度已更新到: %s", last_date_str)
-
-    # ---------- 8. 统计 ----------
-    result["total_records"] = get_pattern_history_count(symbol)
-    logger.info("  ✅ %s pattern_history 记录数: %d", symbol, result["total_records"])
-
-    # 关闭批量模式并统一提交本只股票的写入
-    set_batch_mode(False)
-    try:
-        get_global_connection().commit()
-    except Exception:
-        pass
-    return result
+    # ---------- 5+ 写库阶段（统一主进程执行，2026-08-28） ----------
+    return _write_scan_results(symbol, ohlc, all_waves, all_results, mode)
 
 
 class ScannerScheduler:
@@ -282,6 +416,7 @@ class ScannerScheduler:
         min_amplitude: float = 0.08,
         lookback: int = 5,
         verbose: bool = True,
+        workers: int = 1,
     ):
         self.tickers = tickers
         self.start = start
@@ -289,27 +424,52 @@ class ScannerScheduler:
         self.mode = mode
         self.min_amplitude = min_amplitude
         self.lookback = lookback
+        self.workers = max(1, int(workers))
         setup_logging(verbose)
 
     def run_once(self) -> dict:
-        """执行一轮扫描：遍历所有配置股票，单只失败不中断整轮"""
-        logger.info("\n🚀 调度器启动一轮扫描（%d 只股票，模式=%s）", len(self.tickers), self.mode)
+        """执行一轮扫描：遍历所有配置股票，单只失败不中断整轮。
+        workers>1 时：识别阶段多进程并行（纯内存），写库阶段主进程串行（单写者=令牌语义）"""
+        logger.info("\n🚀 调度器启动一轮扫描（%d 只股票，模式=%s，workers=%d）",
+                    len(self.tickers), self.mode, self.workers)
         results = {}
-        for symbol in self.tickers:
-            try:
-                results[symbol] = scan_symbol(
-                    symbol=symbol,
-                    start=self.start,
-                    end=self.end,
-                    mode=self.mode,
-                    min_amplitude=self.min_amplitude,
-                    lookback=self.lookback,
-                )
-            except Exception as e:
-                logger.error("  ❌ %s 扫描异常: %s\n%s", symbol, e, traceback.format_exc())
-                results[symbol] = {"symbol": symbol, "error": str(e)}
-            finally:
-                close_global_connection()
+        if self.workers > 1 and len(self.tickers) > 1:
+            from multiprocessing import Pool
+            tasks = [(s, self.start, self.end, self.mode, self.min_amplitude, self.lookback)
+                     for s in self.tickers]
+            with Pool(processes=self.workers) as pool:
+                for item in pool.imap_unordered(_identify_worker, tasks):
+                    if item is None:
+                        continue
+                    symbol, ohlc, all_waves, all_results, err = item
+                    if err:
+                        logger.error("  ❌ %s 识别跳过: %s", symbol, err)
+                        results[symbol] = {"symbol": symbol, "error": err}
+                        continue
+                    logger.info("\n📦 写库 %s（识别 %d 波段 / %d 形态）", symbol,
+                                len(all_waves), len(all_results))
+                    try:
+                        results[symbol] = _write_scan_results(
+                            symbol, ohlc, all_waves, all_results, self.mode)
+                    except Exception as e:
+                        logger.error("  ❌ %s 写库异常: %s\n%s", symbol, e, traceback.format_exc())
+                        results[symbol] = {"symbol": symbol, "error": str(e)}
+        else:
+            for symbol in self.tickers:
+                try:
+                    results[symbol] = scan_symbol(
+                        symbol=symbol,
+                        start=self.start,
+                        end=self.end,
+                        mode=self.mode,
+                        min_amplitude=self.min_amplitude,
+                        lookback=self.lookback,
+                    )
+                except Exception as e:
+                    logger.error("  ❌ %s 扫描异常: %s\n%s", symbol, e, traceback.format_exc())
+                    results[symbol] = {"symbol": symbol, "error": str(e)}
+                finally:
+                    close_global_connection()
         logger.info("\n🏁 本轮扫描完成")
         return results
 
@@ -410,6 +570,8 @@ def main():
     parser.add_argument("--min-amplitude", type=float, default=0.08, help="波段最小振幅")
     parser.add_argument("--start-at", default=None,
                         help="从指定股票代码开始扫描（跳过之前的，用于中断后续跑）")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="并行识别进程数（默认1=串行；建议4，需内存≥2GB空闲）")
     args = parser.parse_args()
 
     if args.tickers:
@@ -432,6 +594,7 @@ def main():
         end=args.end,
         mode=args.mode,
         min_amplitude=args.min_amplitude,
+        workers=args.workers,
     )
     if args.interval and args.interval > 0:
         sched.run_loop(args.interval)

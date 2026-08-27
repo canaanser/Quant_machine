@@ -270,6 +270,10 @@ def scan_patterns(
                     "generation": generation,
                     "idx": i,
                     "date": match_date,
+                    # V3 扩表字段（2026-08-28 小二陈：识别阶段备好，供并行架构主进程统一写库）
+                    "match_price": match_price,
+                    "open_price": open_price,
+                    "r1d": r1d, "r2d": r2d, "r3d": r3d, "r4d": r4d, "r5d": r5d,
                     "strength": round(overall_strength, 4),
                     "meta": {
                         "window": window,
