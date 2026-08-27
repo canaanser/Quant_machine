@@ -212,6 +212,13 @@ def scan_symbol(
     logger.info("  ✅ 识别到 %d 个波段，匹配到 %d 个形态", len(all_waves), len(all_results))
 
     # ---------- 5. 位置映射回写（公共函数，2026-08-26 消除重复） ----------
+    # 修复（2026-08-27）：batch 模式下 scan 写入未提交，同一全局连接再
+    # UPDATE 会 database is locked（单连接自锁）——先强制提交解除。
+    try:
+        from structure_engine.scanner.data_writer import get_global_connection, set_batch_mode as _sbm
+        get_global_connection().commit()
+    except Exception:
+        pass
     update_count, fail_count = backfill_positions_for_results(
         symbol, all_results, ohlc, all_waves
     )
@@ -227,6 +234,10 @@ def scan_symbol(
             logger.warning("  ⚠️ 回填失败: %s", e)
     result["backfilled"] = backfill_total
     logger.info("  ✅ 共回填 %d 条记录为 ready", backfill_total)
+
+    # ---------- 6.5 V3 处境/冷却回填（2026-08-27）----------
+    sit_total = backfill_situation_cooldown(symbol, ohlc, data_writer_module)
+    result["situation_backfilled"] = sit_total
 
     # ---------- 7. 更新扫描进度 ----------
     if mode == "incremental" and len(ohlc) > 0:
@@ -342,3 +353,73 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def backfill_situation_cooldown(symbol: str, ohlc, data_writer_module) -> int:
+    """回填 V3 处境与冷却字段（2026-08-27 老板确认）
+    - drawdown_from_peak: 近120日高点回撤深度（先验可算）
+    - days_since_peak: 距近120日高点天数
+    - cooldown_days: 距该股该形态上次出现天数（冷却期）
+    用完整 ohlc 逐条 UPDATE，无未来函数（只用截至 match_date 的数据）。
+    """
+    import numpy as np
+    conn = data_writer_module.get_global_connection()
+    cursor = conn.cursor()
+
+    # 取该股所有已写入的形态记录（按日期排序）
+    rows = cursor.execute("""
+        SELECT record_id, substr(match_date,1,10), pattern_id
+        FROM pattern_history WHERE symbol=? ORDER BY match_date
+    """, (symbol,)).fetchall()
+
+    # 计算每只股票的 120 日滚动高点（截至各日期）
+    close = ohlc['close'].astype(float)
+    date_list = list(ohlc.index)
+    date_strs = [d.strftime('%Y-%m-%d') for d in date_list]
+
+    # 预计算每个交易日的回撤深度 + 距高点天数（滚动120）
+    dd_map = {}   # date_str -> (drawdown, days_since_peak)
+    for i in range(len(date_list)):
+        dstr = date_strs[i]
+        window = close.iloc[max(0, i-120):i+1]
+        peak = float(window.max())
+        cur = float(close.iloc[i])
+        dd = cur/peak - 1 if peak > 0 else 0.0
+        peak_idx = window.idxmax()
+        # 距高点天数（用索引差）
+        try:
+            peak_pos = list(window.index).index(peak_idx)
+            days = i - (max(0, i-120) + peak_pos)
+        except Exception:
+            days = 0
+        dd_map[dstr] = (dd, days)
+
+    # 冷却期：按 (pattern_id) 记录上次出现日期
+    last_seen = {}   # pattern_id -> date_str
+    updated = 0
+    for record_id, mdate, pattern_id in rows:
+        if mdate not in dd_map:
+            continue
+        dd, days = dd_map[mdate]
+        # 冷却天数 = 距上次同形态出现
+        cooldown = None
+        if pattern_id in last_seen:
+            try:
+                from datetime import datetime
+                d1 = datetime.strptime(mdate, '%Y-%m-%d')
+                d0 = datetime.strptime(last_seen[pattern_id], '%Y-%m-%d')
+                cooldown = (d1 - d0).days
+            except Exception:
+                cooldown = None
+        last_seen[pattern_id] = mdate
+
+        cursor.execute("""
+            UPDATE pattern_history SET drawdown_from_peak=?, days_since_peak=?, cooldown_days=?
+            WHERE record_id=?
+        """, (dd, days, cooldown, record_id))
+        updated += 1
+        if updated % 500 == 0:
+            data_writer_module._maybe_commit(conn)
+    data_writer_module._maybe_commit(conn)
+    logger.info("  ✅ 处境/冷却回填 %d 条", updated)
+    return updated

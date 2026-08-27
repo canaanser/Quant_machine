@@ -210,6 +210,15 @@ def scan_patterns(
                 signed = signed_log_score(composite)
                 base = calc_base_score(composite)
 
+                # V3 扩表（2026-08-27 老板确认）：逐日收益 1~5 天（累计口径，可反推每日）
+                r1d = _calc_return(klines, i, 1)
+                r2d = _calc_return(klines, i, 2)
+                r3d = _calc_return(klines, i, 3)
+                r4d = _calc_return(klines, i, 4)
+                r5d = _calc_return(klines, i, 5)
+                # 匹配日开盘价（颜色 = match_price vs open_price 可推导，不单独存颜色）
+                open_price = float(klines[i].get('open', 0)) if klines[i].get('open') else None
+
                 # ===== 判断位置是否有效，决定 pending/ready 状态 =====
                 # band_position 为 None 或 "unknown" 时，标记为 pending（0）
                 # 否则标记为 ready（1）
@@ -226,6 +235,7 @@ def scan_patterns(
                             category=category,
                             match_date=str(match_date),
                             match_price=match_price,
+                            open_price=open_price,
                             peak_date=peak_date,
                             valley_date=valley_date,
                             band_position=band_position,
@@ -234,7 +244,8 @@ def scan_patterns(
                             wave_id=None,
                             band_position_ready=is_ready,
                             band_position_updated_at=updated_at,
-                            return_5d=r5,
+                            return_1d=r1d, return_2d=r2d, return_3d=r3d,
+                            return_4d=r4d, return_5d=r5d,
                             return_10d=r10,
                             return_20d=r20,
                             composite_return=composite,

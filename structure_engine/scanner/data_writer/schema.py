@@ -47,7 +47,11 @@ def _init_tables():
             wave_id TEXT,
             band_position_ready INTEGER DEFAULT 0,
             band_position_updated_at TEXT,
-            return_5d REAL,
+            open_price REAL,
+            return_1d REAL, return_2d REAL, return_3d REAL, return_4d REAL, return_5d REAL,
+            drawdown_from_peak REAL,
+            days_since_peak INTEGER,
+            cooldown_days INTEGER,
             return_10d REAL,
             return_20d REAL,
             composite_return REAL,
@@ -185,6 +189,16 @@ def _init_tables():
         ("wave_id", "TEXT"),
         ("band_position_ready", "INTEGER DEFAULT 0"),
         ("band_position_updated_at", "TEXT"),
+        # V3 扩表（2026-08-27 老板确认）：逐日收益/开盘价/处境/冷却
+        ("open_price", "REAL"),
+        ("return_1d", "REAL"),
+        ("return_2d", "REAL"),
+        ("return_3d", "REAL"),
+        ("return_4d", "REAL"),
+        ("return_5d", "REAL"),
+        ("drawdown_from_peak", "REAL"),
+        ("days_since_peak", "INTEGER"),
+        ("cooldown_days", "INTEGER"),
     ]
     for field_name, field_type in fields_to_add:
         try:

@@ -24,7 +24,12 @@ def write_pattern_history(
     wave_id: Optional[str] = None,
     band_position_ready: int = 0,
     band_position_updated_at: Optional[str] = None,
-    return_5d: float = 0.0,
+    open_price: Optional[float] = None,
+    return_1d: float = 0.0, return_2d: float = 0.0,
+    return_3d: float = 0.0, return_4d: float = 0.0, return_5d: float = 0.0,
+    drawdown_from_peak: Optional[float] = None,
+    days_since_peak: Optional[int] = None,
+    cooldown_days: Optional[int] = None,
     return_10d: float = 0.0,
     return_20d: float = 0.0,
     composite_return: float = 0.0,
@@ -53,25 +58,40 @@ def write_pattern_history(
     """, (symbol, pattern_id, str(match_date)[:10]))
     existing = cursor.fetchone()
     if existing:
+        # 幂等命中：补更新 V3 新字段（2026-08-27：重扫时旧记录也要填 open/逐日收益）
+        try:
+            cursor.execute("""
+                UPDATE pattern_history SET
+                    open_price = ?,
+                    return_1d = ?, return_2d = ?, return_3d = ?, return_4d = ?, return_5d = ?
+                WHERE record_id = ?
+            """, (open_price, return_1d, return_2d, return_3d, return_4d, return_5d, existing[0]))
+            _maybe_commit(conn)
+        except Exception:
+            pass
         return existing[0]
 
     cursor.execute("""
         INSERT INTO pattern_history (
             record_id, symbol, pattern_id, pattern_name, category,
-            match_date, match_price,
+            match_date, match_price, open_price,
             peak_date, valley_date,
             band_position, band_progress, band_direction, wave_id,
             band_position_ready, band_position_updated_at,
-            return_5d, return_10d, return_20d, composite_return,
+            return_1d, return_2d, return_3d, return_4d, return_5d,
+            drawdown_from_peak, days_since_peak, cooldown_days,
+            return_10d, return_20d, composite_return,
             signed_score, base_score, scan_version, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         record_id, symbol, pattern_id, pattern_name, category,
-        match_date, match_price,
+        match_date, match_price, open_price,
         peak_date, valley_date,
         band_position, band_progress, band_direction, wave_id,
         band_position_ready, band_position_updated_at,
-        return_5d, return_10d, return_20d, composite_return,
+        return_1d, return_2d, return_3d, return_4d, return_5d,
+        drawdown_from_peak, days_since_peak, cooldown_days,
+        return_10d, return_20d, composite_return,
         signed_score, base_score, scan_version, datetime.now().isoformat()
     ))
 
