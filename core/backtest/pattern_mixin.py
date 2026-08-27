@@ -53,6 +53,9 @@ class _PatternScanMixin:
 
         today_str = today.strftime('%Y-%m-%d') if hasattr(today, 'strftime') else str(today)
 
+        # 修复（2026-08-28）：score_series 可能是 int64 dtype，写入 float 触发 pandas FutureWarning
+        score_series = score_series.astype(float)
+
         for symbol in score_series.index:
             try:
                 recs = self._pattern_index.get((symbol, today_str))
