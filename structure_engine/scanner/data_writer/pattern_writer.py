@@ -3,7 +3,7 @@
 形态历史记录写入（幂等）
 （2026-08-26 小二陈：从 data_writer.py 拆出，接口不变）
 """
-import uuid
+import hashlib
 from datetime import datetime
 from typing import Optional
 from .connection import get_global_connection, _maybe_commit
@@ -43,7 +43,11 @@ def write_pattern_history(
     """
     _init_tables()
 
-    record_id = f"REC-{datetime.now().strftime('%Y%m%d')}-{symbol}-{uuid.uuid4().hex[:4]}"
+    # 确定性 record_id（2026-08-28 小二陈）：原 uuid4 随机 4 hex 仅 16bit，
+    # 记录一多必碰撞 → UNIQUE 冲突丢主表记录（旧代码 debug 静默吞没暴露）。
+    # 改 sha1 前 12 hex（48bit）：同 (symbol, pattern_id, match_date) 永远同 id，幂等且永不撞。
+    key = f"{symbol}|{pattern_id}|{str(match_date)[:10]}"
+    record_id = "REC-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
     conn = get_global_connection()
     cursor = conn.cursor()
