@@ -63,6 +63,10 @@ def main():
     parser.add_argument("--tickers", default=None)
     parser.add_argument("--signal", default="broad", choices=["broad", "morning", "multi"],
                         help="broad=深跌+缩量+反转（广撒网）/ morning=早晨之星精选（61.3%）/ multi=4金矿合并（~57%）")
+    parser.add_argument("--tp-sl", type=float, default=0.0,
+                        help="止损比例（如0.05=5%止损；0=关闭，固定持有5日）")
+    parser.add_argument("--tp-mult", type=float, default=2.0,
+                        help="止盈 = 止损 × tp_mult（默认2：止盈是止损两倍）")
     parser.add_argument("--max-holdings", type=int, default=10)
     parser.add_argument("--cost", type=float, default=0.003,
                         help="每笔双边交易成本比例（佣金+印花税+滑点，默认0.3%保守）")
@@ -93,11 +97,16 @@ def main():
 
     # 每日信号/价格
     close_map = {}
+    high_map = {}
+    low_map = {}
     for sym in tickers:
         try:
             o = md.get_ohlc(sym)
             if o is not None and not o.empty:
                 close_map[sym] = o['close'].astype(float)
+                if 'high' in o.columns:
+                    high_map[sym] = o['high'].astype(float)
+                    low_map[sym] = o['low'].astype(float)
         except Exception:
             continue
     print(f"价格可用: {len(close_map)} 只")
@@ -105,6 +114,9 @@ def main():
     # 全部交易日的并集（用第一个有数据的股票的日期做基准，逐日扫描）
     base_dates = list(next(iter(close_map.values())).index) if close_map else []
     pos_idx = {}   # symbol -> 统一日期索引映射
+
+    stop_pct = args.tp_sl          # 止损比例（0=关闭，固定持有）
+    tp_mult = args.tp_mult         # 止盈 = 止损 × tp_mult
 
     trades = []
     holdings = []   # (symbol, exit_idx)
@@ -125,14 +137,39 @@ def main():
                         bi = cl.index.get_loc(today)
                     except Exception:
                         continue
-                    ej = min(bi + HOLD, len(cl) - 1)
                     buy = float(cl.iloc[bi])
-                    sell = float(cl.iloc[ej])
-                    if buy > 0:
-                        trades.append((sym, ts, buy, sell, sell / buy - 1))
+                    if buy <= 0:
+                        continue
+                    # 持仓期退出判定：止盈止损 or 到期
+                    if stop_pct > 0 and sym in high_map:
+                        sl = buy * (1 - stop_pct)
+                        tp = buy * (1 + stop_pct * tp_mult)
+                        exit_ret = None
+                        reason = 'time'
+                        for j in range(bi + 1, min(bi + HOLD + 1, len(cl))):
+                            hi = float(high_map[sym].iloc[j])
+                            lo = float(low_map[sym].iloc[j])
+                            if lo <= sl:               # 先触止损（保守：同日止损优先）
+                                exit_ret = sl / buy - 1
+                                reason = 'sl'
+                                break
+                            if hi >= tp:               # 触止盈
+                                exit_ret = tp / buy - 1
+                                reason = 'tp'
+                                break
+                        if exit_ret is None:           # 到期未触
+                            ej = min(bi + HOLD, len(cl) - 1)
+                            exit_ret = float(cl.iloc[ej]) / buy - 1
+                            reason = 'time'
+                        trades.append((sym, ts, buy, buy * (1 + exit_ret), exit_ret, reason))
                         holdings.append((sym, bi + HOLD))
-                        if len(holdings) >= args.max_holdings:
-                            break
+                    else:
+                        ej = min(bi + HOLD, len(cl) - 1)
+                        sell = float(cl.iloc[ej])
+                        trades.append((sym, ts, buy, sell, sell / buy - 1, 'time'))
+                        holdings.append((sym, bi + HOLD))
+                    if len(holdings) >= args.max_holdings:
+                        break
 
     if not trades:
         print("无成交")
@@ -152,6 +189,10 @@ def main():
     mdd = (eq / np.maximum.accumulate(eq) - 1).min()
     print(f"\n信号组合回测（{len(tickers)}只池，{START}~{END}，持有{HOLD}日，最多{args.max_holdings}笔）")
     print(f"成本={cost:.2%}/笔 仓位={pos:.0%} | 成交{len(trades)}笔 胜率{np.mean(net>0):.1%} 平均净单笔{np.mean(net):+.2%}")
+    if len(trades) > 0 and len(trades[0]) > 5:
+        from collections import Counter
+        rc = Counter(t[5] for t in trades)
+        print(f"退出分布: {dict(rc)}")
     print(f"总收益: {total:+.2%}")
     print(f"年化: {ann:+.2%}")
     print(f"夏普: {sharpe:.2f}")
