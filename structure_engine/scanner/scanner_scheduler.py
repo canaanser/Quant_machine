@@ -104,6 +104,10 @@ def scan_symbol(
     result = {"symbol": symbol, "mode": mode, "days": 0, "waves": 0,
               "patterns": 0, "updated": 0, "backfilled": 0, "total_records": 0, "error": None}
 
+    # 防御：股票代码补前导零（PowerShell 会把 002309 解析成 2309）
+    if symbol and symbol.isdigit() and len(symbol) < 6:
+        symbol = symbol.zfill(6)
+
     # 性能优化：批量写入模式（攒批减少 fsync，结尾统一 commit）
     set_batch_mode(True)
 
@@ -334,7 +338,7 @@ def main():
     args = parser.parse_args()
 
     if args.tickers:
-        tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
+        tickers = [t.strip().zfill(6) for t in args.tickers.split(",") if t.strip()]
     else:
         tickers = list(SCAN_TICKERS)
         logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
