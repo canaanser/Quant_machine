@@ -14,8 +14,7 @@ sys.path.insert(0, str(PROJECT / "pybao"))
 
 def main():
     from stock_sdk import get_default_client
-    client = get_default_client()
-    rd = client.rd if hasattr(client, "rd") else client
+    client = get_default_client()   # StockDBClient，自带 get_data 包装
 
     candidates = [
         '000300', '000016', '000905', '000852',      # 沪深300/上证50/中证500/中证1000
@@ -26,7 +25,7 @@ def main():
     print("探测指数代码（2024-01 月数据条数）：")
     for c in candidates:
         try:
-            res = rd.get_data(c, start='20240101', end='20240201', frequency='1d', as_df=False)
+            res = client.get_data(c, start='20240101', end='20240201', frequency='1d', as_df=False)
             if isinstance(res, dict):
                 for k, v in res.items():
                     n = len(v) if isinstance(v, (list, tuple)) else 1
