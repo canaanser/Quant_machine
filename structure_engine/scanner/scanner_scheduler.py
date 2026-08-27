@@ -306,7 +306,7 @@ def _stage_worker(args):
 
 def _merge_stage(tmp_db, res):
     """主进程合并暂存库 → 主库（2026-08-28 小二陈）：
-    ATTACH + INSERT OR REPLACE（按 record_id 覆盖=幂等），先提交数据再 DETACH，成功后才删暂存库"""
+    ATTACH + INSERT OR REPLACE（显式列名，防 ALTER 列序错位），先提交数据再 DETACH，成功后才删暂存库"""
     from structure_engine.scanner.data_writer import get_global_connection, _init_tables
     _init_tables()   # 确保主库表存在（否则未限定表名会被 SQLite 解析到 stage 库）
     conn = get_global_connection()
@@ -316,7 +316,8 @@ def _merge_stage(tmp_db, res):
     try:
         cur.execute("ATTACH DATABASE ? AS stage", (str(tmp_db),))
         for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
-            cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage.{table}")
+            cols = ", ".join(c[1] for c in cur.execute(f"PRAGMA table_info({table})").fetchall())
+            cur.execute(f"INSERT OR REPLACE INTO main.{table} ({cols}) SELECT {cols} FROM stage.{table}")
         conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
         cur.execute("DETACH DATABASE stage")
         conn.commit()          # ② 提交分离
@@ -340,12 +341,18 @@ def _merge_stage(tmp_db, res):
 
 def _merge_stages(tmp_dbs, results_by_symbol):
     """批量合并多个暂存库 → 主库（攒批合并，2026-08-28 小二陈）。
-    注意：SQLite ATTACH 上限 10 个 → 内部按 8 个一组分批 ATTACH+INSERT+DETACH"""
+    注意：SQLite ATTACH 上限 10 个 → 内部按 8 个一组分批 ATTACH+INSERT+DETACH。
+    修复（2026-08-28）：合并必须用【显式列名】——主库是 ALTER 加列（strength 在末尾），
+    暂存库是新建（strength 在中间），SELECT * 按位置复制会列错位（created_at 被写进 strength）。"""
     from structure_engine.scanner.data_writer import get_global_connection, _init_tables
     _init_tables()   # 确保主库表存在（否则未限定表名会被 SQLite 解析到 stage 库）
     conn = get_global_connection()
     conn.commit()
     cur = conn.cursor()
+
+    def table_cols(t):
+        return ", ".join(c[1] for c in cur.execute(f"PRAGMA table_info({t})").fetchall())
+
     CHUNK = 8        # SQLite ATTACH 上限 10，留余量
     success_all = True
     for start in range(0, len(tmp_dbs), CHUNK):
@@ -357,8 +364,10 @@ def _merge_stages(tmp_dbs, results_by_symbol):
                 cur.execute(f"ATTACH DATABASE ? AS stage_{i}", (str(tmp_db),))
                 attached.append(i)
             for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
+                cols = table_cols(table)
                 for i in attached:
-                    cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage_{i}.{table}")
+                    cur.execute(
+                        f"INSERT OR REPLACE INTO main.{table} ({cols}) SELECT {cols} FROM stage_{i}.{table}")
             conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
             for i in attached:
                 cur.execute(f"DETACH DATABASE stage_{i}")
