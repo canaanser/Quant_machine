@@ -73,6 +73,33 @@ SCAN_TICKERS = [
     '688256', '688271',
 ]
 
+# ===== AI 算力链龙头池（2026-08-28 小二陈，老板确认 20 只） =====
+# 英伟达财报 + 工信部算力/6G 政策双逻辑：PCB/铜缆/液冷/6G/国产算力/存储/服务器/光模块
+SCAN_TICKERS_AI = [
+    # 新加（不在主池）14 只
+    '002463',   # 沪电股份 PCB
+    '300476',   # 胜宏科技 PCB
+    '002130',   # 沃尔核材 高速铜缆
+    '002837',   # 英维克 液冷
+    '301018',   # 申菱环境 液冷
+    '688387',   # 信科移动 6G
+    '688041',   # 海光信息 国产算力
+    '603986',   # 兆易创新 存储
+    '300475',   # 香农芯创 HBM
+    '688008',   # 澜起科技 内存接口
+    '601138',   # 工业富联 AI服务器
+    '603019',   # 中科曙光 算力
+    '002371',   # 北方华创 半导体设备
+    '688012',   # 中微公司 半导体设备
+    # 主池已有 6 只（幂等更新）
+    '000063',   # 中兴通讯 6G/光通信
+    '688256',   # 寒武纪 国产算力
+    '000977',   # 浪潮信息 AI服务器
+    '300308',   # 中际旭创 光模块
+    '300502',   # 新易盛 光模块
+    '600498',   # 烽火通信 光通信
+]
+
 # ===== 数据库路径统一（2026-08-26 小二陈） =====
 # 消除多处重复定义（data_writer/electron_cloud_query/weight_estimator/signal_weights 各写一份）
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -106,6 +133,6 @@ __all__ = [
     'VOTE_POOL_PATH', 'VOTE_DORMANCY_THRESHOLD', 'VOTE_MIN_OCCURRENCES', 'VOTE_CHECK_INTERVAL',
     'TREND_STRATEGY_WEIGHTS', 'TREND_THRESHOLD', 'TREND_CURVE_POWER',
     'PATTERN_WEIGHT_LEARNING_RATE', 'PATTERN_MIN_SAMPLES',
-    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'PATTERN_DB_PATH',
+    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'PATTERN_DB_PATH',
     'get_data_path', 'ensure_dirs',
 ]

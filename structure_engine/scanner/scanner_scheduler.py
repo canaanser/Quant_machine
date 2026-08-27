@@ -640,10 +640,16 @@ def main():
                         help="从指定股票代码开始扫描（跳过之前的，用于中断后续跑）")
     parser.add_argument("--workers", type=int, default=8,
                         help="并行识别进程数（默认8，12核机器；内存紧张可降为4）")
+    parser.add_argument("--pool", default="main", choices=["main", "ai"],
+                        help="扫描池：main=84只主池（默认）/ ai=20只AI算力链龙头池")
     args = parser.parse_args()
 
     if args.tickers:
         tickers = [t.strip().zfill(6) for t in args.tickers.split(",") if t.strip()]
+    elif args.pool == "ai":
+        from config.config import SCAN_TICKERS_AI
+        tickers = list(SCAN_TICKERS_AI)
+        logger.info("📌 --pool ai：AI 算力链龙头池（%d 只）", len(tickers))
     else:
         tickers = list(SCAN_TICKERS)
         logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
