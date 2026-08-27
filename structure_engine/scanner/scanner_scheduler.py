@@ -570,8 +570,8 @@ def main():
     parser.add_argument("--min-amplitude", type=float, default=0.08, help="波段最小振幅")
     parser.add_argument("--start-at", default=None,
                         help="从指定股票代码开始扫描（跳过之前的，用于中断后续跑）")
-    parser.add_argument("--workers", type=int, default=1,
-                        help="并行识别进程数（默认1=串行；建议4，需内存≥2GB空闲）")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="并行识别进程数（默认8，12核机器；内存紧张可降为4）")
     args = parser.parse_args()
 
     if args.tickers:
