@@ -14,7 +14,7 @@ sys.path.insert(0, str(PROJECT))
 START, END = "2016-01-01", "2026-08-19"
 HOLD = 5
 
-def load_signals(tickers):
+def load_signals(tickers, mode='broad'):
     conn = sqlite3.connect(f"file:{PROJECT / 'data/index_store/pattern_history.db'}?mode=ro", uri=True)
     atomic = {}
     for s, d, p, vs, br, sr in conn.execute(
@@ -29,10 +29,20 @@ def load_signals(tickers):
         if a is None:
             continue
         vs, br, sr = a
-        if (dd is not None and dd < -0.20 and cd is None
-                and vs is not None and vs <= 0.1
-                and br is not None and br >= 0.5
-                and sr is not None and sr <= 0.35):
+        if mode == 'morning':
+            # 早晨之星精选（大样本 61.3%）：早晨之星 + 深跌>30% + 极致缩量 + 大实体短影
+            ok = (p == '3_bullish_0_morning_star'
+                  and dd is not None and dd < -0.30
+                  and vs is not None and vs <= 0.05
+                  and br is not None and br >= 0.5
+                  and sr is not None and sr <= 0.35)
+        else:
+            # 广撒网：深跌+缩量+大实体短影
+            ok = (dd is not None and dd < -0.20
+                  and vs is not None and vs <= 0.1
+                  and br is not None and br >= 0.5
+                  and sr is not None and sr <= 0.35)
+        if ok:
             sig[(s, dt)] = True
     conn.close()
     return sig
@@ -42,6 +52,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pool", default=None, choices=["main", "ai"])
     parser.add_argument("--tickers", default=None)
+    parser.add_argument("--signal", default="broad", choices=["broad", "morning"],
+                        help="broad=深跌+缩量+反转（广撒网）/ morning=早晨之星精选（61.3%）")
     parser.add_argument("--max-holdings", type=int, default=10)
     parser.add_argument("--cost", type=float, default=0.003,
                         help="每笔双边交易成本比例（佣金+印花税+滑点，默认0.3%保守）")
@@ -61,7 +73,7 @@ def main():
         tickers = list(SCAN_TICKERS)
     print(f"股票池: {len(tickers)} 只")
 
-    sig = load_signals(tickers)
+    sig = load_signals(tickers, mode=args.signal)
     print(f"信号总数: {len(sig)}")
     if not sig:
         print("无信号")
