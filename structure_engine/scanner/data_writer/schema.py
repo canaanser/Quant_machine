@@ -57,6 +57,7 @@ def _init_tables():
             composite_return REAL,
             signed_score REAL,
             base_score REAL,
+            strength REAL,
             scan_version INTEGER,
             created_at TEXT
         )
@@ -199,6 +200,8 @@ def _init_tables():
         ("drawdown_from_peak", "REAL"),
         ("days_since_peak", "INTEGER"),
         ("cooldown_days", "INTEGER"),
+        # 回测读表改造（2026-08-28）：形态匹配强度（先验，供回测融合，无未来函数）
+        ("strength", "REAL"),
     ]
     for field_name, field_type in fields_to_add:
         try:

@@ -35,6 +35,7 @@ def write_pattern_history(
     composite_return: float = 0.0,
     signed_score: float = 0.0,
     base_score: float = 0.0,
+    strength: Optional[float] = None,
     scan_version: int = 1
 ) -> str:
     """
@@ -67,9 +68,11 @@ def write_pattern_history(
             cursor.execute("""
                 UPDATE pattern_history SET
                     open_price = ?,
-                    return_1d = ?, return_2d = ?, return_3d = ?, return_4d = ?, return_5d = ?
+                    return_1d = ?, return_2d = ?, return_3d = ?, return_4d = ?, return_5d = ?,
+                    strength = ?
                 WHERE record_id = ?
-            """, (open_price, return_1d, return_2d, return_3d, return_4d, return_5d, existing[0]))
+            """, (open_price, return_1d, return_2d, return_3d, return_4d, return_5d,
+                  strength, existing[0]))
             _maybe_commit(conn)
         except Exception:
             pass
@@ -85,8 +88,8 @@ def write_pattern_history(
             return_1d, return_2d, return_3d, return_4d, return_5d,
             drawdown_from_peak, days_since_peak, cooldown_days,
             return_10d, return_20d, composite_return,
-            signed_score, base_score, scan_version, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            signed_score, base_score, strength, scan_version, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         record_id, symbol, pattern_id, pattern_name, category,
         match_date, match_price, open_price,
@@ -96,7 +99,7 @@ def write_pattern_history(
         return_1d, return_2d, return_3d, return_4d, return_5d,
         drawdown_from_peak, days_since_peak, cooldown_days,
         return_10d, return_20d, composite_return,
-        signed_score, base_score, scan_version, datetime.now().isoformat()
+        signed_score, base_score, strength, scan_version, datetime.now().isoformat()
     ))
 
     _maybe_commit(conn)

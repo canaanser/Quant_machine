@@ -22,7 +22,7 @@ _batch_mode = False
 
 # ===== 表结构版本号 =====
 # 修改任何建表/加字段逻辑时 +1，使 _init_tables 缓存失效并重新初始化
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _initialized_version = None
 
 

@@ -124,6 +124,7 @@ def _write_scan_results(symbol, ohlc, all_waves, all_results, mode="incremental"
                 composite_return=meta.get('composite_return'),
                 signed_score=meta.get('signed_score'),
                 base_score=meta.get('base_score'),
+                strength=r.get('strength'),
                 scan_version=1
             )
             write_atomic_features(symbol=symbol, date=str(r['date']),
