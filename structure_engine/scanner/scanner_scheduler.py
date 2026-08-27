@@ -337,6 +337,49 @@ def _merge_stage(tmp_db, res):
     return res
 
 
+def _merge_stages(tmp_dbs, results_by_symbol):
+    """批量合并多个暂存库 → 主库（攒批合并，2026-08-28 小二陈）：
+    ATTACH 多个 stage_i + 逐表 INSERT OR REPLACE + 一次 commit，
+    把 ATTACH/DETACH 与事务次数从 N 次降到 1 次（利好 4000 只大池场景）"""
+    from structure_engine.scanner.data_writer import get_global_connection, _init_tables
+    _init_tables()   # 确保主库表存在（否则未限定表名会被 SQLite 解析到 stage 库）
+    conn = get_global_connection()
+    conn.commit()
+    cur = conn.cursor()
+    success = False
+    attached = []
+    try:
+        for i, tmp_db in enumerate(tmp_dbs):
+            cur.execute(f"ATTACH DATABASE ? AS stage_{i}", (str(tmp_db),))
+            attached.append(i)
+        for table in ("pattern_history", "wave_history", "atomic_features", "scan_progress"):
+            for i in attached:
+                cur.execute(f"INSERT OR REPLACE INTO main.{table} SELECT * FROM stage_{i}.{table}")
+        conn.commit()          # ① 先提交合并数据（否则 DETACH 会被未提交事务锁住）
+        for i in attached:
+            cur.execute(f"DETACH DATABASE stage_{i}")
+        conn.commit()          # ② 提交分离
+        success = True
+        for tmp_db in tmp_dbs:
+            sym = Path(tmp_db).stem.split('_', 2)[-1]   # stage_{pid}_{symbol}.db
+            res = results_by_symbol.get(sym)
+            if res is not None:
+                res["total_records"] = get_pattern_history_count(sym)
+        logger.info("  ✅ 批量合并 %d 个暂存库完成", len(tmp_dbs))
+    finally:
+        if success:
+            for tmp_db in tmp_dbs:
+                for suffix in ('', '-wal', '-shm', '-journal'):
+                    f = Path(str(tmp_db) + suffix)
+                    try:
+                        if f.exists():
+                            f.unlink()
+                    except Exception:
+                        pass
+        else:
+            logger.warning("  ⚠️ 批量合并失败，%d 个暂存库保留（可重扫恢复）", len(tmp_dbs))
+
+
 def scan_symbol(
     symbol: str,
     start: str = "2016-01-01",
@@ -487,6 +530,7 @@ class ScannerScheduler:
         lookback: int = 5,
         verbose: bool = True,
         workers: int = 1,
+        merge_batch: int = 50,
     ):
         self.tickers = tickers
         self.start = start
@@ -495,6 +539,7 @@ class ScannerScheduler:
         self.min_amplitude = min_amplitude
         self.lookback = lookback
         self.workers = max(1, int(workers))
+        self.merge_batch = max(1, int(merge_batch))
         setup_logging(verbose)
 
     def run_once(self) -> dict:
@@ -511,17 +556,35 @@ class ScannerScheduler:
             tasks = [(s, self.start, self.end, self.mode, self.min_amplitude, self.lookback, str(stage_dir))
                      for s in self.tickers]
             with Pool(processes=self.workers) as pool:
+                pending = []   # [(tmp_db, res)]
+
+                def flush():
+                    nonlocal pending
+                    if not pending:
+                        return
+                    dbs = [p[0] for p in pending]
+                    for _, res in pending:
+                        if res.get('symbol'):
+                            results[res['symbol']] = res
+                    try:
+                        _merge_stages(dbs, results)
+                    except Exception as e:
+                        logger.error("  ❌ 批量合并异常: %s\n%s", e, traceback.format_exc())
+                        for _, res in pending:
+                            if res.get('symbol'):
+                                results[res['symbol']] = {"symbol": res['symbol'], "error": str(e)}
+                    pending = []
+
                 for symbol, tmp_db, res in pool.imap_unordered(_stage_worker, tasks):
                     if res is None or res.get("error") or not tmp_db:
                         err = (res or {}).get("error", "暂存返回空")
                         logger.error("  ❌ %s 暂存失败: %s", symbol, err)
                         results[symbol] = {"symbol": symbol, "error": err}
                         continue
-                    try:
-                        results[symbol] = _merge_stage(tmp_db, res)
-                    except Exception as e:
-                        logger.error("  ❌ %s 合并异常: %s\n%s", symbol, e, traceback.format_exc())
-                        results[symbol] = {"symbol": symbol, "error": str(e)}
+                    pending.append((tmp_db, res))
+                    if len(pending) >= self.merge_batch:
+                        flush()
+                flush()   # 收尾剩余
         else:
             for symbol in self.tickers:
                 try:
@@ -642,6 +705,8 @@ def main():
                         help="并行识别进程数（默认8，12核机器；内存紧张可降为4）")
     parser.add_argument("--pool", default="main", choices=["main", "ai"],
                         help="扫描池：main=84只主池（默认）/ ai=20只AI算力链龙头池")
+    parser.add_argument("--merge-batch", type=int, default=50,
+                        help="攒批合并暂存库数量（默认50；4000只大池可调大）")
     args = parser.parse_args()
 
     if args.tickers:
@@ -669,6 +734,7 @@ def main():
         mode=args.mode,
         min_amplitude=args.min_amplitude,
         workers=args.workers,
+        merge_batch=args.merge_batch,
     )
     if args.interval and args.interval > 0:
         sched.run_loop(args.interval)
