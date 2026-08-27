@@ -8,7 +8,8 @@ import numpy as np
 import streamlit as st
 
 # ===== 调试开关（前端） =====
-DEBUG_MODE = True
+# 2026-08-28：默认关闭——True 时回测每天刷屏 2500+ 行 DEBUG（大盘因子/形态融合），拖慢回测
+DEBUG_MODE = False
 
 # ===== free-stockdb SDK 检测 =====
 try:

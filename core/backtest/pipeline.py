@@ -38,6 +38,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
 
     def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True):
+        import time as _time
+        _t0 = _time.time()
         if initial_cash is None:
             initial_cash = INITIAL_CASH
 
@@ -145,7 +147,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             if hasattr(market_data, 'benchmark_price') and not market_data.benchmark_price.empty:
                 market_trend = self.factor_modulator.get_market_trend(market_data.benchmark_price.loc[hist_returns.index])
 
-            if self.verbose:
+            if self.verbose and i % 50 == 0:   # 降频（2026-08-28：原来每天一条，2500 天刷屏拖慢）
                 logger.debug(f"📊 大盘因子: 沪深300 MA20 {'向上 ✅' if market_trend == 1.0 else '向下 ❌'} (值: {market_trend})")
                 if market_trend == 0.0:
                     logger.debug("   ⏳ 大盘向下，买入信号将被过滤")
@@ -182,4 +184,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     logger.debug(f"  {today.strftime('%Y-%m-%d')} 总资产: {acc.total_asset:,.2f} 元")
 
         self._extract_results(dates, auto_save)
+        logger.info("⏱️ 回测完成：%s 至 %s，耗时 %.2f 秒",
+                    dates[0].strftime('%Y-%m-%d'), dates[-1].strftime('%Y-%m-%d'),
+                    _time.time() - _t0)
         return self
