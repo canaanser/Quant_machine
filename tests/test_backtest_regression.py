@@ -19,9 +19,9 @@ pytestmark = pytest.mark.cache
 # 形态融合目前在单标的上为负贡献 → 后续需调融合权重/信号质量（这是待办发现）。
 BASELINE = {
     "total_return": 0.075928,
-    "annual_return": 0.0495955132,
-    "sharpe": 0.3124060110,
-    "max_drawdown": -0.2739266623,
+    "annual_return": 0.04959551318314781,
+    "sharpe": 0.31240601095629583,
+    "max_drawdown": -0.27392666227916496,
     "trades": 117,
 }
 
