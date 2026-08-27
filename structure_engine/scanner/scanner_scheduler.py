@@ -735,8 +735,8 @@ def main():
                         help="从指定股票代码开始扫描（跳过之前的，用于中断后续跑）")
     parser.add_argument("--workers", type=int, default=8,
                         help="并行识别进程数（默认8，12核机器；内存紧张可降为4）")
-    parser.add_argument("--pool", default="main", choices=["main", "ai"],
-                        help="扫描池：main=84只主池（默认）/ ai=20只AI算力链龙头池")
+    parser.add_argument("--pool", default="main", choices=["main", "ai", "all"],
+                        help="扫描池：main=84只主池（默认）/ ai=20只AI龙头 / all=全市场(stock_list.txt)")
     parser.add_argument("--merge-batch", type=int, default=50,
                         help="攒批合并暂存库数量（默认50；4000只大池可调大）")
     args = parser.parse_args()
@@ -747,6 +747,15 @@ def main():
         from config.config import SCAN_TICKERS_AI
         tickers = list(SCAN_TICKERS_AI)
         logger.info("📌 --pool ai：AI 算力链龙头池（%d 只）", len(tickers))
+    elif args.pool == "all":
+        from config.config import PROJECT_ROOT
+        lst = PROJECT_ROOT / "data" / "stock_list.txt"
+        if lst.exists():
+            tickers = [l.strip() for l in lst.read_text(encoding="utf-8").splitlines() if l.strip()]
+            logger.info("📌 --pool all：全市场 %d 只（stock_list.txt）", len(tickers))
+        else:
+            logger.error("❌ data/stock_list.txt 不存在，先跑 scripts/dump_stock_list.py")
+            return
     else:
         tickers = list(SCAN_TICKERS)
         logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
