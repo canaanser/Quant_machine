@@ -279,6 +279,18 @@ def backfill_positions_for_results(
     fail_count = 0
     cursor = conn.cursor()
 
+    # 性能优化（2026-08-27 小二陈）：原实现逐条 SELECT+UPDATE（1.4万次），
+    # 库越大越慢。改为：一次查询该股票全部 (pattern_id, 日期) → record_id 映射，
+    # 内存匹配 + 一次 executemany 批量 UPDATE。
+    cursor.execute(
+        "SELECT record_id, pattern_id, substr(match_date,1,10) FROM pattern_history WHERE symbol=?",
+        (symbol,),
+    )
+    id_map = {}
+    for rid, pid, mdate10 in cursor.fetchall():
+        id_map.setdefault((pid, mdate10), rid)
+
+    updates = []
     for r in results:
         match_date = r['date']
         try:
@@ -298,27 +310,25 @@ def backfill_positions_for_results(
             else:
                 match_date_str = str(match_date)[:10]
 
-            cursor.execute("""
-                SELECT record_id FROM pattern_history
-                WHERE symbol = ? AND pattern_id = ? AND match_date LIKE ?
-            """, (symbol, r['pattern_id'], f"{match_date_str}%"))
-            row = cursor.fetchone()
-            if row:
-                record_id = row[0]
+            record_id = id_map.get((r['pattern_id'], match_date_str))
+            if record_id:
                 # 位置映射失败（unknown）时同步置 ready=0，避免脏数据
                 ready = 0 if pos_info['band_position'] == 'unknown' else 1
-                cursor.execute("""
-                    UPDATE pattern_history
-                    SET band_position = ?, band_progress = ?, band_direction = ?, band_position_ready = ?
-                    WHERE record_id = ?
-                """, (pos_info['band_position'], pos_info['band_progress'],
-                      pos_info['band_direction'], ready, record_id))
-                update_count += cursor.rowcount
+                updates.append((pos_info['band_position'], pos_info['band_progress'],
+                                pos_info['band_direction'], ready, record_id))
             else:
                 fail_count += 1
         except Exception as e:
             logger.warning("  位置映射失败 %s: %s", match_date, e)
             fail_count += 1
+
+    if updates:
+        cursor.executemany("""
+            UPDATE pattern_history
+            SET band_position = ?, band_progress = ?, band_direction = ?, band_position_ready = ?
+            WHERE record_id = ?
+        """, updates)
+        update_count = cursor.rowcount
 
     return update_count, fail_count
 

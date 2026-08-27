@@ -41,7 +41,17 @@ def _maybe_commit(conn):
 def _get_connection():
     """获取数据库连接，确保目录存在"""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    # 性能优化（2026-08-27 小二陈）：WAL + 降低同步频率 + 大页缓存 + 忙等待
+    # 解决"库越大写入越慢"：commit 从全量刷盘变为追加日志，fsync 次数大减
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")
+        conn.execute("PRAGMA busy_timeout=30000")
+    except Exception:
+        pass
+    return conn
 
 
 def get_global_connection():

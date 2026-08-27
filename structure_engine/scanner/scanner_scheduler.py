@@ -244,7 +244,8 @@ def scan_symbol(
     result["situation_backfilled"] = sit_total
 
     # ---------- 7. 更新扫描进度 ----------
-    if mode == "incremental" and len(ohlc) > 0:
+    # 2026-08-27：full 模式也写断点（原来只 incremental 写），中断后可用 incremental 续扫
+    if len(ohlc) > 0:
         last_date = ohlc.index[-1]
         last_date_str = last_date.strftime('%Y-%m-%d') if hasattr(last_date, 'strftime') else str(last_date)
         update_scan_progress(
@@ -365,8 +366,10 @@ def backfill_situation_cooldown(symbol: str, ohlc, data_writer_module) -> int:
         dd_map[dstr] = (dd, days)
 
     # 冷却期：按 (pattern_id) 记录上次出现日期
+    # 2026-08-27：改为批量收集 + 一次 executemany（原逐条 UPDATE，量级 5000+）
+    from datetime import datetime as _dt
     last_seen = {}   # pattern_id -> date_str
-    updated = 0
+    updates = []
     for record_id, mdate, pattern_id in rows:
         if mdate not in dd_map:
             continue
@@ -375,21 +378,21 @@ def backfill_situation_cooldown(symbol: str, ohlc, data_writer_module) -> int:
         cooldown = None
         if pattern_id in last_seen:
             try:
-                from datetime import datetime
-                d1 = datetime.strptime(mdate, '%Y-%m-%d')
-                d0 = datetime.strptime(last_seen[pattern_id], '%Y-%m-%d')
+                d1 = _dt.strptime(mdate, '%Y-%m-%d')
+                d0 = _dt.strptime(last_seen[pattern_id], '%Y-%m-%d')
                 cooldown = (d1 - d0).days
             except Exception:
                 cooldown = None
         last_seen[pattern_id] = mdate
 
-        cursor.execute("""
+        updates.append((dd, days, cooldown, record_id))
+
+    if updates:
+        cursor.executemany("""
             UPDATE pattern_history SET drawdown_from_peak=?, days_since_peak=?, cooldown_days=?
             WHERE record_id=?
-        """, (dd, days, cooldown, record_id))
-        updated += 1
-        if updated % 500 == 0:
-            data_writer_module._maybe_commit(conn)
+        """, updates)
+    updated = len(updates)
     data_writer_module._maybe_commit(conn)
     logger.info("  ✅ 处境/冷却回填 %d 条", updated)
     return updated
@@ -405,6 +408,8 @@ def main():
     parser.add_argument("--interval", type=float, default=0,
                         help="定时循环间隔（小时），0=只跑一轮（默认）")
     parser.add_argument("--min-amplitude", type=float, default=0.08, help="波段最小振幅")
+    parser.add_argument("--start-at", default=None,
+                        help="从指定股票代码开始扫描（跳过之前的，用于中断后续跑）")
     args = parser.parse_args()
 
     if args.tickers:
@@ -412,6 +417,15 @@ def main():
     else:
         tickers = list(SCAN_TICKERS)
         logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
+    # 断点续跑：--start-at 从指定股票开始（2026-08-27 小二陈，配合老板"停→续跑"）
+    if args.start_at:
+        sa = args.start_at.strip().zfill(6)
+        if sa in tickers:
+            idx = tickers.index(sa)
+            tickers = tickers[idx:]
+            logger.info("📌 --start-at %s：从第 %d 只开始，本次扫 %d 只", sa, idx + 1, len(tickers))
+        else:
+            logger.warning("⚠️ --start-at %s 不在扫描池中，忽略该参数", sa)
     sched = ScannerScheduler(
         tickers=tickers,
         start=args.start,
