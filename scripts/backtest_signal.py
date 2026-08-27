@@ -44,6 +44,10 @@ def main():
     parser.add_argument("--pool", default=None, choices=["main", "ai"])
     parser.add_argument("--tickers", default=None)
     parser.add_argument("--max-holdings", type=int, default=10)
+    parser.add_argument("--cost", type=float, default=0.003,
+                        help="每笔双边交易成本比例（佣金+印花税+滑点，默认0.3%保守）")
+    parser.add_argument("--position", type=float, default=1.0,
+                        help="单笔仓位比例（1.0=全仓复利；建议0.2控制回撤）")
     args = parser.parse_args()
 
     if args.tickers:
@@ -111,24 +115,28 @@ def main():
     if not trades:
         print("无成交")
         return
+    # 净收益：扣双边成本
+    cost = args.cost
+    pos = args.position
     rets = np.array([t[4] for t in trades])
-    total = (1 + rets).prod() - 1
+    net = rets - cost          # 单笔净收益（全仓视角）
+    port = net * pos           # 按仓位缩放（其余资金闲置）
+    # 组合净值：每笔按仓位投入，资金滚动
+    eq = np.cumprod(1 + port)
+    total = eq[-1] - 1
     years = len(base_dates) / 252
     ann = (1 + total) ** (1 / years) - 1 if total > -1 else -1
-    sharpe = rets.mean() / rets.std() * np.sqrt(252 / HOLD) if rets.std() > 0 else 0
-    eq = np.cumprod(1 + rets)
+    sharpe = port.mean() / port.std() * np.sqrt(252 / HOLD) if port.std() > 0 else 0
     mdd = (eq / np.maximum.accumulate(eq) - 1).min()
     print(f"\n信号组合回测（{len(tickers)}只池，{START}~{END}，持有{HOLD}日，最多{args.max_holdings}笔）")
-    print(f"成交笔数: {len(trades)}")
-    print(f"胜率: {np.mean(rets > 0):.1%}")
-    print(f"平均单笔: {np.mean(rets):+.2%}")
-    print(f"总收益(复利): {total:+.2%}")
+    print(f"成本={cost:.2%}/笔 仓位={pos:.0%} | 成交{len(trades)}笔 胜率{np.mean(net>0):.1%} 平均净单笔{np.mean(net):+.2%}")
+    print(f"总收益: {total:+.2%}")
     print(f"年化: {ann:+.2%}")
     print(f"夏普: {sharpe:.2f}")
     print(f"最大回撤: {mdd:.2%}")
     print(f"\n最近5笔:")
     for t in trades[-5:]:
-        print(f"  {t[0]} {t[1]} 买{t[2]:.2f} 卖{t[3]:.2f} {t[4]:+.2%}")
+        print(f"  {t[0]} {t[1]} 买{t[2]:.2f} 卖{t[3]:.2f} 毛{t[4]:+.2%} 净{t[4]-cost:+.2%}")
 
 
 if __name__ == "__main__":
