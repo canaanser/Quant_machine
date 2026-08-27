@@ -36,6 +36,15 @@ def load_signals(tickers, mode='broad'):
                   and vs is not None and vs <= 0.05
                   and br is not None and br >= 0.5
                   and sr is not None and sr <= 0.35)
+        elif mode == 'multi':
+            # 4金矿合并（~57%，强弱年互补）：早晨之星/三白兵/三只乌鸦/长白实体 + 深跌>30% + 极致缩量
+            golds = {'3_bullish_0_morning_star', '3_bullish_0_three_white_soldiers',
+                     '3_bearish_0_three_black_crows', '1_bullish_0_long_white'}
+            ok = (p in golds
+                  and dd is not None and dd < -0.30
+                  and vs is not None and vs <= 0.05
+                  and br is not None and br >= 0.5
+                  and sr is not None and sr <= 0.35)
         else:
             # 广撒网：深跌+缩量+大实体短影
             ok = (dd is not None and dd < -0.20
@@ -52,8 +61,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pool", default=None, choices=["main", "ai"])
     parser.add_argument("--tickers", default=None)
-    parser.add_argument("--signal", default="broad", choices=["broad", "morning"],
-                        help="broad=深跌+缩量+反转（广撒网）/ morning=早晨之星精选（61.3%）")
+    parser.add_argument("--signal", default="broad", choices=["broad", "morning", "multi"],
+                        help="broad=深跌+缩量+反转（广撒网）/ morning=早晨之星精选（61.3%）/ multi=4金矿合并（~57%）")
     parser.add_argument("--max-holdings", type=int, default=10)
     parser.add_argument("--cost", type=float, default=0.003,
                         help="每笔双边交易成本比例（佣金+印花税+滑点，默认0.3%保守）")
