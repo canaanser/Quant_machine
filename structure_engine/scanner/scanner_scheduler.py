@@ -78,7 +78,7 @@ def setup_logging(verbose: bool = True):
 
 def scan_symbol(
     symbol: str,
-    start: str = "2023-01-01",
+    start: str = "2016-01-01",
     end: Optional[str] = None,
     mode: str = "incremental",
     min_amplitude: float = 0.08,
@@ -275,7 +275,7 @@ class ScannerScheduler:
     def __init__(
         self,
         tickers: List[str],
-        start: str = "2023-01-01",
+        start: str = "2016-01-01",
         end: Optional[str] = None,
         mode: str = "incremental",
         min_amplitude: float = 0.08,
@@ -398,7 +398,7 @@ def main():
     parser = argparse.ArgumentParser(description="股票形态扫描调度器")
     parser.add_argument("--tickers", default=None,
                         help="股票代码，逗号分隔；默认使用 config.SCAN_TICKERS（20只通信板块）")
-    parser.add_argument("--start", default="2023-01-01", help="数据起始日期（默认 2023-01-01）")
+    parser.add_argument("--start", default="2016-01-01", help="数据起始日期（默认 2016-01-01，10年）")
     parser.add_argument("--end", default=None, help="数据结束日期（默认今天）")
     parser.add_argument("--mode", default="incremental", choices=["full", "incremental"],
                         help="full=全量 / incremental=增量（默认）")
