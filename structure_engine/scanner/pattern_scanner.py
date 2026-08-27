@@ -192,6 +192,16 @@ def scan_patterns(
                 matched = any(cond_results)
 
             if matched:
+                # 补算全部原子（2026-08-28 小二陈）：
+                # 原实现只算形态配置的原子 → 未配置的写 0（volume_spike 全 0，原子特征数据不可用）。
+                # 现在每个匹配点都算全 8 个原子，atomic_features 表才完整可做"原子×位置"实验。
+                for _cls_name, _cls in ATOMIC_CLASSES.items():
+                    if _cls_name not in atom_values:
+                        try:
+                            _atom = _cls(shadow_type="lower") if _cls_name == "ShadowRatio" else _cls()
+                            atom_values[_cls_name] = _atom.check(klines, i, context).get('value', 0.0)
+                        except Exception:
+                            atom_values[_cls_name] = 0.0
                 # strength = 各原子归一化后的均值（统一 0~1，跨形态可比）
                 norm_values = [
                     atom_instances[c].normalize(atom_values[c])
