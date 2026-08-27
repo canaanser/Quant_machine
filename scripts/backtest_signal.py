@@ -14,7 +14,6 @@ sys.path.insert(0, str(PROJECT))
 START, END = "2016-01-01", "2026-08-19"
 HOLD = 5
 
-
 def load_signals(tickers):
     conn = sqlite3.connect(f"file:{PROJECT / 'data/index_store/pattern_history.db'}?mode=ro", uri=True)
     atomic = {}
@@ -48,6 +47,8 @@ def main():
                         help="每笔双边交易成本比例（佣金+印花税+滑点，默认0.3%保守）")
     parser.add_argument("--position", type=float, default=1.0,
                         help="单笔仓位比例（1.0=全仓复利；建议0.2控制回撤）")
+    parser.add_argument("--start", default="2017-01-01",
+                        help="回测起点（默认2017-01-01，排除2016数据起点伪影）")
     args = parser.parse_args()
 
     if args.tickers:
@@ -67,7 +68,7 @@ def main():
         return
 
     from core.data_loader import load_data
-    md = load_data(source='freestockdb', tickers=tickers, start=START, end=END, frequency='1d', fq='qfq')
+    md = load_data(source='freestockdb', tickers=tickers, start=args.start, end=END, frequency='1d', fq='qfq')
 
     # 每日信号/价格
     close_map = {}
