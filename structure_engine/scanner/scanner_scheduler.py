@@ -324,40 +324,6 @@ class ScannerScheduler:
             logger.info("🛑 收到中断信号，调度器停止")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="股票形态扫描调度器")
-    parser.add_argument("--tickers", default=None,
-                        help="股票代码，逗号分隔；默认使用 config.SCAN_TICKERS（20只通信板块）")
-    parser.add_argument("--start", default="2023-01-01", help="数据起始日期（默认 2023-01-01）")
-    parser.add_argument("--end", default=None, help="数据结束日期（默认今天）")
-    parser.add_argument("--mode", default="incremental", choices=["full", "incremental"],
-                        help="full=全量 / incremental=增量（默认）")
-    parser.add_argument("--interval", type=float, default=0,
-                        help="定时循环间隔（小时），0=只跑一轮（默认）")
-    parser.add_argument("--min-amplitude", type=float, default=0.08, help="波段最小振幅")
-    args = parser.parse_args()
-
-    if args.tickers:
-        tickers = [t.strip().zfill(6) for t in args.tickers.split(",") if t.strip()]
-    else:
-        tickers = list(SCAN_TICKERS)
-        logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
-    sched = ScannerScheduler(
-        tickers=tickers,
-        start=args.start,
-        end=args.end,
-        mode=args.mode,
-        min_amplitude=args.min_amplitude,
-    )
-    if args.interval and args.interval > 0:
-        sched.run_loop(args.interval)
-    else:
-        sched.run_once()
-
-
-if __name__ == "__main__":
-    main()
-
 
 def backfill_situation_cooldown(symbol: str, ohlc, data_writer_module) -> int:
     """回填 V3 处境与冷却字段（2026-08-27 老板确认）
@@ -427,3 +393,37 @@ def backfill_situation_cooldown(symbol: str, ohlc, data_writer_module) -> int:
     data_writer_module._maybe_commit(conn)
     logger.info("  ✅ 处境/冷却回填 %d 条", updated)
     return updated
+
+def main():
+    parser = argparse.ArgumentParser(description="股票形态扫描调度器")
+    parser.add_argument("--tickers", default=None,
+                        help="股票代码，逗号分隔；默认使用 config.SCAN_TICKERS（20只通信板块）")
+    parser.add_argument("--start", default="2023-01-01", help="数据起始日期（默认 2023-01-01）")
+    parser.add_argument("--end", default=None, help="数据结束日期（默认今天）")
+    parser.add_argument("--mode", default="incremental", choices=["full", "incremental"],
+                        help="full=全量 / incremental=增量（默认）")
+    parser.add_argument("--interval", type=float, default=0,
+                        help="定时循环间隔（小时），0=只跑一轮（默认）")
+    parser.add_argument("--min-amplitude", type=float, default=0.08, help="波段最小振幅")
+    args = parser.parse_args()
+
+    if args.tickers:
+        tickers = [t.strip().zfill(6) for t in args.tickers.split(",") if t.strip()]
+    else:
+        tickers = list(SCAN_TICKERS)
+        logger.info("📌 未指定 --tickers，使用 config.SCAN_TICKERS（%d 只）", len(tickers))
+    sched = ScannerScheduler(
+        tickers=tickers,
+        start=args.start,
+        end=args.end,
+        mode=args.mode,
+        min_amplitude=args.min_amplitude,
+    )
+    if args.interval and args.interval > 0:
+        sched.run_loop(args.interval)
+    else:
+        sched.run_once()
+
+
+if __name__ == "__main__":
+    main()
