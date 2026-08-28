@@ -204,6 +204,14 @@ class _ExecutionMixin:
             temp_account.total_asset = account.total_asset
 
             signal = {'symbol': symbol, 'action': 'BUY', 'score': score, 'tag': tag}
+            # 金叉买点真假判定（2026-08-29 举一反三死叉卖）：顶背离/高位金叉 → 封控层驳回
+            bt = self.strategy.get_buy_truth(symbol, today)
+            should_buy, reason = self.risk_manager.judge_goldencross_buy(
+                bt.get('pct_250d_high'), bt.get('top_divergence', False))
+            if not should_buy:
+                if self.verbose:
+                    logger.debug(f"🔍 金叉买点被驳回: {symbol}（{reason}）")
+                continue
             approved = self.risk_manager.approve_order(
                 signal, temp_account, current_price
             )

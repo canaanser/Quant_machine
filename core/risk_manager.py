@@ -125,6 +125,19 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
+    def judge_goldencross_buy(self, pct_250d_high, top_divergence: bool,
+                              high_threshold: float = -0.20) -> tuple:
+        """金叉买点真假判定（2026-08-29 老板举一反三死叉卖：买点也判真假）
+        基于事实不预测：
+          1. 顶背离 → 拒买（价格创新高但 RSI 未创新高=涨不动=假金叉）【事实】
+          2. 高位金叉（距250日高点>high_threshold）→ 拒买（追高接盘，违背'买低不买高'）【位置事实】
+          3. 低位/中位金叉 → 放行（质量/位置软加权/筑底继续筛选）"""
+        if top_divergence:
+            return False, '顶背离金叉(价格新高RSI未新高)→拒买'
+        if pct_250d_high is not None and pct_250d_high > high_threshold:
+            return False, '高位金叉(距250日高>-20%)→拒买追高'
+        return True, '金叉买点通过'
+
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
         """
         审批订单主流程

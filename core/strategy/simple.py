@@ -94,6 +94,7 @@ class SimpleStrategy(BaseStrategy):
         self._q_ma20slope = {}
         self._q_bottom = {}
         self._q_bottom_div = {}
+        self._q_top_div = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -155,6 +156,23 @@ class SimpleStrategy(BaseStrategy):
                 except Exception:
                     bd = np.zeros(n, dtype=bool)
             self._q_bottom_div[code] = bd
+            # ---- 顶背离预计算（2026-08-29 金叉买真假：价格创新高但RSI未创新高=涨不动=假金叉拒买）----
+            # 对称底背离：价格接近60日新高（≥前高×0.98）且 RSI < 前高RSI-2 → 顶背离
+            td = np.zeros(n, dtype=bool)
+            if n >= 70:
+                try:
+                    rsi = self._rsi(pd.Series(price), 14).to_numpy()
+                    price_np = price.to_numpy()
+                    for i in range(60, n):
+                        hi = price_np[i - 60:i + 1].max()
+                        if price_np[i] >= hi * 0.98:
+                            high_pos = int(np.argmax(price_np[i - 60:i + 1]))
+                            high_rsi = rsi[i - 60 + high_pos]
+                            if rsi[i] < high_rsi - 2:
+                                td[i] = True
+                except Exception:
+                    td = np.zeros(n, dtype=bool)
+            self._q_top_div[code] = td
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -387,6 +405,25 @@ class SimpleStrategy(BaseStrategy):
             else:
                 scores[code] = 0
         return scores
+
+    def get_buy_truth(self, symbol: str, last_date) -> dict:
+        """金叉买点真假特征（2026-08-29 举一反三死叉卖）：位置 + 顶背离，供封控层判买点真假
+        返回 {'pct_250d_high': float, 'top_divergence': bool}"""
+        out = {'pct_250d_high': None, 'top_divergence': False}
+        col_i = self._col_pos.get(symbol)
+        if col_i is None or self._feat_cols[col_i] is None:
+            return out
+        s_index, _ = self._feat_cols[col_i]
+        pos = int(np.searchsorted(s_index, np.datetime64(last_date), side='right')) - 1
+        if pos < 0:
+            return out
+        if symbol in self._q_p250h and self._q_p250h[symbol] is not None and pos < len(self._q_p250h[symbol]):
+            v = self._q_p250h[symbol][pos]
+            if not np.isnan(v):
+                out['pct_250d_high'] = float(v)
+        if symbol in self._q_top_div and self._q_top_div[symbol] is not None and pos < len(self._q_top_div[symbol]):
+            out['top_divergence'] = bool(self._q_top_div[symbol][pos])
+        return out
 
     def get_exit_signal(self, returns_df: pd.DataFrame, market_ret: pd.Series) -> dict:
         """
