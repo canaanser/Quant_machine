@@ -47,6 +47,25 @@ def run_backtest():
         value=True,
         help="不满足'深跌<-20%+放量>0.7'的信号评分×0.2降权；勾选=质量过滤版本"
     )
+    # 筑底确认（2026-08-28 老板"看筑底才买"：低点抬高企稳才放行）
+    use_bottom = st.sidebar.checkbox(
+        "筑底确认（低点企稳才买）",
+        value=True,
+        help="近5日低点≥前5日低点（低点抬高企稳）才放行，未企稳降权——减少铁律止损误伤"
+    )
+    # 模式档位（老板两阶段打法）
+    mode_choice = st.sidebar.radio(
+        "模式档位",
+        ["标准", "建仓（轻仓10%+止损5%）", "进攻（30%+止损8%）"],
+        index=0,
+        help="建仓=实盘初期保本（铁律止损5%+分批+保护期）；进攻=有利润垫后切换"
+    )
+    # 铁律风控层（止损/分批/保护期）
+    st.sidebar.caption("铁律风控层")
+    stop_loss_pct = st.sidebar.number_input("机械止损 %", min_value=0.0, max_value=30.0, value=0.0, step=0.5,
+                                            help="持仓跌破成本 X% 强制全卖（铁律，最高优先级）；0=关闭")
+    use_batch = st.sidebar.checkbox("分批退出（死叉卖1/3，不全清）", value=False)
+    protect_days = st.sidebar.number_input("保护期（天，人买入策略信号不卖）", min_value=0, max_value=10, value=0)
 
     test_mode = st.sidebar.radio(
         "测试模式",
@@ -66,10 +85,23 @@ def run_backtest():
             help="支持标准OHLCV格式，列名需包含 date, open, high, low, close, volume"
         )
     elif source == "freestockdb(本地引擎)":
-        tickers_input = st.sidebar.text_input(
-            "股票代码 (逗号分隔)",
-            value="000063"
+        # 股票池快捷选择（2026-08-28 小二陈：精选池/主池/自定义）
+        from config.config import SCAN_TICKERS_CURATED, SCAN_TICKERS
+        pool_choice = st.sidebar.radio(
+            "股票池",
+            ["自定义", "精选池15只（实盘推荐）", "主池84只"],
+            index=1,
+            help="精选池 = 质量信号最集中的15只（回测1216%/Sharpe0.77，实盘候选）"
         )
+        if pool_choice == "精选池15只（实盘推荐）":
+            tickers_input = ",".join(SCAN_TICKERS_CURATED)
+        elif pool_choice == "主池84只":
+            tickers_input = ",".join(SCAN_TICKERS)
+        else:
+            tickers_input = st.sidebar.text_input(
+                "股票代码 (逗号分隔)",
+                value="000063"
+            )
         # 按名称模糊搜索（2026-08-28 小二陈）：输入名称部分关键字即可匹配，
         # 匹配结果多选自动并入回测标的（与手动代码输入互补）
         name_kw = st.sidebar.text_input(
@@ -253,11 +285,20 @@ def run_backtest():
                     strategy = AlphaScoreStrategy(window=int(window), lookback=int(lookback))
                 elif strategy_choice == "双均线金叉策略":
                     from core.strategy import SimpleStrategy
+                    # 模式档位参数（2026-08-28：建仓=铁律止损5%+分批+保护期；进攻=8%）
+                    sl, batch, protect = stop_loss_pct / 100.0, use_batch, protect_days
+                    if mode_choice == "建仓（轻仓10%+止损5%）":
+                        sl, batch, protect = 0.05, True, 2
+                    elif mode_choice == "进攻（30%+止损8%）":
+                        sl, batch = 0.08, True
                     strategy = SimpleStrategy(short=5, long=20,
                                               quality_filter=use_quality,
-                                              quality_penalty=0.1)
+                                              quality_penalty=0.1,
+                                              bottom_confirm=use_bottom)
 
-                engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION)
+                engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION,
+                                          stop_loss_pct=sl if sl > 0 else None,
+                                          batch_exit=batch, protect_days=int(protect))
 
                 auto_save = (test_mode == "继承性测试（保存文件+记住金额）")
                 engine.run(market_data=market_data, initial_cash=initial_cash, auto_save=auto_save)

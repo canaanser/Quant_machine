@@ -145,6 +145,28 @@ def ensure_dirs():
         Path(d).mkdir(parents=True, exist_ok=True)
 
 
+# ===== 精选池（2026-08-28 老板"精挑细选"：质量信号最集中的 15 只） =====
+# 从 84 只池按"深跌+放量信号数≥10 且 10日胜率≥65%"精选；
+# 回测 1216.66%/Sharpe0.77（满仓），建仓档 254%/-29%——实盘候选池
+SCAN_TICKERS_CURATED = [
+    '002156',  # 通富微电 12信号/91.7%
+    '002428',  # 云南锗业 11/81.8%
+    '002281',  # 光迅科技 10/80.0%
+    '002735',  # 王子新材 13/76.9%
+    '600522',  # 中天科技 13/76.9%
+    '300293',  # 蓝英装备 12/75.0%
+    '300620',  # 光库科技 12/75.0%
+    '600702',  # 舍得酒业 15/73.3%
+    '600487',  # 亨通光电 14/71.4%
+    '002309',  # 中利集团 24/70.8%
+    '000566',  # 海南海药 10/70.0%
+    '300502',  # 新易盛 22/68.2%
+    '002792',  # 通宇通讯 15/66.7%
+    '300570',  # 太辰光 17/64.7%
+    '002918',  # 蒙娜丽莎 19/63.2%
+]
+
+
 # ===== 导出清单（供 config/__init__.py 转发，单一事实源） =====
 __all__ = [
     'START_DATE', 'END_DATE', 'INITIAL_CASH', 'COMMISSION', 'TOP_N', 'WINDOW', 'LOOKBACK',
@@ -154,6 +176,7 @@ __all__ = [
     'VOTE_POOL_PATH', 'VOTE_DORMANCY_THRESHOLD', 'VOTE_MIN_OCCURRENCES', 'VOTE_CHECK_INTERVAL',
     'TREND_STRATEGY_WEIGHTS', 'TREND_THRESHOLD', 'TREND_CURVE_POWER',
     'PATTERN_WEIGHT_LEARNING_RATE', 'PATTERN_MIN_SAMPLES',
-    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'SCAN_TICKERS_EXT', 'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH',
+    'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'SCAN_TICKERS_EXT', 'SCAN_TICKERS_CURATED',
+    'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH',
     'get_data_path', 'ensure_dirs',
 ]
