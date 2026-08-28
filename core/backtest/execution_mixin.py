@@ -80,17 +80,19 @@ class _ExecutionMixin:
         return None
 
     def _total_position_after_trade(self) -> float:
-        """该笔交易完成后的总仓位 = 持仓总市值 / (现金 + 持仓市值)（2026-08-29 老板要求，无歧义）"""
+        """该笔交易完成后的总仓位 = 持仓总市值 / (现金 + 持仓市值)（2026-08-29 老板要求，无歧义）
+        直接用 adapter.positions（dict{shares,avg_cost}）+ adapter.cash——get_account_info 返回对象列表无法 .get"""
         try:
-            acc = self.adapter.get_account_info()
-            if acc is None:
-                return 0.0
             pos_value = 0.0
-            for sym, p in acc.positions.items():
-                px = self.adapter._get_price(sym)
-                if px and px > 0 and p.get('shares', 0) > 0:
-                    pos_value += p['shares'] * px
-            total = acc.cash + pos_value
+            for sym, p in self.adapter.positions.items():
+                shares = p.get('shares', 0)
+                if shares > 0:
+                    px = self.adapter._get_price(sym)
+                    if not px or px <= 0:
+                        px = p.get('avg_cost', 0)
+                    pos_value += shares * px
+            cash = self.adapter.cash
+            total = cash + pos_value
             return round(pos_value / total, 4) if total > 0 else 0.0
         except Exception:
             return 0.0
