@@ -156,7 +156,7 @@ class _ExecutionMixin:
 
                 signal = {'symbol': symbol, 'action': 'SELL', 'score': score, 'tag': tag}
                 approved = self.risk_manager.approve_order(
-                    signal, temp_account, current_prices.get(symbol, 50.0)
+                    signal, temp_account, current_prices.get(symbol, 0.0)
                 )
                 if approved:
                     volume = min(approved['target_volume'], pos['shares'])
@@ -186,7 +186,12 @@ class _ExecutionMixin:
         for symbol in buy_list:
             score = final_scores.get(symbol, 0.5)
             tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
-            current_price = current_prices.get(symbol, 50.0)
+            # 2026-08-29 修复：价格缺失（停牌/数据空洞）跳过不买——禁用默认 50 假交易（中钨高新 2024-01 50元假买致-1.2万假亏）
+            if symbol not in current_prices or not current_prices.get(symbol):
+                if self.verbose:
+                    logger.debug(f"⏭️ {symbol} 当日无价格（停牌/缺失），跳过买入")
+                continue
+            current_price = current_prices.get(symbol)
 
             pos_info = None
             for pos in account.positions:
