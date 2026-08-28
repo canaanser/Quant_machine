@@ -78,10 +78,10 @@ class _ExecutionMixin:
         return None
 
     def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market):
-        # ---------- 策略卖出逻辑（分批退出，2026-08-28 老板架构）----------
-        # 死叉等策略信号 → 分批卖（1/3），不全清；铁律止损/止盈在更高优先级执行
-        exit_series = self.strategy.get_exit_signal(hist_returns, hist_market)
-        sell_signals = [sym for sym, should_exit in exit_series.items() if should_exit]
+        # ---------- 策略卖出逻辑（2026-08-28 方案2：死叉真假由封控层判）----------
+        # 死叉=候选卖点（可能底背离/浮盈/小反转）→ 封控层 judge_deadcross_exit 判真假才执行
+        exit_info = self.strategy.get_exit_signal(hist_returns, hist_market)
+        sell_signals = [sym for sym, info in exit_info.items() if info.get('exit')]
 
         for symbol in list(holdings_dict.keys()):
             if symbol not in sell_signals:
@@ -91,11 +91,22 @@ class _ExecutionMixin:
                 if self.verbose:
                     logger.debug(f"🛡️ 保护期: {symbol} 策略信号暂不执行（人买入观察期）")
                 continue
-            score = final_scores.get(symbol, 0.5)
-            tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
+            # 封控层判死叉真假（2026-08-28 老板：死叉可能是底背离/浮盈/小反转）
             price = current_prices.get(symbol, 0)
             if not price or pos['shares'] <= 0:
                 continue
+            pnl = (price - pos.get('avg_cost', 0)) / pos.get('avg_cost', 1) if pos.get('avg_cost') else 0
+            info = exit_info.get(symbol, {})
+            should_sell, reason = self.risk_manager.judge_deadcross_exit(
+                pnl, info.get('pct_250d_high'), info.get('strength'))
+            if not should_sell:
+                if self.verbose:
+                    logger.debug(f"🔍 死叉被封控层驳回: {symbol}（{reason}）")
+                continue
+            if self.verbose:
+                logger.debug(f"🔔 {reason}: {symbol} 持仓={pos['shares']}股")
+            score = final_scores.get(symbol, 0.5)
+            tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
 
             if self.batch_exit:
                 # 分批退出：死叉卖 1/3（剩余等后续信号/止损；铁律止损仍全清）

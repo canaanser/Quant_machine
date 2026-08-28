@@ -99,6 +99,22 @@ class RiskManager:
             return False
         return (pd.Timestamp(today) - pd.Timestamp(buy_date)).days < self.protect_days
 
+    def judge_deadcross_exit(self, pnl: float, pct_250d_high, strength: float) -> tuple:
+        """死叉卖真假判定（2026-08-28 老板方案2：死叉可能是底背离/浮盈/小反转，真假由封控层判）
+        返回 (应不应卖, 理由)：
+          1. 有浮盈(pnl>0) → 不卖（盈利垫子交由止盈/动态止损管理）
+          2. 疑似底背离（低位死叉：距250日高点<-40%）→ 不卖（深跌低位死叉可能是反转）
+          3. 弱死叉（strength<0.15）→ 不卖（小幅反转，卖了踏空）
+          4. 真死叉 → 卖（分批由 batch_exit 决定）
+        参数可实验调优（分支 feature/risk-consolidation）。"""
+        if pnl > 0:
+            return False, '死叉时有浮盈→交由止盈管理'
+        if pct_250d_high is not None and pct_250d_high < -0.40:
+            return False, '疑似底背离(低位死叉)→不卖'
+        if strength is not None and strength < 0.15:
+            return False, '弱死叉(小反转)→不卖'
+        return True, '真死叉→执行卖出'
+
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
         """
         审批订单主流程

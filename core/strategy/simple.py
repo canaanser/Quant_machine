@@ -369,13 +369,33 @@ class SimpleStrategy(BaseStrategy):
                 scores[code] = 0
         return scores
 
-    def get_exit_signal(self, returns_df: pd.DataFrame, market_ret: pd.Series) -> pd.Series:
+    def get_exit_signal(self, returns_df: pd.DataFrame, market_ret: pd.Series) -> dict:
         """
-        SimpleStrategy的退出信号：
-        - 评分 < -0.05 时清仓（沿用原有逻辑）
+        SimpleStrategy 退出信号（2026-08-28 方案2：死叉带强度/位置信息，真假由封控层判）
+        返回 {symbol: {'exit': bool, 'strength': float, 'pct_250d_high': float}}：
+          exit: 评分<-0.05 触发死叉卖出候选
+          strength: 死叉强度（评分负的程度 0~1，越大越强）
+          pct_250d_high: 距250日高点（<0 深跌低位；供封控层判"疑似底背离"）
         """
         scores = self.score_stocks(returns_df, market_ret)
-        return scores < -0.05
+        out = {}
+        for sym, s in scores.items():
+            exit_flag = s < -0.05
+            strength = min(1.0, -s) if s < 0 else 0.0
+            # 位置：距 250 日高点（收益率序列累计算价格）
+            p250h = None
+            try:
+                r = returns_df[sym].dropna()
+                if len(r) >= 250:
+                    price = (1 + r).cumprod()
+                    p250h = float(price.iloc[-1] / price.iloc[-250:].max() - 1)
+                elif len(r) > 0:
+                    price = (1 + r).cumprod()
+                    p250h = float(price.iloc[-1] / price.max() - 1)
+            except Exception:
+                p250h = None
+            out[sym] = {'exit': exit_flag, 'strength': strength, 'pct_250d_high': p250h}
+        return out
 
     # ==================== 早盘动态预判函数 ====================
     def calculate_early_score(self, open_price, close_prev, ma5_prev, ma20_prev):
