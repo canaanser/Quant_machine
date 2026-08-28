@@ -59,79 +59,84 @@ def list_industries():
     print(f"原始: {str(boards)[:500]}")
 
 
-def get_float_mv(code: str):
-    """尽力拉流通市值（float_mv），失败返回 None（排最后）"""
-    try:
-        import stock_sdk
-        client = stock_sdk.get_default_client()
-        rec = client.get_data(code, fields="float_mv")
-        if isinstance(rec, dict):
-            v = rec.get('float_mv') or rec.get('0')
+def get_symbols(board_ref: str):
+    """按板块代码精确查询成分（指南：bk.get('801150.SL') 返回含 symbols 的 dict），
+    兼容 dict/list/嵌套结构，规整为代码列表"""
+    res = bk.get(board_ref)
+    syms = []
+    if isinstance(res, dict):
+        syms = res.get('symbols', [])
+        if not syms:
+            for v in res.values():
+                if isinstance(v, list):
+                    syms = v
+                    break
+    else:
+        syms = res
+    codes = []
+    for s in syms:
+        if isinstance(s, (list, tuple)):
+            codes.extend(str(x) for x in s)
         else:
-            v = rec
-        return float(v) if v else None
-    except Exception:
-        return None
+            codes.append(str(s))
+    return codes
 
 
-def pick(industries, per):
-    """按行业拉成分，过滤后按市值排序选 top N"""
+def pick(codes: list, per):
+    """按申万一级板块代码拉成分，过滤后取 top N（市值排序尽力而为）"""
     names = load_names()
+    board_names = {
+        '801150.SL': '医药生物', '801740.SL': '国防军工', '801050.SL': '有色金属',
+        '801020.SL': '采掘', '801780.SL': '银行', '801010.SL': '农林牧渔',
+        '801030.SL': '化工', '801880.SL': '汽车', '801040.SL': '钢铁', '801110.SL': '家用电器',
+    }
     chosen = []
-    for ind in industries:
-        print(f"\n🚀 行业「{ind}」拉取成分 ...")
+    for bc in codes:
+        ind = board_names.get(bc, bc)
+        print(f"\n🚀 板块「{ind}」({bc}) 拉取成分 ...")
         try:
-            symbols = bk.get(ind, 0, "symbols")
+            symbols = get_symbols(bc)
         except Exception as e:
             print(f"  ❌ 拉取失败: {e}")
             continue
-        if isinstance(symbols, dict):
-            symbols = symbols.get('symbols', symbols)
         if not symbols:
             print(f"  ⚠️ 空板块")
             continue
-        # 过滤已有池 + ST
         cand = []
         for code in symbols:
-            code = str(code).zfill(6) if str(code).isdigit() else str(code)
+            code = code.zfill(6) if code.isdigit() else code
             if code in EXISTING:
                 continue
             nm = names.get(code, '')
             if 'ST' in nm.upper() or '退' in nm:
                 continue
             cand.append(code)
-        print(f"  成分 {len(symbols)} → 过滤后 {len(cand)}，拉市值排序 ...")
-        # 市值排序（尽力而为）
-        ranked = []
-        for code in cand:
-            mv = get_float_mv(code)
-            ranked.append((code, mv))
-        ranked.sort(key=lambda x: -(x[1] if x[1] is not None else -1))
-        if not any(mv is not None for _, mv in ranked):
-            print("  ⚠️ 市值拉取失败，按板块顺序取")
-        for code, mv in ranked[:per]:
-            chosen.append((code, ind, mv))
-    print("\n===== 候选清单 =====")
-    for code, ind, mv in chosen:
-        mv_s = f"{mv/1e8:.0f}亿" if mv else "?"
-        print(f"  {code} {names.get(code, '?'):<10} [{ind}] {mv_s}")
-    print(f"\n共 {len(chosen)} 只（目标 {len(industries) * per}）")
+        print(f"  成分 {len(symbols)} → 过滤后 {len(cand)}，取前 {per}")
+        for code in cand[:per]:
+            chosen.append((code, ind))
+    print("\n===== 候选清单（80 只目标）=====")
+    for code, ind in chosen:
+        print(f"  {code} {names.get(code, '?'):<10} [{ind}]")
+    print(f"\n共 {len(chosen)} 只")
 
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="行业板块扩池选股")
     parser.add_argument("--list-industries", action="store_true", help="列出全部行业板块")
-    parser.add_argument("--industries", default="", help="目标行业，逗号分隔")
-    parser.add_argument("--per", type=int, default=10, help="每行业选几只")
+    parser.add_argument("--codes", default="", help="申万一级板块代码，逗号分隔（如 801150.SL,801740.SL）")
+    parser.add_argument("--industries", default="", help="（旧）行业名，逗号分隔")
+    parser.add_argument("--per", type=int, default=8, help="每板块选几只")
     args = parser.parse_args()
 
     if args.list_industries:
         list_industries()
+    elif args.codes:
+        pick([x.strip() for x in args.codes.split(',') if x.strip()], args.per)
     elif args.industries:
-        pick([x.strip() for x in args.industries.split(',') if x.strip()], args.per)
+        print("⚠️ 中文板块名查询不稳，请用 --codes 传申万一级板块代码（如 801150.SL）")
     else:
-        print("请指定 --list-industries 或 --industries")
+        print("请指定 --list-industries 或 --codes")
 
 
 if __name__ == "__main__":
