@@ -17,6 +17,8 @@ import sys
 import time
 from pathlib import Path
 
+import pandas as pd
+
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -81,6 +83,16 @@ def main():
     print(f"最大回撤:   {engine.max_drawdown:>10.2%}")
     print(f"交易数:     {len(engine.trades):>10d}")
     print(f"耗时:       加载 {t_load:.1f}s + 回测 {t_run:.1f}s = {t_load + t_run:.1f}s")
+    # 近期窗口报告（2026-08-28 老板视角：实盘从今天买，看近期）
+    print("\n===== 近期窗口（实盘相关）=====")
+    eq = engine.equity_curve
+    for years in (1, 2, 3, 5):
+        w0 = eq.index[-1] - pd.DateOffset(years=years)
+        seg = eq[eq.index >= w0]
+        if len(seg) > 60:
+            wr = seg.iloc[-1] / seg.iloc[0] - 1
+            wdd = (seg / seg.cummax() - 1).min()
+            print(f"  近{years}年: 收益 {wr:+.2%}   区间最大回撤 {wdd:.2%}")
     print("=" * 60)
 
 
