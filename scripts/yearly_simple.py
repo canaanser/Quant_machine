@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--tickers", default=",".join(DEFAULT_TICKERS))
     parser.add_argument("--start", default=START)
     parser.add_argument("--end", default=END)
+    parser.add_argument("--quality", action="store_true", help="启用质量评分v1（深跌+放量，penalty=0.1）")
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
@@ -43,7 +44,7 @@ def main():
         start=args.start, end=args.end, frequency='1d', fq='qfq'
     )
     t0 = time.time()
-    eng = BacktestPipeline(SimpleStrategy(5, 20), top_n=10, verbose=False)
+    eng = BacktestPipeline(SimpleStrategy(5, 20, quality_filter=args.quality, quality_penalty=0.1), top_n=10, verbose=False)
     eng.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     print(f"✅ 回测完成：累计 {eng.total_return:.2%}，耗时 {time.time()-t0:.1f}s")
 
