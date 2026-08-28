@@ -58,24 +58,35 @@ def run_once(deadcross_low, deadcross_strength, mode='建仓'):
 
 def main():
     import argparse
+    import logging
     parser = argparse.ArgumentParser(description="死叉真假判定参数扫描")
     parser.add_argument("--mode", default='建仓', choices=['建仓', '进攻'])
     args = parser.parse_args()
 
+    # 2026-08-29 老板：中间日志太多刷屏——静默，只留最终对比表
+    logging.disable(logging.INFO)
+
     lows = [-0.30, -0.40, -0.50]
     strengths = [0.10, 0.15, 0.20]
-    print(f"🔍 死叉判定参数扫描（{args.mode}，精选15只，2025-01-01 实盘介入模拟）")
-    print(f"   网格：低位阈值 {lows} × 强度阈值 {strengths}")
-    print(f"   基准（改动前 {args.mode}）：建仓 92.99%/0.76/-25.93%/1966笔 | 进攻 158.91%/0.88/-34.31%/1549笔")
-    print("=" * 70)
-    print(f"{'低位':>6} {'强度':>6} {'累计':>9} {'Sharpe':>7} {'回撤':>8} {'交易':>6}")
-    print("-" * 70)
+    results = []
     for low, st in itertools.product(lows, strengths):
         try:
             r = run_once(low, st, args.mode)
-            print(f"{low:>6.2f} {st:>6.2f} {r['累计']:>9} {r['Sharpe']:>7} {r['回撤']:>8} {r['交易']:>6}")
+            results.append((low, st, r))
         except Exception as e:
-            print(f"{low:>6.2f} {st:>6.2f}   ❌ {str(e)[:50]}")
+            results.append((low, st, {'累计': '❌', 'Sharpe': str(e)[:20], '回撤': '', '交易': ''}))
+
+    # 最终对比表（集中打印）
+    print("=" * 70)
+    print(f"📊 死叉判定参数扫描结果（{args.mode}，精选15只，2025-01-01 实盘介入模拟）")
+    print(f"   基准（改动前 {args.mode}）：建仓 92.99%/0.76/-25.93%/1966笔 | 进攻 158.91%/0.88/-34.31%/1549笔")
+    print(f"   方案2当前参数（-0.40, 0.15）：建仓 100.28%/0.79/-25.74%/1476笔")
+    print("=" * 70)
+    print(f"{'低位':>6} {'强度':>6} {'累计':>9} {'Sharpe':>7} {'回撤':>8} {'交易':>6}")
+    print("-" * 70)
+    for low, st, r in results:
+        print(f"{low:>6.2f} {st:>6.2f} {r['累计']:>9} {r['Sharpe']:>7} {r['回撤']:>8} {r['交易']:>6}")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
