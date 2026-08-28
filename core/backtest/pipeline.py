@@ -117,22 +117,16 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 self._record_snapshot(today)
                 continue
 
-            # 盘尾交易模型 + T+1 成交（2026-08-29 老板：去未来函数）
-            # 判定（止损浮亏/死叉/仓位）用 T 日收盘价（current_prices）——T 日收盘后决策；
-            # 成交用 T+1 日价格（exec_prices）——现实中 T 日收盘下单只能 T+1 成交（A股T+1）。
-            # 最后一天无次日 → 用当天价（仅影响最后一日，可忽略）。
-            current_prices = {}   # T 日价：判定用
-            exec_prices = {}      # T+1 价：成交用
-            exec_day = dates[i + 1] if i + 1 < len(dates) else dates[i]
+            # 盘尾交易模型（2026-08-29 老板定：无限接近尾盘最后一秒）
+            # 评分/信号只用 T-1 日及之前数据（hist_returns 不含今天）——尾盘时 T 日未收盘，只能用昨日评分；
+            # 成交用 T 日收盘价（尾盘最后一秒，收盘价已定）——不是未来函数。
+            current_prices = {}
             for symbol in price_data.columns:
                 if today in price_data.index:
                     val = price_data.loc[today, symbol]
-                    if not pd.isna(val):
-                        current_prices[symbol] = float(val)
-                if exec_day in price_data.index:
-                    val = price_data.loc[exec_day, symbol]
-                    if not pd.isna(val):  # T+1 停牌：当天无法成交
-                        exec_prices[symbol] = float(val)
+                    if pd.isna(val):  # 停牌/数据缺失：跳过 NaN，避免下游 int(NaN) 崩溃
+                        continue
+                    current_prices[symbol] = float(val)
 
             holdings_dict = {}
             for pos in account.positions:
@@ -142,8 +136,9 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     'avg_cost': pos.avg_cost
                 }
 
-            hist_returns = returns.iloc[:i]
-            hist_market = market_ret.iloc[:i]
+            # 2026-08-29 老板：评分只用昨日(T-1)及之前数据——尾盘时T日未收盘，用昨日评分决策
+            hist_returns = returns.iloc[:max(0, i - 1)]
+            hist_market = market_ret.iloc[:max(0, i - 1)]
             score_series = self.strategy.score_stocks(hist_returns, hist_market)
 
 
@@ -193,13 +188,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
 
-            self._execute_stop_loss(holdings_dict, current_prices, today, exec_prices)    # ① 铁律止损（最高优先级）
+            self._execute_stop_loss(holdings_dict, current_prices, today)    # ① 铁律止损（最高优先级）
 
-            self._execute_take_profit(holdings_dict, current_prices, today, exec_prices)  # ② 止盈（≥2×止损，卖半锁利润）
+            self._execute_take_profit(holdings_dict, current_prices, today)  # ② 止盈（≥2×止损，卖半锁利润）
 
-            self._execute_sells(holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market, exec_prices)  # ③ 策略信号（分批/保护期）
+            self._execute_sells(holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market)  # ③ 策略信号（分批/保护期）
 
-            self._execute_buys(buy_list, final_scores, market_data, account, current_prices, today, exec_prices)
+            self._execute_buys(buy_list, final_scores, market_data, account, current_prices, today)
 
             self._record_snapshot(today)
 
