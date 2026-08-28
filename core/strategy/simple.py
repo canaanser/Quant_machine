@@ -399,7 +399,7 @@ class SimpleStrategy(BaseStrategy):
         scores = self.score_stocks(returns_df, market_ret)
         out = {}
         # 定位当前日期在预计算特征里的位置（searchsorted，2026-08-29 性能修复：原逐股重算 RSI 灾难）
-        last_date = returns_df.index[-1]
+        last_date = np.datetime64(returns_df.index[-1])  # 转 datetime64（与 _score_from_features 一致）
         for sym, s in scores.items():
             exit_flag = s < -0.05
             p250h = None
