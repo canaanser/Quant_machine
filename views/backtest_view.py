@@ -137,8 +137,12 @@ def run_backtest():
         )
 
     top_n = st.sidebar.number_input("持有股票数量 (Top N)", min_value=1, max_value=50, value=TOP_N)
-    window = st.sidebar.number_input("滚动回归窗口 (天)", min_value=20, max_value=200, value=WINDOW)
-    lookback = st.sidebar.number_input("残差动量回看 (天)", min_value=5, max_value=60, value=LOOKBACK)
+    # Alpha 策略专用参数（2026-08-28 小二陈：仅选"Alpha剥离策略"时显示，双均线金叉隐藏）
+    window = 60
+    lookback = 20
+    if strategy_choice == "Alpha剥离策略":
+        window = st.sidebar.number_input("滚动回归窗口 (天)", min_value=20, max_value=200, value=WINDOW)
+        lookback = st.sidebar.number_input("残差动量回看 (天)", min_value=5, max_value=60, value=LOOKBACK)
 
     if test_mode == "继承性测试（保存文件+记住金额）":
         col_btn1, col_btn2, col_btn3, col_btn4 = st.sidebar.columns(4)
