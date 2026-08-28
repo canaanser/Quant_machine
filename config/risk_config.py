@@ -3,7 +3,7 @@
 """
 
 # 风控参数
-MAX_SINGLE_POSITION_RATIO = 0.80      # 单只个股最大仓位（%总资产）
+MAX_SINGLE_POSITION_RATIO = 0.20      # 单只个股最大仓位（%总资产）；2026-08-28 老板拍板 0.80→0.20，防单票超配爆炸（2018/2023 单月 +155%/+63% 即 0.80 所致）
 STOP_LOSS_AGGRESSIVE = 0.20           # 妖股硬止损线（7%亏损）
 STOP_LOSS_GENTLE = 0.30               # 蓝筹软止损线（10%亏损）
 PROFIT_TAKE_THRESHOLD = 0.50          # 止盈线（30%盈利）

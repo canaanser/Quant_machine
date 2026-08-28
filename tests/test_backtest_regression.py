@@ -17,14 +17,14 @@ from conftest import cache_available
 pytestmark = pytest.mark.cache
 
 # ===== 基线指标（000063, 2025-01-01 ~ 2026-07-31, SimpleStrategy 5/20, top10, 50万）=====
-# 2026-08-28 更新3：基线策略 TrendStrength → SimpleStrategy（Trend 已删，组合层面落败）。
-# 实测：total_return 0.108798 / sharpe 0.407538 / maxDD -0.154928 / 208 笔——单票也全面优于 Trend 旧基线。
+# 2026-08-28 更新4：MAX_SINGLE_POSITION_RATIO 0.80→0.20（老板拍板，防单票超配爆炸），
+# 单票上限 20% 后仓位更分散：收益 10.88%→2.96%（单票池无分散效应，仓位被砍）、回撤 -15.5%→-6.8%。
 BASELINE = {
-    "total_return": 0.10879799999999995,
-    "annual_return": 0.07069599150635031,
-    "sharpe": 0.4075375229655252,
-    "max_drawdown": -0.154928,
-    "trades": 208,
+    "total_return": 0.02957199999999993,
+    "annual_return": 0.019462783139226225,
+    "sharpe": 0.3009234401452481,
+    "max_drawdown": -0.06814568105158347,
+    "trades": 148,
 }
 
 TICKER = "000063"
