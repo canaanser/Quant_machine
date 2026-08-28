@@ -93,6 +93,7 @@ class SimpleStrategy(BaseStrategy):
         self._q_rp250 = {}
         self._q_ma20slope = {}
         self._q_bottom = {}
+        self._q_bottom_div = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -136,6 +137,24 @@ class SimpleStrategy(BaseStrategy):
             low_recent = price.rolling(5, min_periods=5).min()
             low_prev = price.rolling(10, min_periods=10).min().shift(5)
             self._q_bottom[code] = (low_recent >= low_prev).to_numpy()
+            # ---- 严格底背离预计算（2026-08-29：价格创新低但RSI未新低=跌不动=反转，死叉不该卖）----
+            # 前低回看60日；价格≤前低×1.02 且 RSI>前低RSI+2 → 底背离（逻辑定义，不为触发率放宽）
+            n = len(price)
+            bd = np.zeros(n, dtype=bool)
+            if n >= 70:
+                try:
+                    rsi = self._rsi(pd.Series(price), 14).to_numpy()
+                    price_np = price.to_numpy()
+                    for i in range(60, n):
+                        lo = price_np[i - 60:i + 1].min()
+                        if price_np[i] <= lo * 1.02:
+                            low_pos = int(np.argmin(price_np[i - 60:i + 1]))
+                            low_rsi = rsi[i - 60 + low_pos]
+                            if rsi[i] > low_rsi + 2:
+                                bd[i] = True
+                except Exception:
+                    bd = np.zeros(n, dtype=bool)
+            self._q_bottom_div[code] = bd
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -379,40 +398,21 @@ class SimpleStrategy(BaseStrategy):
         """
         scores = self.score_stocks(returns_df, market_ret)
         out = {}
+        # 定位当前日期在预计算特征里的位置（searchsorted，2026-08-29 性能修复：原逐股重算 RSI 灾难）
+        last_date = returns_df.index[-1]
         for sym, s in scores.items():
             exit_flag = s < -0.05
-            # 位置：距 250 日高点（收益率序列累计算价格）
             p250h = None
-            try:
-                r = returns_df[sym].dropna()
-                if len(r) >= 250:
-                    price = (1 + r).cumprod()
-                    p250h = float(price.iloc[-1] / price.iloc[-250:].max() - 1)
-                elif len(r) > 0:
-                    price = (1 + r).cumprod()
-                    p250h = float(price.iloc[-1] / price.max() - 1)
-            except Exception:
-                p250h = None
-            # 严格底背离（2026-08-29 老板：价格创新低但 RSI 未创新低=跌不动=反转，死叉不该卖）
-            # 前低回看 60 日；价格接近前低（≤前低×1.02）且当前 RSI > 前低时 RSI+2 → 底背离
-            # （2026-08-29 还原：2次触发是池子好的事实，不为触发率放宽=过拟合——参数按逻辑定义，不按结果调）
             bottom_div = False
-            try:
-                r = returns_df[sym].dropna()
-                if len(r) >= 70:
-                    price = (1 + r).cumprod()
-                    rsi = self._rsi(price, 14)
-                    recent = price.iloc[-60:]
-                    low_idx = recent.idxmin()
-                    cur_price = price.iloc[-1]
-                    low_price = recent.min()
-                    if cur_price <= low_price * 1.02:
-                        cur_rsi = rsi.iloc[-1]
-                        low_rsi = rsi.loc[low_idx]
-                        if pd.notna(cur_rsi) and pd.notna(low_rsi) and cur_rsi > low_rsi + 2:
-                            bottom_div = True
-            except Exception:
-                bottom_div = False
+            col_i = self._col_pos.get(sym)
+            if col_i is not None and self._feat_cols[col_i] is not None:
+                s_index, _ = self._feat_cols[col_i]
+                pos = int(np.searchsorted(s_index, last_date, side='right')) - 1
+                if pos >= 0:
+                    if sym in self._q_p250h and self._q_p250h[sym] is not None and pos < len(self._q_p250h[sym]):
+                        p250h = float(self._q_p250h[sym][pos])
+                    if sym in self._q_bottom_div and self._q_bottom_div[sym] is not None and pos < len(self._q_bottom_div[sym]):
+                        bottom_div = bool(self._q_bottom_div[sym][pos])
             out[sym] = {'exit': exit_flag, 'pct_250d_high': p250h, 'bottom_divergence': bottom_div}
         return out
 
