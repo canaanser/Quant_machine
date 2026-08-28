@@ -174,6 +174,9 @@ class RiskManager:
                 current_value = pos.shares * current_price
                 remaining_slot = max_allowed - current_value
                 
+                if self.verbose:
+                    logger.debug(f"   🧮 仓位检查: {symbol} 持仓市值={current_value:.0f} max_allowed={max_allowed:.0f} "
+                                 f"remaining_slot={remaining_slot:.0f} pos_shares={pos.shares}")
                 if remaining_slot <= 0:
                     if self.verbose:
                         logger.debug(f"   ❌ 买入被拒: {symbol}, 仓位已满")

@@ -174,7 +174,8 @@ class _ExecutionMixin:
                                     'filled_amount': status['filled_volume'] * status['filled_price'],
                                     'commission': 0,
                                     'fill_price': status['filled_price'],
-                                    'timestamp': pd.Timestamp(today)
+                                    'timestamp': pd.Timestamp(today),
+                                    'total_position': self._total_position_after_trade(),  # 该笔后总仓位（2026-08-29 老板：SELL行也要有）
                                 }
                                 self.performance_analyzer.record_trade(exec_report)
                                 pnl = (status['filled_price'] - avg_cost) * status['filled_volume']
@@ -198,6 +199,9 @@ class _ExecutionMixin:
                 if pos.symbol == symbol:
                     pos_info = pos
                     break
+            if self.verbose:
+                logger.debug(f"   🔎 买入前: {symbol} pos_info={'有'+str(pos_info.shares) if pos_info else '无'}"
+                             f" account.positions={len(account.positions)}只")
 
             temp_account = create_default_account(account.cash)
             if pos_info:
