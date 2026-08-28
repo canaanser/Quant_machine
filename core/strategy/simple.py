@@ -417,13 +417,13 @@ class SimpleStrategy(BaseStrategy):
         pos = int(np.searchsorted(s_index, np.datetime64(last_date), side='right')) - 1
         if pos < 0:
             return out
-        # feat: [ma5, ma20, slope, accel, diff]
-        ma20 = feat[1][pos]
+        # feat: [ma5, ma20, slope, accel, diff]（列）——用 feat[:, col][pos]
+        ma20 = feat[:, 1][pos]
         slope5 = None
         if symbol in self._q_ma20slope and self._q_ma20slope[symbol] is not None and pos < len(self._q_ma20slope[symbol]):
             slope5 = self._q_ma20slope[symbol][pos]
         if (not np.isnan(ma20) and ma20 > 0 and slope5 is not None and not np.isnan(slope5)
-                and slope5 < 0 and feat[4][pos] < 0):
+                and slope5 < 0 and feat[:, 4][pos] < 0):
             out['downtrend'] = True  # MA20下行 且 价格<MA20（diff<0）= 阴跌态
         return out
 
