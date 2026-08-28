@@ -57,6 +57,11 @@ def main():
     # 2026-08-28 定型：质量评分 v1（深跌<-20%+放量>0.7，不满足降权×0.2）
     # 84只10年扫描最优档位：Sharpe 0.51→0.64（+25%）、收益+18%；--no-quality 回到原版
     strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.2)
+    # 配置自检（2026-08-28 小二陈：防 __pycache__ 旧代码——若输出与预期不符说明加载了旧版）
+    print(f"⚙️ 策略配置: quality_filter={strategy.quality_filter} deep={strategy.quality_deep} "
+          f"vol={strategy.quality_vol} pos_high={strategy.quality_pos_high} "
+          f"pos_range={strategy.quality_pos_range} penalty={strategy.quality_penalty} "
+          f"freq_filter={strategy.freq_filter}")
     engine = BacktestPipeline(strategy, top_n=10, verbose=False)
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
