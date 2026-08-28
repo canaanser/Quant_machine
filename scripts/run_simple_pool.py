@@ -38,6 +38,8 @@ def main():
                         help="股票代码，逗号分隔（默认 84 只主池）")
     parser.add_argument("--start", default=START)
     parser.add_argument("--end", default=END)
+    parser.add_argument("--no-quality", action="store_true",
+                        help="关闭质量评分过滤（回到原版 Simple）")
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
@@ -52,7 +54,10 @@ def main():
     print(f"✅ 数据加载完成：{market_data.price.shape[0]} 交易日，耗时 {t_load:.1f}s")
 
     t0 = time.time()
-    engine = BacktestPipeline(SimpleStrategy(short=5, long=20, verbose=False), top_n=10, verbose=False)
+    # 2026-08-28 定型：质量评分 v1（深跌<-20%+放量>0.7，不满足降权×0.2）
+    # 84只10年扫描最优档位：Sharpe 0.51→0.64（+25%）、收益+18%；--no-quality 回到原版
+    strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.2)
+    engine = BacktestPipeline(strategy, top_n=10, verbose=False)
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 
