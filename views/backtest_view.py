@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """回测页面（2026-08-26 小二陈：从 app.py 拆出）"""
 
+import json
+from functools import lru_cache
+from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,6 +17,15 @@ from core import load_data, AlphaScoreStrategy, BacktestPipeline, metadata
 from config.config import COMMISSION, LOOKBACK, TOP_N, WINDOW
 from utils.kline_plotter import plot_kline_with_trades
 from utils.stock_helpers import (DEBUG_MODE, init, rd, calc_single_stock_performance)
+
+
+@lru_cache(maxsize=1)
+def _load_stock_names() -> dict:
+    """加载 {code: name} 名称映射（5821 只，供名称模糊搜索）"""
+    p = Path(__file__).parent.parent / 'data' / 'stock_names.json'
+    if p.exists():
+        return json.loads(p.read_text(encoding='utf-8'))
+    return {}
 
 def run_backtest():
     st.sidebar.header("⚙️ 回测参数")
@@ -44,6 +57,7 @@ def run_backtest():
 
     tickers_input = ""
     uploaded_file = None
+    extra_tickers = []  # 名称搜索选中的代码（2026-08-28 小二陈）
 
     if source == "本地CSV":
         uploaded_file = st.sidebar.file_uploader(
@@ -56,6 +70,29 @@ def run_backtest():
             "股票代码 (逗号分隔)",
             value="000063"
         )
+        # 按名称模糊搜索（2026-08-28 小二陈）：输入名称部分关键字即可匹配，
+        # 匹配结果多选自动并入回测标的（与手动代码输入互补）
+        name_kw = st.sidebar.text_input(
+            "🔍 按名称搜索（模糊匹配）",
+            value="",
+            placeholder="输入名称关键字，如：中兴 / 科技 / 光迅",
+            help="输入股票名称的一部分即可匹配（如'中兴'匹配'中兴通讯'），可多选加入回测"
+        )
+        if name_kw.strip():
+            kw = name_kw.strip().lower()
+            names = _load_stock_names()
+            matched = [(c, n) for c, n in names.items() if kw in n.lower()]
+            matched.sort(key=lambda x: (x[1].find(name_kw.strip()) if name_kw.strip() in x[1] else 99, x[0]))
+            if matched:
+                shown = matched[:200]
+                picked = st.sidebar.multiselect(
+                    f"✅ 匹配 {len(matched)} 只（显示前 200，可多选）",
+                    options=[f"{c} {n}" for c, n in shown],
+                    help="勾选后自动加入回测股票池"
+                )
+                extra_tickers = [x.split(' ')[0] for x in picked]
+            else:
+                st.sidebar.warning("无匹配股票，换个关键字试试")
         st.sidebar.info(
             "🔗 需要先启动 free-stockdb 本地服务\n"
             "  下载: https://github.com/hello245m/free-stockdb\n"
@@ -173,10 +210,13 @@ def run_backtest():
                     market_data = metadata(price=price_df, benchmark=benchmark).align()
                     st.sidebar.success(f"✅ 成功加载 {len(price_df.columns)} 只股票，{len(price_df)} 个交易日")
                 elif source == "freestockdb(本地引擎)":
-                    if not tickers_input.strip():
-                        st.error("请输入股票代码")
+                    if not tickers_input.strip() and not extra_tickers:
+                        st.error("请输入股票代码，或通过名称搜索选股")
                         st.stop()
                     tickers = [t.strip() for t in tickers_input.split(",") if t.strip()]
+                    for t in extra_tickers:  # 名称搜索选中的并入（2026-08-28 小二陈）
+                        if t not in tickers:
+                            tickers.append(t)
                     if not tickers:
                         st.error("请至少输入一个股票代码")
                         st.stop()
