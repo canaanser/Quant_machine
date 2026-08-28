@@ -45,7 +45,9 @@ def run_one(name: str, strategy, tickers, start, end) -> dict:
         fq='qfq'
     )
     engine = BacktestPipeline(strategy, top_n=10, verbose=False)
-    engine.run(market_data, initial_cash=INITIAL_CASH)
+    # auto_save=False：组合对比只认控制台表格，不落盘——
+    # 落盘会两次覆盖同一 performance/ 目录（后跑的策略覆盖先跑的），且组合口径统计有 bug（frozen_cash/max_drawdown 异常）
+    engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
 
     return {
         'strategy': name,
