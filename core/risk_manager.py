@@ -175,11 +175,11 @@ class RiskManager:
                 remaining_slot = max_allowed - current_value
                 
                 if self.verbose:
-                    logger.debug(f"   🧮 仓位检查: {symbol} 持仓市值={current_value:.0f} max_allowed={max_allowed:.0f} "
-                                 f"remaining_slot={remaining_slot:.0f} pos_shares={pos.shares}")
+                    print(f"   🧮 仓位检查: {symbol} 持仓市值={current_value:.0f} max_allowed={max_allowed:.0f} "
+                          f"remaining_slot={remaining_slot:.0f} pos_shares={pos.shares}")
                 if remaining_slot <= 0:
                     if self.verbose:
-                        logger.debug(f"   ❌ 买入被拒: {symbol}, 仓位已满")
+                        print(f"   ❌ 买入被拒: {symbol}, 仓位已满 remaining_slot={remaining_slot:.0f}")
                     return None
                 
                 target_amount = min(target_amount, remaining_slot)
