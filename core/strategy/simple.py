@@ -24,6 +24,8 @@ class SimpleStrategy(BaseStrategy):
         self.window = long + 1
         self.lookback = long + 1
         self._buy_count = {}
+        self._score_cache_key = None
+        self._score_cache_value = None
         self.verbose = verbose
 
     def _get_position_weight(self, buy_count):
@@ -38,6 +40,13 @@ class SimpleStrategy(BaseStrategy):
         return min(1.0, max(0.0, final))
 
     def score_stocks(self, returns_df, market_ret):
+        # 当日评分缓存：pipeline 主循环与 get_exit_signal 同一天会各调一次本方法，
+        # 若重算则 _buy_count（加仓档位 10%/80%/10%）一天可能递增两次，节奏失真。
+        # （2026-08-28 小二陈修复）
+        cache_key = (id(returns_df), id(market_ret))
+        if cache_key == self._score_cache_key:
+            return self._score_cache_value
+
         import pandas as pd
         scores = {}
         for code in returns_df.columns:
@@ -119,7 +128,10 @@ class SimpleStrategy(BaseStrategy):
             else:
                 scores[code] = 0
                 
-        return pd.Series(scores).sort_values(ascending=False)
+        result = pd.Series(scores).sort_values(ascending=False)
+        self._score_cache_key = cache_key
+        self._score_cache_value = result
+        return result
 
     def get_exit_signal(self, returns_df: pd.DataFrame, market_ret: pd.Series) -> pd.Series:
         """
