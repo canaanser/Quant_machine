@@ -27,6 +27,14 @@ def run_backtest():
         index=1
     )
 
+    # 质量评分开关（2026-08-28 小二陈：深跌<-20%+放量>0.7，不满足降权×0.2，
+    # 84只10年扫描定型 Sharpe 0.51→0.64；默认开启，与 run_simple_pool 一致）
+    use_quality = st.sidebar.checkbox(
+        "质量评分（深跌+放量，v1定型）",
+        value=True,
+        help="不满足'深跌<-20%+放量>0.7'的信号评分×0.2降权；勾选=质量过滤版本"
+    )
+
     test_mode = st.sidebar.radio(
         "测试模式",
         ["单次测试（不保存文件）", "继承性测试（保存文件+记住金额）"],
@@ -205,7 +213,9 @@ def run_backtest():
                     strategy = AlphaScoreStrategy(window=int(window), lookback=int(lookback))
                 elif strategy_choice == "双均线金叉策略":
                     from core.strategy import SimpleStrategy
-                    strategy = SimpleStrategy(short=5, long=20)
+                    strategy = SimpleStrategy(short=5, long=20,
+                                              quality_filter=use_quality,
+                                              quality_penalty=0.2)
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION)
 
