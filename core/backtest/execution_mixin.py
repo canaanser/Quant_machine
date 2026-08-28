@@ -32,43 +32,31 @@ class _ExecutionMixin:
                     pass
 
     def _execute_stop_loss(self, holdings_dict, current_prices, today):
-        """铁律机械止损（2026-08-28 老板架构）：持仓跌破成本 stop_loss_pct 强制全卖。
-        最高优先级——任何策略信号/分批/因子都不能覆盖；人买错（抄底/追高失败）同样执行。"""
-        if not self.stop_loss_pct:
+        """机械止损（判定在封控层 risk_manager.evaluate_exits，2026-08-28 老板：封控层全权）
+        止损=认错：企稳后抄底仍跌超止损线=抄错底，最高优先级全卖——不扛抄错的单"""
+        if not self.risk_manager.stop_loss_pct:
             return
-        for symbol, pos in list(holdings_dict.items()):
-            price = current_prices.get(symbol)
-            if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
-                continue
-            pnl = (price - pos['avg_cost']) / pos['avg_cost']
-            if pnl <= -self.stop_loss_pct:
-                self._sell(symbol, pos['shares'], price, today, '铁律止损')
+        for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today):
+            if order['reason'] == '机械止损(认错)':
+                price = current_prices.get(order['symbol'])
+                self._sell(order['symbol'], order['target_volume'], price, today, order['reason'])
                 if self.verbose:
-                    logger.debug(f"🛑 铁律止损: {symbol} 全清 @ {price:.2f} (盈亏{pnl:.2%})")
+                    logger.debug(f"🛑 机械止损(认错): {order['symbol']} 全清 @ {price:.2f}")
 
     def _execute_take_profit(self, holdings_dict, current_prices, today):
-        """止盈（自平衡：止盈≥2×止损）：触发卖一半锁利润（2026-08-28 老板架构）"""
-        if not self.take_profit_pct:
+        """止盈（判定在封控层，卖一半锁利润——盈利垫子）"""
+        if not self.risk_manager.take_profit_pct:
             return
-        for symbol, pos in list(holdings_dict.items()):
-            price = current_prices.get(symbol)
-            if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
-                continue
-            pnl = (price - pos['avg_cost']) / pos['avg_cost']
-            if pnl >= self.take_profit_pct:
-                sell_shares = max(100, int(pos['shares'] * 0.5 // 100) * 100)
-                self._sell(symbol, sell_shares, price, today, '止盈半仓')
+        for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today):
+            if order['reason'] == '止盈锁利':
+                price = current_prices.get(order['symbol'])
+                self._sell(order['symbol'], order['target_volume'], price, today, order['reason'])
                 if self.verbose:
-                    logger.debug(f"🟢 止盈: {symbol} 卖{sell_shares}股 @ {price:.2f} (盈亏{pnl:.2%})")
+                    logger.debug(f"🟢 止盈锁利: {order['symbol']} 卖{order['target_volume']}股 @ {price:.2f}")
 
     def _in_protection(self, symbol, pos, today):
-        """保护期：人主动买入 protect_days 日内，策略信号不卖（止损/止盈照常）"""
-        if not self.protect_days or pos.get('buy_source') != 'human':
-            return False
-        buy_date = pos.get('buy_date')
-        if buy_date is None:
-            return False
-        return (pd.Timestamp(today) - pd.Timestamp(buy_date)).days < self.protect_days
+        """保护期：判定在封控层（人买入 N 日策略信号不卖，止损/止盈照常）"""
+        return self.risk_manager.in_protection(pos, today)
 
     def _sell(self, symbol, shares, price, today, reason=''):
         """统一卖出执行（2026-08-28）"""

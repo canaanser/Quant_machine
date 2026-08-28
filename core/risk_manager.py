@@ -41,11 +41,13 @@ class Account:
 
 class RiskManager:
     """
-    资金风控处
-    审批订单、执行止盈止损、控制仓位上限、计算优先级
+    资金风控处（封控层，2026-08-28 老板定：全权负责买卖点增删减改）
+    职责：拦不良买单/止损(机械+动态)/止盈/分批/保护期/死叉放行——策略只标记买卖点，筛选调节全在这
     """
     
-    def __init__(self, config: dict, verbose: bool = False):
+    def __init__(self, config: dict, verbose: bool = False,
+                 stop_loss_pct: float = None, take_profit_pct: float = None,
+                 batch_exit: bool = False, protect_days: int = 0):
         self.config = config
         self.verbose = verbose
         self.max_pos_ratio = config.get('MAX_SINGLE_POSITION_RATIO', 0.80)
@@ -56,6 +58,46 @@ class RiskManager:
         self.min_position_ratio = config.get('MIN_POSITION_RATIO', 0.01)
         self.min_order_amount = config.get('MIN_ORDER_AMOUNT', 100)
         self.dead_zone = config.get('DEAD_ZONE', 0.01)
+        # 铁律并入封控层（2026-08-28）：止损/止盈/分批/保护期全部封控层管
+        self.stop_loss_pct = stop_loss_pct
+        self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)
+        self.batch_exit = batch_exit
+        self.protect_days = protect_days
+
+    def evaluate_exits(self, positions: dict, prices: dict, today) -> List[dict]:
+        """封控层止损/止盈评估（判定在此，执行由执行层 _sell）：
+        机械止损=认错（企稳后抄底仍跌超止损线=抄错底，最高优先级全卖）；
+        止盈=盈利垫子锁利（≥2×止损 卖一半）。
+        positions: {symbol: {'shares','avg_cost','buy_source','buy_date'}}"""
+        orders = []
+        for symbol, pos in positions.items():
+            price = prices.get(symbol)
+            if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
+                continue
+            pnl = (price - pos['avg_cost']) / pos['avg_cost']
+            # 机械止损（最高优先级，认错——不扛抄错的单）
+            if self.stop_loss_pct and pnl <= -self.stop_loss_pct:
+                orders.append({'symbol': symbol, 'action': 'SELL',
+                               'target_volume': pos['shares'],
+                               'reason': '机械止损(认错)', 'priority': 9})
+                continue
+            # 止盈（盈利垫子锁利，卖一半）
+            if self.take_profit_pct and pnl >= self.take_profit_pct:
+                half = (pos['shares'] // 2 // 100) * 100
+                if half >= 100:
+                    orders.append({'symbol': symbol, 'action': 'SELL',
+                                   'target_volume': half,
+                                   'reason': '止盈锁利', 'priority': 8})
+        return orders
+
+    def in_protection(self, pos: dict, today) -> bool:
+        """保护期：人主动买入 protect_days 日内，策略信号不卖（止损/止盈照常）"""
+        if not self.protect_days or pos.get('buy_source') != 'human':
+            return False
+        buy_date = pos.get('buy_date')
+        if not buy_date:
+            return False
+        return (pd.Timestamp(today) - pd.Timestamp(buy_date)).days < self.protect_days
 
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
         """

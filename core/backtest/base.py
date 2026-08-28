@@ -36,7 +36,11 @@ class _BacktestBase:
         self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)  # 止盈≥2×止损
         self.batch_exit = batch_exit
         self.protect_days = protect_days
-        self.risk_manager = RiskManager(self.risk_config, verbose=self.verbose)
+        # 封控层全权（2026-08-28）：止损/止盈/分批/保护期全部并入 risk_manager
+        self.risk_manager = RiskManager(self.risk_config, verbose=self.verbose,
+                                        stop_loss_pct=stop_loss_pct,
+                                        take_profit_pct=self.take_profit_pct,
+                                        batch_exit=batch_exit, protect_days=protect_days)
         self.order_executor = OrderExecutor()
         self.performance_analyzer = PerformanceAnalyzer()
         self.factor_modulator = FactorModulator()
