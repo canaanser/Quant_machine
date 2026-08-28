@@ -25,9 +25,9 @@ class SimpleStrategy(BaseStrategy):
     - 仓位分配：第1次10%（评分放大1倍），第2次80%（评分放大2倍），第3次10%（评分放大2倍）
     """
     def __init__(self, short=5, long=20, verbose: bool = False,
-                 quality_filter: bool = False, quality_deep: float = -0.15,
+                 quality_filter: bool = False, quality_deep: float = -0.20,
                  quality_vol: float = 0.7, quality_penalty: float = 0.2,
-                 quality_pos_high: float = -0.50, quality_pos_range: float = 0.10,
+                 quality_pos_high: float = -1.0, quality_pos_range: float = 0.0,
                  freq_filter: bool = False):
         self.short = short
         self.long = long
@@ -39,9 +39,12 @@ class SimpleStrategy(BaseStrategy):
         self._prepared = False
         self.verbose = verbose
         # 事前质量评分（2026-08-28 小二陈）：
-        # v1"深跌<-20%+放量>0.7"= 样本外58.5%/Sharpe1.38
-        # v2 定型：深跌<-15% + 放量>0.7 +（距250日高点<-50% 或 区间分位<10%）
-        #   = 样本外62.8%/Sharpe2.13（84只验证）——"前面大下坡/底部区域"位置维度
+        # v1 定型：深跌<-20% + 放量>0.7 = 84只组合 669.19%/Sharpe0.64（最优平衡）
+        #   = 样本外58.5%/Sharpe1.38（信号级）
+        # v2（+位置硬过滤：距250日高点<-50%/区间分位<10%）信号级更优（62.8%/2.13）
+        #   但 84 只组合失败（544.88%/0.49/回撤-58%）：硬过滤砍信号量且集中在暴跌后
+        #   → 集中度灾难。教训：信号胜率≠组合安全，质量过滤必须保信号量。
+        #   位置维度留作软加权（不硬过滤）待验证。默认位置不拦截（-1.0/0.0）。
         # 不满足规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
         self.quality_filter = quality_filter
         self.quality_deep = quality_deep
