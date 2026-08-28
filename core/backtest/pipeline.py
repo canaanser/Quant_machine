@@ -36,7 +36,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         if verbose:
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
 
-    def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True):
+    def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True,
+            initial_positions: dict = None):
+        """initial_positions: 断点续跑用——实盘当前持仓 {symbol: {"shares": n, "avg_cost": p}}
+        （2026-08-28 小二陈：模式切换/实盘续跑，引擎原生支持，这里开放入口）"""
         import time as _time
         _t0 = _time.time()
         if initial_cash is None:
@@ -69,7 +72,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         if len(dates) < warmup_days:
             raise ValueError(f"数据长度不足，需要 {warmup_days} 天，实际 {len(dates)} 天")
 
-        initial_positions = {}
+        initial_positions = initial_positions or {}  # 断点续跑：实盘持仓导入
         self.adapter = SimulatedBrokerAdapter(
             initial_cash=initial_cash,
             initial_positions=initial_positions,
