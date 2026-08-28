@@ -60,7 +60,7 @@ class _ExecutionMixin:
         return self.risk_manager.in_protection(pos, today)
 
     def _sell(self, symbol, shares, price, today, reason=''):
-        """统一卖出执行（2026-08-28）；price 传入作为成交价（T+1 次日价，2026-08-29）"""
+        """统一卖出执行（2026-08-28）；price 传入作为成交价（T 日收盘价，尾盘）"""
         if shares <= 0:
             return
         order_id = self.adapter.place_order(symbol, 'SELL', shares, price_limit=price, trade_date=today)
@@ -73,10 +73,27 @@ class _ExecutionMixin:
                     'filled_amount': status['filled_volume'] * status['filled_price'],
                     'commission': 0, 'fill_price': status['filled_price'],
                     'timestamp': pd.Timestamp(today),
+                    'total_position': self._total_position_after_trade(),  # 该笔后总仓位（无歧义：持仓市值/总资产）
                 }
                 self.performance_analyzer.record_trade(exec_report)
                 return exec_report
         return None
+
+    def _total_position_after_trade(self) -> float:
+        """该笔交易完成后的总仓位 = 持仓总市值 / (现金 + 持仓市值)（2026-08-29 老板要求，无歧义）"""
+        try:
+            acc = self.adapter.get_account_info()
+            if acc is None:
+                return 0.0
+            pos_value = 0.0
+            for sym, p in acc.positions.items():
+                px = self.adapter._get_price(sym)
+                if px and px > 0 and p.get('shares', 0) > 0:
+                    pos_value += p['shares'] * px
+            total = acc.cash + pos_value
+            return round(pos_value / total, 4) if total > 0 else 0.0
+        except Exception:
+            return 0.0
 
     def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market):
         # ---------- 策略卖出逻辑（2026-08-28 方案2：死叉真假由封控层判）----------
@@ -205,7 +222,8 @@ class _ExecutionMixin:
                                 'filled_amount': status['filled_volume'] * status['filled_price'],
                                 'commission': 0,
                                 'fill_price': status['filled_price'],
-                                'timestamp': pd.Timestamp(today)
+                                'timestamp': pd.Timestamp(today),
+                                'total_position': self._total_position_after_trade(),  # 该笔后总仓位
                             }
                             self.performance_analyzer.record_trade(exec_report)
                             # 买入来源标记（2026-08-28：保护期需区分 人/系统 买入）
