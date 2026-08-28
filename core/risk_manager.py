@@ -47,7 +47,8 @@ class RiskManager:
     
     def __init__(self, config: dict, verbose: bool = False,
                  stop_loss_pct: float = None, take_profit_pct: float = None,
-                 batch_exit: bool = False, protect_days: int = 0):
+                 batch_exit: bool = False, protect_days: int = 0,
+                 deadcross_low: float = -0.40, deadcross_strength: float = 0.15):
         self.config = config
         self.verbose = verbose
         self.max_pos_ratio = config.get('MAX_SINGLE_POSITION_RATIO', 0.80)
@@ -63,6 +64,9 @@ class RiskManager:
         self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)
         self.batch_exit = batch_exit
         self.protect_days = protect_days
+        # 死叉真假判定参数（2026-08-29 实验可调）：低位阈值/强度阈值
+        self.deadcross_low = deadcross_low
+        self.deadcross_strength = deadcross_strength
 
     def evaluate_exits(self, positions: dict, prices: dict, today) -> List[dict]:
         """封控层止损/止盈评估（判定在此，执行由执行层 _sell）：
@@ -103,15 +107,15 @@ class RiskManager:
         """死叉卖真假判定（2026-08-28 老板方案2：死叉可能是底背离/浮盈/小反转，真假由封控层判）
         返回 (应不应卖, 理由)：
           1. 有浮盈(pnl>0) → 不卖（盈利垫子交由止盈/动态止损管理）
-          2. 疑似底背离（低位死叉：距250日高点<-40%）→ 不卖（深跌低位死叉可能是反转）
-          3. 弱死叉（strength<0.15）→ 不卖（小幅反转，卖了踏空）
+          2. 疑似底背离（低位死叉：距250日高点<deadcross_low）→ 不卖（深跌低位死叉可能是反转）
+          3. 弱死叉（strength<deadcross_strength）→ 不卖（小幅反转，卖了踏空）
           4. 真死叉 → 卖（分批由 batch_exit 决定）
-        参数可实验调优（分支 feature/risk-consolidation）。"""
+        参数 deadcross_low/deadcross_strength 可实验调优。"""
         if pnl > 0:
             return False, '死叉时有浮盈→交由止盈管理'
-        if pct_250d_high is not None and pct_250d_high < -0.40:
+        if pct_250d_high is not None and pct_250d_high < self.deadcross_low:
             return False, '疑似底背离(低位死叉)→不卖'
-        if strength is not None and strength < 0.15:
+        if strength is not None and strength < self.deadcross_strength:
             return False, '弱死叉(小反转)→不卖'
         return True, '真死叉→执行卖出'
 
