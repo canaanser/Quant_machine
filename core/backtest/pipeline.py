@@ -30,9 +30,14 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
     """
 
     def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False,
-                 stop_loss_pct: float = None):
+                 stop_loss_pct: float = None, market_gate: str = None,
+                 gate_crash: float = -0.03, gate_ma200_half: bool = True):
         super().__init__(strategy, top_n=top_n, commission=commission,
                          risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct)
+        # 大盘风控开关（2026-08-28 小二陈）：'crash'=单日暴跌不开仓；'ma200'=大盘MA200下方半仓；'both'
+        self.market_gate = market_gate
+        self.gate_crash = gate_crash
+        self.gate_ma200_half = gate_ma200_half
         # verbose=True 时，本包 logger 提升到 DEBUG 级（调试细节可见，保持原有行为）
         if verbose:
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
@@ -162,6 +167,16 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             else:
                 final_scores = score_series
 
+            # ---------- 大盘风控开关（2026-08-28 小二陈）----------
+            # 回撤控制核心：单日暴跌不开新仓 / 大盘MA200下方半仓。
+            # 与"个股止损"不同——不打断抄底周期，只在系统性风险时降仓（抄底策略的正确风控）。
+            if self.market_gate and not final_scores.empty:
+                gate = self._market_risk_gate(market_ret, market_data, today, i)
+                if gate < 1.0:
+                    final_scores = final_scores * gate
+                    if self.verbose:
+                        logger.debug(f"   🛡️ 大盘风控: gate={gate} ({today.date()})")
+
             buy_list = final_scores.head(self.top_n).index.tolist() if len(final_scores) > 0 else []
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
@@ -184,3 +199,30 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     dates[0].strftime('%Y-%m-%d'), dates[-1].strftime('%Y-%m-%d'),
                     _time.time() - _t0)
         return self
+
+    def _market_risk_gate(self, market_ret, market_data, today, i):
+        """大盘风控开关（2026-08-28 小二陈）：
+        返回买入乘数：0=当日不开新仓（单日暴跌），0.5=半仓（大盘MA200下方），1=正常。
+        只影响新买入，不打断已有持仓的抄底周期。"""
+        gate = 1.0
+        # 单日暴跌：大盘当日收益 ≤ gate_crash → 当日禁止新开仓
+        if self.market_gate in ('crash', 'both'):
+            try:
+                if today in market_ret.index:
+                    r = float(market_ret.loc[today])
+                    if r <= self.gate_crash:
+                        gate = 0.0
+            except Exception:
+                pass
+        # 大盘 MA200 下方 → 半仓
+        if self.market_gate in ('ma200', 'both') and gate > 0:
+            try:
+                bp = market_data.benchmark_price
+                if bp is not None and not bp.empty and today in bp.index:
+                    hist = bp.loc[:today]
+                    ma200 = hist.rolling(200, min_periods=100).mean().iloc[-1]
+                    if not pd.isna(ma200) and hist.iloc[-1] < ma200:
+                        gate = min(gate, 0.5)
+            except Exception:
+                pass
+        return gate
