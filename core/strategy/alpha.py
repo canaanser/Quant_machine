@@ -31,9 +31,9 @@ class AlphaScoreStrategy(BaseStrategy):
         stock_codes = returns_df.columns
         scores = {}
         
-        # ----- 特殊情况：只有1只股票时，改用趋势跟踪策略 -----
+        # ----- 特殊情况：只有1只股票时，改用简单趋势动量 -----
         if len(stock_codes) <= 2:
-            logger.debug(f"📊 股票池仅有 {len(stock_codes)} 只股票，使用趋势跟踪策略")
+            logger.debug(f"📊 股票池仅有 {len(stock_codes)} 只股票，使用简单趋势动量")
             for code in stock_codes:
                 y = returns_df[code].dropna()
                 if len(y) < self.window + self.lookback:

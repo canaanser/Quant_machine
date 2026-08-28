@@ -9,7 +9,6 @@ run() 主循环骨架：段落逻辑已下沉到各 Mixin 的私有方法。
 import logging
 
 import pandas as pd
-import numpy as np
 
 from config import COMMISSION, INITIAL_CASH
 from core.logger import get_logger
@@ -45,31 +44,6 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
 
         price_data = market_data.price
         market_ret_raw = market_data.benchmark
-
-        if hasattr(self.strategy, "__class__") and self.strategy.__class__.__name__ == "FullFitStrategy":
-            logger.info("🔗 完全拟合模式：直接使用原始价格作为净值曲线")
-            first_stock = price_data.columns[0]
-            raw_prices = price_data[first_stock].dropna()
-            normalized = raw_prices / raw_prices.iloc[0]
-            self.raw_benchmark = normalized.copy()
-            self.equity_curve = normalized
-            self.trades = pd.DataFrame(columns=['Date', 'Stock', 'Action', 'Price', 'Shares'])
-            self.total_return = normalized.iloc[-1] / normalized.iloc[0] - 1
-            days = len(normalized)
-            self.annual_return = (1 + self.total_return) ** (252 / days) - 1
-            daily_ret = normalized.pct_change(fill_method=None).dropna()
-            self.sharpe = (daily_ret.mean() / daily_ret.std()) * np.sqrt(252) if daily_ret.std() != 0 else 0
-            rolling_max = normalized.expanding().max()
-            drawdown = (normalized - rolling_max) / rolling_max
-            self.max_drawdown = drawdown.min()
-            self.daily_scores = {}
-            self.daily_selected = {}
-            self.daily_early_scores = {}
-            for date, price in normalized.items():
-                self.daily_scores[date] = {first_stock: round(float(price), 6)}
-                self.daily_selected[date] = [first_stock]
-                self.daily_early_scores[date] = 0.5
-            return self
 
         market_data.validate()
         returns = price_data.pct_change(fill_method=None).dropna(how='all')
