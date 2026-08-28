@@ -90,6 +90,7 @@ def main():
     parser = argparse.ArgumentParser(description="股票池归因分析")
     parser.add_argument("--tickers", default=",".join(config_mod.SCAN_TICKERS))
     parser.add_argument("--mode", default='建仓', choices=['建仓', '进攻'])
+    parser.add_argument("--only", default="", help="只打印指定代码的每笔买卖记录（如 000657）")
     parser.add_argument("--start", default='2017-01-01')
     parser.add_argument("--end", default='2026-08-27')
     args = parser.parse_args()
@@ -137,6 +138,18 @@ def main():
         print(f"{r['代码']:<8}{r['名称']:<8}{r['买入笔数']:>5}{r['卖出笔数']:>5}"
               f"{r['实现盈亏']:>12,.0f}{win:>6}{hold:>7}{r['期末浮盈']:>12,.0f}{r['总贡献']:>12,.0f}")
     print("=" * 78)
+    # 只打印指定票的买卖记录（老板 2026-08-29 要单票明细）
+    if args.only:
+        code = args.only
+        g = df[df['Stock'] == code]
+        nm = names.get(code, '?')
+        print(f"\n📊 {code} {nm} 买卖记录（共 {len(g)} 笔）")
+        print(f"{'日期':<12}{'操作':<6}{'价格':>10}{'数量':>8}")
+        print("-" * 40)
+        for _, r in g.iterrows():
+            print(f"{str(r['Date'])[:10]:<12}{str(r['Action']):<6}{float(r['Price']):>10.2f}{int(r['Shares']):>8}")
+        print("=" * 78)
+        return
     # 汇总
     pos_sum = att[att['总贡献'] > 0]['总贡献'].sum()
     neg_sum = att[att['总贡献'] < 0]['总贡献'].sum()
