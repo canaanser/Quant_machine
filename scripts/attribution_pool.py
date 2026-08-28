@@ -160,6 +160,24 @@ def main():
                 shares -= qty
                 print(f"{str(r['Date'])[:10]:<12}{'SELL':<5}{px:>9.2f}{qty:>7}{avg_cost:>8.2f}{pnl:>12,.0f}{cum_pnl:>12,.0f}{shares:>6}")
         print("=" * 82)
+        # 分年度汇总（老板 2026-08-29：要看每年代实现盈亏 + 总盈亏）
+        g['Year'] = g['Date'].dt.year
+        yearly = []
+        for yr, yg in g.groupby('Year'):
+            avg_c, sh, realized = 0.0, 0, 0.0
+            for _, rr in yg.iterrows():
+                if rr['Action'] == 'BUY':
+                    t = sh + rr['Shares']
+                    avg_c = (avg_c * sh + rr['Price'] * rr['Shares']) / t if t else rr['Price']
+                    sh = t
+                else:
+                    realized += (rr['Price'] - avg_c) * rr['Shares']
+                    sh -= rr['Shares']
+            yearly.append((yr, realized))
+        print(f"\n📅 {code} {nm} 分年度实现盈亏（总 {cum_pnl:,.0f} 元）")
+        for yr, rl in yearly:
+            print(f"  {yr}: {rl:>+12,.0f} 元")
+        print("=" * 82)
         return
     # 汇总
     pos_sum = att[att['总贡献'] > 0]['总贡献'].sum()
