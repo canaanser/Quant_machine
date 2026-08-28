@@ -44,6 +44,8 @@ def main():
                         help="关闭质量评分过滤（回到原版 Simple）")
     parser.add_argument("--pos-off", action="store_true",
                         help="关闭位置软加权（纯 v1：深跌+放量，不按价格位置调整）")
+    parser.add_argument("--mode", choices=['建仓', '进攻'], default=None,
+                        help="模式档位：建仓=轻仓10%+铁律止损5%+分批+保护期；进攻=30%+止损8%")
     parser.add_argument("--ext", action="store_true",
                         help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
     args = parser.parse_args()
@@ -69,12 +71,21 @@ def main():
 
     t0 = time.time()
     # 2026-08-28 定型：质量评分 v1（深跌<-20%+放量>0.7，不满足降权×0.1）+ 位置软加权（默认开）
-    # 配置自检（2026-08-28 小二陈：防 __pycache__ 旧代码——若输出与预期不符说明加载了旧版）
-    print(f"⚙️ 策略配置: quality_filter={strategy.quality_filter} deep={strategy.quality_deep} "
-          f"vol={strategy.quality_vol} pos_high={strategy.quality_pos_high} "
-          f"pos_range={strategy.quality_pos_range} penalty={strategy.quality_penalty} "
-          f"freq_filter={strategy.freq_filter}")
-    engine = BacktestPipeline(strategy, top_n=10, verbose=False)
+    # 模式档位（老板两阶段打法）：建仓=轻仓10%+铁律止损5%+分批+保护期；进攻=30%+止损8%
+    from config.risk_config import DEFAULT_RISK_CONFIG
+    import copy
+    rc = copy.deepcopy(DEFAULT_RISK_CONFIG)
+    stop_loss = take_profit = None
+    batch = protect = False
+    if args.mode == '建仓':
+        rc.update({'MAX_SINGLE_POSITION_RATIO': 0.10, 'BASE_POSITION_RATIO': 0.20})
+        stop_loss, batch, protect = 0.05, True, 2
+    elif args.mode == '进攻':
+        rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
+        stop_loss, batch = 0.08, True
+    print(f"🎯 模式: {args.mode or '标准'} 风控={rc.get('MAX_SINGLE_POSITION_RATIO')} 止损={stop_loss}")
+    engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False,
+                              stop_loss_pct=stop_loss, batch_exit=batch, protect_days=protect)
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 
