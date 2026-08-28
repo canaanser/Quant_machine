@@ -67,6 +67,8 @@ def main():
     parser.add_argument("--mode", choices=list(MODE_CONFIG.keys()), default='建仓')
     parser.add_argument("--end", default='2026-08-27', help="结束日期（默认数据最新 2026-08-27）")
     parser.add_argument("--total", type=float, default=500000, help="总资金（默认50万）")
+    parser.add_argument("--dc-low", type=float, default=-0.40, help="死叉低位阈值（默认-0.40，疑似底背离不卖）")
+    parser.add_argument("--dc-strength", type=float, default=0.15, help="死叉强度阈值（默认0.15，弱死叉不卖）")
     args = parser.parse_args()
 
     positions = {}
@@ -105,6 +107,10 @@ def main():
                               stop_loss_pct=cfg.get('stop_loss_pct'),
                               batch_exit=cfg.get('batch_exit', False),
                               protect_days=cfg.get('protect_days', 0))
+    # 死叉真假判定参数（2026-08-29 实验）：--dc-low/--dc-strength
+    engine.risk_manager.deadcross_low = args.dc_low
+    engine.risk_manager.deadcross_strength = args.dc_strength
+    print(f"🔍 死叉判定参数: 低位 {args.dc_low} / 强度 {args.dc_strength}")
     engine.run(md, initial_cash=cash, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 
