@@ -31,25 +31,26 @@ class _ExecutionMixin:
                 except Exception:
                     pass
 
-    def _execute_stop_loss(self, holdings_dict, current_prices, today):
-        """机械止损（判定在封控层 risk_manager.evaluate_exits，2026-08-28 老板：封控层全权）
-        止损=认错：企稳后抄底仍跌超止损线=抄错底，最高优先级全卖——不扛抄错的单"""
+    def _execute_stop_loss(self, holdings_dict, current_prices, today, exec_prices=None):
+        """机械止损（判定在封控层 risk_manager.evaluate_exits，2026-08-29 老板：封控层全权）
+        止损=认错：企稳后抄底仍跌超止损线=抄错底，最高优先级全卖——不扛抄错的单。
+        T+1：判定用 T 日价（current_prices），成交用 T+1 价（exec_prices）"""
         if not self.risk_manager.stop_loss_pct:
             return
         for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today):
             if order['reason'] == '机械止损(认错)':
-                price = current_prices.get(order['symbol'])
+                price = (exec_prices or current_prices).get(order['symbol']) or current_prices.get(order['symbol'])
                 self._sell(order['symbol'], order['target_volume'], price, today, order['reason'])
                 if self.verbose:
                     logger.debug(f"🛑 机械止损(认错): {order['symbol']} 全清 @ {price:.2f}")
 
-    def _execute_take_profit(self, holdings_dict, current_prices, today):
-        """止盈（判定在封控层，卖一半锁利润——盈利垫子）"""
+    def _execute_take_profit(self, holdings_dict, current_prices, today, exec_prices=None):
+        """止盈（判定在封控层，卖一半锁利润——盈利垫子）；T+1 成交价"""
         if not self.risk_manager.take_profit_pct:
             return
         for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today):
             if order['reason'] == '止盈锁利':
-                price = current_prices.get(order['symbol'])
+                price = (exec_prices or current_prices).get(order['symbol']) or current_prices.get(order['symbol'])
                 self._sell(order['symbol'], order['target_volume'], price, today, order['reason'])
                 if self.verbose:
                     logger.debug(f"🟢 止盈锁利: {order['symbol']} 卖{order['target_volume']}股 @ {price:.2f}")
@@ -59,10 +60,10 @@ class _ExecutionMixin:
         return self.risk_manager.in_protection(pos, today)
 
     def _sell(self, symbol, shares, price, today, reason=''):
-        """统一卖出执行（2026-08-28）"""
+        """统一卖出执行（2026-08-28）；price 传入作为成交价（T+1 次日价，2026-08-29）"""
         if shares <= 0:
             return
-        order_id = self.adapter.place_order(symbol, 'SELL', shares, trade_date=today)
+        order_id = self.adapter.place_order(symbol, 'SELL', shares, price_limit=price, trade_date=today)
         if not order_id.startswith('ERROR'):
             status = self.adapter.get_order_status(order_id)
             if status['status'] == 'FILLED':
@@ -77,9 +78,10 @@ class _ExecutionMixin:
                 return exec_report
         return None
 
-    def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market):
+    def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market, exec_prices=None):
         # ---------- 策略卖出逻辑（2026-08-28 方案2：死叉真假由封控层判）----------
         # 死叉=候选卖点（可能底背离/浮盈/小反转）→ 封控层 judge_deadcross_exit 判真假才执行
+        # T+1：判定用 T 日价（current_prices），成交用 T+1 价（exec_prices）
         exit_info = self.strategy.get_exit_signal(hist_returns, hist_market)
         sell_signals = [sym for sym, info in exit_info.items() if info.get('exit')]
 
@@ -107,6 +109,8 @@ class _ExecutionMixin:
                 logger.debug(f"🔔 {reason}: {symbol} 持仓={pos['shares']}股")
             score = final_scores.get(symbol, 0.5)
             tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
+            # 成交价 = T+1（无 T+1 价则退回 T 日）
+            fill_price = (exec_prices or current_prices).get(symbol) or price
 
             if self.batch_exit:
                 # 分批退出：死叉卖 1/3（剩余等后续信号/止损；铁律止损仍全清）
@@ -115,11 +119,11 @@ class _ExecutionMixin:
                     sell_shares = pos['shares']
                 if self.verbose:
                     logger.debug(f"🔔 分批退出: {symbol} 卖{sell_shares}/{pos['shares']}股 (评分{score:.4f})")
-                self._sell(symbol, sell_shares, price, today, '死叉分批')
+                self._sell(symbol, sell_shares, fill_price, today, '死叉分批')
             else:
                 if self.verbose:
                     logger.debug(f"🔔 死叉信号触发卖出: {symbol}, 持仓={pos['shares']}股, 评分={score:.4f}")
-                self._sell(symbol, pos['shares'], price, today, '死叉清仓')
+                self._sell(symbol, pos['shares'], fill_price, today, '死叉清仓')
 
                 temp_account = create_default_account(account.cash)
                 temp_account.positions = {
@@ -158,7 +162,7 @@ class _ExecutionMixin:
                                 if self.verbose:
                                     logger.debug(f"   ✅ 卖出成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}，总资产: {pnl:+.2f}")
 
-    def _execute_buys(self, buy_list, final_scores, market_data, account, current_prices, today):
+    def _execute_buys(self, buy_list, final_scores, market_data, account, current_prices, today, exec_prices=None):
         # ---------- 买入 ----------
         for symbol in buy_list:
             score = final_scores.get(symbol, 0.5)
@@ -187,7 +191,9 @@ class _ExecutionMixin:
             if approved:
                 volume = approved['target_volume']
                 if volume > 0:
-                    order_id = self.adapter.place_order(symbol, 'BUY', volume, trade_date=today)
+                    # T+1 成交价（2026-08-29）：判定用 T 日价（approve 算仓位），成交用 exec_prices（次日价）
+                    fill_price = (exec_prices or current_prices).get(symbol) or current_price
+                    order_id = self.adapter.place_order(symbol, 'BUY', volume, price_limit=fill_price, trade_date=today)
                     if not order_id.startswith('ERROR'):
                         status = self.adapter.get_order_status(order_id)
                         if status['status'] == 'FILLED':

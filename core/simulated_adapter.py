@@ -81,11 +81,11 @@ class SimulatedBrokerAdapter(BrokerAdapter):
         )
 
     def place_order(self, symbol: str, action: str, volume: int, price_limit: Optional[float] = None, trade_date=None) -> str:
-        """模拟下单（立即成交）"""
+        """模拟下单（立即成交）。price_limit 传入时作为成交价（2026-08-29 T+1：执行层传次日价）"""
         order_id = f"SIM_{self.order_counter:06d}"
         self.order_counter += 1
         
-        current_price = self._get_price(symbol)
+        current_price = price_limit if price_limit is not None else self._get_price(symbol)
         
         if action == "BUY":
             cost = volume * current_price
