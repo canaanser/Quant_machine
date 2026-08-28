@@ -394,7 +394,8 @@ class SimpleStrategy(BaseStrategy):
             except Exception:
                 p250h = None
             # 严格底背离（2026-08-29 老板：价格创新低但 RSI 未创新低=跌不动=反转，死叉不该卖）
-            # 前低回看 60 日；价格接近前低（≤前低×1.05）且当前 RSI > 前低时 RSI → 底背离（2026-08-29 放宽）
+            # 前低回看 60 日；价格接近前低（≤前低×1.02）且当前 RSI > 前低时 RSI+2 → 底背离
+            # （2026-08-29 还原：2次触发是池子好的事实，不为触发率放宽=过拟合——参数按逻辑定义，不按结果调）
             bottom_div = False
             try:
                 r = returns_df[sym].dropna()
@@ -405,10 +406,10 @@ class SimpleStrategy(BaseStrategy):
                     low_idx = recent.idxmin()
                     cur_price = price.iloc[-1]
                     low_price = recent.min()
-                    if cur_price <= low_price * 1.05:
+                    if cur_price <= low_price * 1.02:
                         cur_rsi = rsi.iloc[-1]
                         low_rsi = rsi.loc[low_idx]
-                        if pd.notna(cur_rsi) and pd.notna(low_rsi) and cur_rsi > low_rsi:
+                        if pd.notna(cur_rsi) and pd.notna(low_rsi) and cur_rsi > low_rsi + 2:
                             bottom_div = True
             except Exception:
                 bottom_div = False
