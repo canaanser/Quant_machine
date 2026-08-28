@@ -95,6 +95,10 @@ class _PatternScanMixin:
 
     def _update_vote_weights(self):
         # ===== 每日权重更新（从投票池获取排名） =====
+        # 2026-08-28 小二陈：FactorModulator 未实现 update_weights，原实现每天
+        # 白查一次 vote_pool.db 后必然 AttributeError 被静默吞掉——直接跳过。
+        if not hasattr(self.factor_modulator, 'update_weights'):
+            return
         try:
             from structure_engine.voting.vote_pool import VotePool
             from config import PATTERN_MIN_SAMPLES, PATTERN_WEIGHT_LEARNING_RATE
