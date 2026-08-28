@@ -381,7 +381,19 @@ class SimpleStrategy(BaseStrategy):
         out = {}
         for sym, s in scores.items():
             exit_flag = s < -0.05
-            strength = min(1.0, -s) if s < 0 else 0.0
+            # 死叉强度 = MA5 与 MA20 归一化距离（2026-08-29 老板：弱死叉=均线粘合小反转，强死叉=均线张开）
+            # 评分负程度无区分度（死叉评分都很负）——改用均线距离
+            strength = 0.0
+            try:
+                r = returns_df[sym].dropna()
+                if len(r) >= 20:
+                    ma5 = r.rolling(5).mean()
+                    ma20 = r.rolling(20).mean()
+                    d = abs(ma5.iloc[-1] - ma20.iloc[-1])
+                    base = abs(ma20.iloc[-1]) or 1e-9
+                    strength = float(min(1.0, d / base * 10))  # 归一化：1%均线距离→0.1，10%→1.0
+            except Exception:
+                strength = 0.0
             # 位置：距 250 日高点（收益率序列累计算价格）
             p250h = None
             try:
