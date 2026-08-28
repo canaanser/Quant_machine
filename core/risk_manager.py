@@ -67,6 +67,8 @@ class RiskManager:
         # 死叉真假判定参数（2026-08-29 实验可调）：低位阈值/强度阈值
         self.deadcross_low = deadcross_low
         self.deadcross_strength = deadcross_strength
+        # 死叉驳回统计（诊断用）
+        self.deadcross_stats = {'浮盈': 0, '底背离': 0, '低位': 0, '真死叉': 0}
 
     def evaluate_exits(self, positions: dict, prices: dict, today) -> List[dict]:
         """封控层止损/止盈评估（判定在此，执行由执行层 _sell）：
@@ -112,11 +114,15 @@ class RiskManager:
           4. 真死叉 → 卖（分批由 batch_exit 决定）
         注：死叉强度(均线距离)已废弃——死叉大小无法预测（老板 2026-08-29 点破）。"""
         if pnl > 0:
+            self.deadcross_stats['浮盈'] += 1
             return False, '死叉时有浮盈→交由止盈管理'
         if bottom_divergence:
+            self.deadcross_stats['底背离'] += 1
             return False, '严格底背离(价格新低RSI未新低)→不卖'
         if pct_250d_high is not None and pct_250d_high < self.deadcross_low:
+            self.deadcross_stats['低位'] += 1
             return False, '低位死叉(深跌位置)→不卖'
+        self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:

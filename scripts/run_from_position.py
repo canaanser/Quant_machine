@@ -115,6 +115,13 @@ def main():
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 
     print("\n" + "=" * 60)
+    # 死叉驳回统计（诊断：浮盈/底背离/低位各驳回多少次，真死叉放行几次）
+    try:
+        st = engine.risk_manager.deadcross_stats
+        print(f"🔍 死叉判定统计: 浮盈驳回{st['浮盈']} 底背离驳回{st['底背离']} "
+              f"低位驳回{st['低位']} 真死叉放行{st['真死叉']}")
+    except Exception:
+        pass
     print(f"模式「{args.mode}」续跑结果（{args.start} ~ {args.end}）")
     print("=" * 60)
     print(f"累计收益:   {engine.total_return:>10.2%}")
