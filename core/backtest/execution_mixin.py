@@ -204,14 +204,7 @@ class _ExecutionMixin:
             temp_account.total_asset = account.total_asset
 
             signal = {'symbol': symbol, 'action': 'BUY', 'score': score, 'tag': tag}
-            # 金叉买点判定（2026-08-29 老板修正：防跌不防涨）——下跌趋势金叉=反弹陷阱拒买
-            bt = self.strategy.get_buy_truth(symbol, today)
-            should_buy, reason = self.risk_manager.judge_goldencross_buy(
-                bt.get('downtrend', False))
-            if not should_buy:
-                if self.verbose:
-                    logger.debug(f"🔍 金叉买点被驳回: {symbol}（{reason}）")
-                continue
+            # 2026-08-29 老板：买入不额外拒买（涨不怕+机械止损兜底）——靠质量/位置/筑底筛选
             approved = self.risk_manager.approve_order(
                 signal, temp_account, current_price
             )

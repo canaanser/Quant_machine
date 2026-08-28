@@ -125,14 +125,6 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
-    def judge_goldencross_buy(self, downtrend: bool) -> tuple:
-        """金叉买点判定（2026-08-29 老板修正：防跌不防涨）
-        涨无上限 + 机械止损兜底 → 高位金叉不怕（拒绝'怕涨'的判定，已废弃 gc-high）；
-        防的是'跌'：下跌趋势（MA20下行+价格<MA20）中的金叉 = 反弹陷阱 → 拒买（接飞刀）"""
-        if downtrend:
-            return False, '下跌趋势金叉(反弹陷阱)→拒买'
-        return True, '金叉买点通过'
-
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
         """
         审批订单主流程
