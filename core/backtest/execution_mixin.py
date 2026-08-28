@@ -98,7 +98,7 @@ class _ExecutionMixin:
             pnl = (price - pos.get('avg_cost', 0)) / pos.get('avg_cost', 1) if pos.get('avg_cost') else 0
             info = exit_info.get(symbol, {})
             should_sell, reason = self.risk_manager.judge_deadcross_exit(
-                pnl, info.get('pct_250d_high'), info.get('strength'))
+                pnl, info.get('pct_250d_high'), info.get('bottom_divergence', False))
             if not should_sell:
                 if self.verbose:
                     logger.debug(f"🔍 死叉被封控层驳回: {symbol}（{reason}）")

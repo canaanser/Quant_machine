@@ -381,19 +381,6 @@ class SimpleStrategy(BaseStrategy):
         out = {}
         for sym, s in scores.items():
             exit_flag = s < -0.05
-            # 死叉强度 = 价格 MA5/MA20 距离（2026-08-29 老板：弱死叉=均线粘合小反转，强死叉=均线张开）
-            # 用价格序列（收益率 MA 均值≈0 无区分）；量级 0.01~0.05（1%-5%均线距离）
-            strength = 0.0
-            try:
-                r = returns_df[sym].dropna()
-                if len(r) >= 20:
-                    price = (1 + r).cumprod()
-                    ma5 = price.rolling(5).mean()
-                    ma20 = price.rolling(20).mean()
-                    base = abs(ma20.iloc[-1]) or 1e-9
-                    strength = float(abs(ma5.iloc[-1] - ma20.iloc[-1]) / base)
-            except Exception:
-                strength = 0.0
             # 位置：距 250 日高点（收益率序列累计算价格）
             p250h = None
             try:
@@ -406,8 +393,38 @@ class SimpleStrategy(BaseStrategy):
                     p250h = float(price.iloc[-1] / price.max() - 1)
             except Exception:
                 p250h = None
-            out[sym] = {'exit': exit_flag, 'strength': strength, 'pct_250d_high': p250h}
+            # 严格底背离（2026-08-29 老板：价格创新低但 RSI 未创新低=跌不动=反转，死叉不该卖）
+            # 前低回看 60 日；价格接近前低（≤前低×1.02）且当前 RSI > 前低时 RSI+2 → 底背离
+            bottom_div = False
+            try:
+                r = returns_df[sym].dropna()
+                if len(r) >= 70:
+                    price = (1 + r).cumprod()
+                    rsi = self._rsi(price, 14)
+                    recent = price.iloc[-60:]
+                    low_idx = recent.idxmin()
+                    cur_price = price.iloc[-1]
+                    low_price = recent.min()
+                    if cur_price <= low_price * 1.02:
+                        cur_rsi = rsi.iloc[-1]
+                        low_rsi = rsi.loc[low_idx]
+                        if pd.notna(cur_rsi) and pd.notna(low_rsi) and cur_rsi > low_rsi + 2:
+                            bottom_div = True
+            except Exception:
+                bottom_div = False
+            out[sym] = {'exit': exit_flag, 'pct_250d_high': p250h, 'bottom_divergence': bottom_div}
         return out
+
+    @staticmethod
+    def _rsi(price: pd.Series, period: int = 14) -> pd.Series:
+        """RSI 相对强弱指标（Wilder 简化版）"""
+        delta = price.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(period).mean()
+        avg_loss = loss.rolling(period).mean()
+        rs = avg_gain / avg_loss.replace(0, 1e-9)
+        return 100 - 100 / (1 + rs)
 
     # ==================== 早盘动态预判函数 ====================
     def calculate_early_score(self, open_price, close_prev, ma5_prev, ma20_prev):

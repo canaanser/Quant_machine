@@ -103,20 +103,20 @@ class RiskManager:
             return False
         return (pd.Timestamp(today) - pd.Timestamp(buy_date)).days < self.protect_days
 
-    def judge_deadcross_exit(self, pnl: float, pct_250d_high, strength: float) -> tuple:
-        """死叉卖真假判定（2026-08-28 老板方案2：死叉可能是底背离/浮盈/小反转，真假由封控层判）
-        返回 (应不应卖, 理由)：
-          1. 有浮盈(pnl>0) → 不卖（盈利垫子交由止盈/动态止损管理）
-          2. 疑似底背离（低位死叉：距250日高点<deadcross_low）→ 不卖（深跌低位死叉可能是反转）
-          3. 弱死叉（strength<deadcross_strength）→ 不卖（小幅反转，卖了踏空）
+    def judge_deadcross_exit(self, pnl: float, pct_250d_high, bottom_divergence: bool) -> tuple:
+        """死叉卖真假判定（2026-08-29 老板方案2修正）：
+        死叉=候选卖点，真假判定基于**事实/结果**（不预测）：
+          1. 有浮盈(pnl>0) → 不卖（盈利垫子交由止盈/动态止损管理）【事实】
+          2. 严格底背离 → 不卖（价格创新低但 RSI 未新低=跌不动=反转）【事实】
+          3. 低位死叉（距250日高点<deadcross_low）→ 不卖（深跌低位）【位置事实】
           4. 真死叉 → 卖（分批由 batch_exit 决定）
-        参数 deadcross_low/deadcross_strength 可实验调优。"""
+        注：死叉强度(均线距离)已废弃——死叉大小无法预测（老板 2026-08-29 点破）。"""
         if pnl > 0:
             return False, '死叉时有浮盈→交由止盈管理'
+        if bottom_divergence:
+            return False, '严格底背离(价格新低RSI未新低)→不卖'
         if pct_250d_high is not None and pct_250d_high < self.deadcross_low:
-            return False, '疑似底背离(低位死叉)→不卖'
-        if strength is not None and strength < self.deadcross_strength:
-            return False, '弱死叉(小反转)→不卖'
+            return False, '低位死叉(深跌位置)→不卖'
         return True, '真死叉→执行卖出'
 
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
