@@ -18,14 +18,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if str(PROJECT_ROOT / 'pybao') not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
 except Exception:
     pass
 
-from pybao import bk
-import config.config as config_mod
+import stock_sdk  # noqa: E402  （pybao/stock_sdk.py，bk 是其 lazy 板块导出）
+bk = stock_sdk.bk
+import config.config as config_mod  # noqa: E402
 
 # 已有池（排除）
 EXISTING = set(config_mod.SCAN_TICKERS) | set(getattr(config_mod, 'SCAN_TICKERS_AI', []))
