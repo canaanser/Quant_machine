@@ -60,7 +60,7 @@ def main():
     parser.add_argument("--position", required=True, help="持仓 JSON 文件：{\"code\": {\"shares\": n, \"avg_cost\": p}}")
     parser.add_argument("--start", required=True, help="断点起始日期（如 2026-08-01）")
     parser.add_argument("--mode", choices=list(MODE_CONFIG.keys()), default='建仓')
-    parser.add_argument("--end", default=config_mod.END_DATE or '2026-08-27')
+    parser.add_argument("--end", default='2026-08-27', help="结束日期（默认数据最新 2026-08-27）")
     parser.add_argument("--cash", type=float, default=None, help="当前现金（默认=初始50万）")
     args = parser.parse_args()
 
@@ -76,23 +76,19 @@ def main():
     print(f"🎯 模式「{args.mode}」: {cfg['desc']}")
     print(f"   风控: {cfg['risk']}")
 
-    # 数据从断点前拉（需要 warmup 历史）
+    # 数据从断点前拉（warmup 历史），引擎 trade_start 前不交易
     load_start = str(pd.Timestamp(args.start) - pd.DateOffset(years=2))[:10]
     print(f"🚀 加载数据（断点前 2 年 warmup）: {load_start} ~ {args.end} ...")
     md = load_data(source='freestockdb', tickers=tickers,
                    start=load_start, end=args.end, frequency='1d', fq='qfq')
     print(f"✅ 加载完成 {md.price.shape[0]} 交易日")
 
-    # 从断点日期截取回测区间（引擎从 start 开始，warmup 用之前的）
-    md.price = md.price[md.price.index >= args.start]
-    md.benchmark = md.benchmark[md.benchmark.index >= args.start]
-
     # 风险配置：模式参数覆盖默认
     rc = dict(DEFAULT_RISK_CONFIG)
     rc.update(cfg['risk'])
     strategy = SimpleStrategy(5, 20, **cfg['strategy'])
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False)
-    engine.run(md, initial_cash=args.cash or 500000, auto_save=False,
+    engine.run(md, initial_cash=args.cash or 500000, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 
     print("\n" + "=" * 60)

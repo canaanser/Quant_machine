@@ -37,9 +37,9 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
 
     def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True,
-            initial_positions: dict = None):
+            initial_positions: dict = None, trade_start=None):
         """initial_positions: 断点续跑用——实盘当前持仓 {symbol: {"shares": n, "avg_cost": p}}
-        （2026-08-28 小二陈：模式切换/实盘续跑，引擎原生支持，这里开放入口）"""
+        trade_start: 断点续跑用——该日期之前只 warmup 不交易（2026-08-28 小二陈）"""
         import time as _time
         _t0 = _time.time()
         if initial_cash is None:
@@ -85,6 +85,14 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
 
         for i, today in enumerate(dates):
             if i < warmup_days:
+                self._record_snapshot(today)
+                self.daily_scores[today] = {}
+                self.daily_selected[today] = []
+                self.daily_early_scores[today] = 0.5
+                continue
+
+            # 断点续跑：trade_start 之前只记录快照不交易（2026-08-28 小二陈）
+            if trade_start is not None and today < pd.Timestamp(trade_start):
                 self._record_snapshot(today)
                 self.daily_scores[today] = {}
                 self.daily_selected[today] = []
