@@ -44,6 +44,8 @@ def main():
                         help="关闭质量评分过滤（回到原版 Simple）")
     parser.add_argument("--pos-off", action="store_true",
                         help="关闭位置软加权（纯 v1：深跌+放量，不按价格位置调整）")
+    parser.add_argument("--bottom", action="store_true",
+                        help="筑底确认（低点抬高企稳才买）")
     parser.add_argument("--mode", choices=['建仓', '进攻'], default=None,
                         help="模式档位：建仓=轻仓10%+铁律止损5%+分批+保护期；进攻=30%+止损8%")
     parser.add_argument("--ext", action="store_true",
@@ -57,7 +59,9 @@ def main():
         tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
 
     # 位置软加权（老板强调"越跌越买要看价格位置"）：默认开；--pos-off 关闭回纯 v1
-    pos_kw = {'quality_pos_boost': -1.0, 'quality_pos_trim': 1.0} if args.pos_off else {}
+    pos_kw = {"quality_pos_boost": -1.0, "quality_pos_trim": 1.0} if args.pos_off else {}
+    if args.bottom:
+        pos_kw["bottom_confirm"] = True
     strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.1, **pos_kw)
 
     t0 = time.time()

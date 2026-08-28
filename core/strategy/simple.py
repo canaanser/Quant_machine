@@ -29,7 +29,7 @@ class SimpleStrategy(BaseStrategy):
                  quality_vol: float = 0.7, quality_penalty: float = 0.2,
                  quality_pos_high: float = 0.0, quality_pos_range: float = 1.0,
                  quality_pos_boost: float = -0.50, quality_pos_trim: float = -0.20,
-                 freq_filter: bool = False):
+                 freq_filter: bool = False, bottom_confirm: bool = False):
         self.short = short
         self.long = long
         self.window = long + 1
@@ -47,6 +47,9 @@ class SimpleStrategy(BaseStrategy):
         #   距250日高点 < quality_pos_boost(-50%) 大下坡 → 评分×1.3（重仓真谷底）
         #   -50%~-20% 中位 → 不变
         #   > -20% 高位刚跌 → ×0.6（轻仓试探，避免接高位飞刀）
+        # 筑底确认（bottom_confirm，2026-08-28 老板强调"看筑底才买"）：
+        #   深跌信号 + 近5日低点≥前5日低点（低点抬高企稳）才放行；
+        #   未企稳 → 降权（避免"深跌就买"被5%铁律止损频繁打脸——买入质量决定止损可行性）
         # 不满足 v1 规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
         self.quality_filter = quality_filter
         self.quality_deep = quality_deep
@@ -56,6 +59,7 @@ class SimpleStrategy(BaseStrategy):
         self.quality_pos_range = quality_pos_range
         self.quality_pos_boost = quality_pos_boost
         self.quality_pos_trim = quality_pos_trim
+        self.bottom_confirm = bottom_confirm
         # 行情状态频率控制（2026-08-28 小二陈，老板第3点）：
         # 阴跌状态（MA20 下行 + 价格在 MA20 下方 = 反弹无力）的"跌势衰竭"多为假反弹，
         # 高频交易 → 死亡螺旋（震荡阴跌亏手续费/高买低卖）。freq_filter 开启时
@@ -88,6 +92,7 @@ class SimpleStrategy(BaseStrategy):
         self._q_p250h = {}
         self._q_rp250 = {}
         self._q_ma20slope = {}
+        self._q_bottom = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -126,6 +131,11 @@ class SimpleStrategy(BaseStrategy):
             self._q_rp250[code] = ((price - p250_low) / rng250).to_numpy()
             # ---- 行情状态（freq_filter：MA20 的 5 日斜率 = 均线方向）----
             self._q_ma20slope[code] = ma20.diff(5).to_numpy()
+            # ---- 筑底确认特征（2026-08-28 老板强调"看筑底才买"）----
+            # 近5日最低close vs 前5日最低close：低点抬高 = 企稳迹象
+            low_recent = price.rolling(5, min_periods=5).min()
+            low_prev = price.rolling(10, min_periods=10).min().shift(5)
+            self._q_bottom[code] = (low_recent >= low_prev).to_numpy()
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -243,6 +253,15 @@ class SimpleStrategy(BaseStrategy):
                                     elif ph[pos] > self.quality_pos_trim:
                                         final_score = final_score * 0.6
                             if not ok:
+                                final_score = final_score * self.quality_penalty
+
+                    # ---- 筑底确认（2026-08-28 老板强调"看筑底才买"）----
+                    # 深跌信号 + 近5日低点≥前5日低点（低点抬高企稳）才放行；
+                    # 未企稳 → 降权轻仓（买入质量决定 5% 铁律止损的可行性——不企稳就买会被止损频繁打脸）
+                    if self.bottom_confirm and code in self._q_bottom:
+                        bt = self._q_bottom[code]
+                        if bt is not None and len(bt) > pos and not np.isnan(bt[pos]):
+                            if not bt[pos]:
                                 final_score = final_score * self.quality_penalty
 
                     # ---- 行情状态频率控制（2026-08-28 小二陈）----
