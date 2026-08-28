@@ -40,9 +40,15 @@ def main():
     parser.add_argument("--end", default=END)
     parser.add_argument("--no-quality", action="store_true",
                         help="关闭质量评分过滤（回到原版 Simple）")
+    parser.add_argument("--ext", action="store_true",
+                        help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
     args = parser.parse_args()
 
-    tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
+    if args.ext:
+        tickers = list(config_mod.SCAN_TICKERS) + list(config_mod.SCAN_TICKERS_EXT)
+        print(f"📦 合并池 {len(tickers)} 只（主池 {len(config_mod.SCAN_TICKERS)} + 扩展 {len(config_mod.SCAN_TICKERS_EXT)}）")
+    else:
+        tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
 
     t0 = time.time()
     print(f"🚀 数据加载：{len(tickers)} 只，{args.start} ~ {args.end} ...")
