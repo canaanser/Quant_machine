@@ -218,6 +218,13 @@ class _ExecutionMixin:
                 signal, temp_account, current_price
             )
             if approved:
+                # 2026-08-29 修复：审批可能返回 SELL（Step1 止盈/止损）——之前固定当 BUY 下单，
+                # 止盈卖出被当成加仓买入 → 中钨高新 2019-06-11 浮盈52%≥50%触发止盈SELL却被买23400股 → 55.9%超限
+                if approved.get('action') == 'SELL':
+                    if self.verbose:
+                        logger.debug(f"   🔄 审批返回卖出({approved.get('reason','')})，执行卖出: {symbol} {approved['target_volume']}股")
+                    self._sell(symbol, approved['target_volume'], current_price, today, approved.get('reason', '审批止盈/止损'))
+                    continue
                 volume = approved['target_volume']
                 if volume > 0:
                     # 成交=T 日收盘价（尾盘最后一秒）；评分基于 T-1 日
