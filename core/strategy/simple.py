@@ -27,7 +27,7 @@ class SimpleStrategy(BaseStrategy):
     def __init__(self, short=5, long=20, verbose: bool = False,
                  quality_filter: bool = False, quality_deep: float = -0.20,
                  quality_vol: float = 0.7, quality_penalty: float = 0.2,
-                 quality_pos_high: float = -1.0, quality_pos_range: float = 0.0,
+                 quality_pos_high: float = 0.0, quality_pos_range: float = 1.0,
                  freq_filter: bool = False):
         self.short = short
         self.long = long
@@ -44,7 +44,7 @@ class SimpleStrategy(BaseStrategy):
         # v2（+位置硬过滤：距250日高点<-50%/区间分位<10%）信号级更优（62.8%/2.13）
         #   但 84 只组合失败（544.88%/0.49/回撤-58%）：硬过滤砍信号量且集中在暴跌后
         #   → 集中度灾难。教训：信号胜率≠组合安全，质量过滤必须保信号量。
-        #   位置维度留作软加权（不硬过滤）待验证。默认位置不拦截（-1.0/0.0）。
+        #   位置维度留作软加权（不硬过滤）待验证。默认位置不拦截（0.0/1.0 = 恒满足）。
         # 不满足规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
         self.quality_filter = quality_filter
         self.quality_deep = quality_deep
