@@ -47,23 +47,30 @@ class SimpleStrategy(BaseStrategy):
         return min(1.0, max(0.0, final))
 
     def prepare(self, returns_df: pd.DataFrame, market_ret=None):
-        """预计算全历史因果特征矩阵（MA5/MA20/斜率/加速度/均线差）。
-        回测主循环开始前调用一次；score_stocks 此后每天 O(1) 查表。"""
-        rets = returns_df.fillna(0.0)  # 停牌日视为价格不变
-        self._col_idx = {code: i for i, code in enumerate(rets.columns)}
-        price = (1 + rets).cumprod() * 100
-        ma5 = price.rolling(self.short, min_periods=self.short).mean()
-        ma20 = price.rolling(self.long, min_periods=self.long).mean()
-        slope = ma5.diff()
-        accel = slope.diff()
-        diff = ma5 - ma20
-        self._feat = {
-            'ma5': ma5.to_numpy(),
-            'ma20': ma20.to_numpy(),
-            'slope': slope.to_numpy(),
-            'accel': accel.to_numpy(),
-            'diff': diff.to_numpy(),
-        }
+        """预计算全历史因果特征（按列 dropna，语义与原暴力路径逐位一致）。
+        2026-08-28 小二陈（两版修复）：
+          初版用 fillna(0) 处理停牌日，滚动窗口被停牌日拉长稀释 → 金叉/死叉判定错位，
+          0.1% 评分差异经 _buy_count 状态链放大成 4 倍收益差（20 只验证：211% vs 49%）。
+          现改为按列 dropna（压缩序列）后 cumprod+rolling，与暴力路径完全一致；
+          查表用 searchsorted 按日期映射（停牌日取最近有效交易日）。"""
+        self._col_pos = {code: i for i, code in enumerate(returns_df.columns)}
+        self._feat_cols = []
+        for code in returns_df.columns:
+            s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
+            if len(s) < self.long + 1:
+                self._feat_cols.append(None)  # 数据太短：该股永不评分
+                continue
+            price = (1 + s).cumprod() * 100
+            ma5 = price.rolling(self.short).mean()
+            ma20 = price.rolling(self.long).mean()
+            slope = ma5.diff()
+            accel = slope.diff()
+            diff = ma5 - ma20
+            feat = np.column_stack([
+                ma5.to_numpy(), ma20.to_numpy(),
+                slope.to_numpy(), accel.to_numpy(), diff.to_numpy(),
+            ])
+            self._feat_cols.append((s.index.to_numpy(), feat))
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -75,7 +82,7 @@ class SimpleStrategy(BaseStrategy):
             return self._score_cache_value
 
         if self._prepared:
-            scores = self._score_from_features(len(returns_df), returns_df.columns)
+            scores = self._score_from_features(returns_df)
         else:
             scores = self._score_bruteforce(returns_df)
 
@@ -84,26 +91,34 @@ class SimpleStrategy(BaseStrategy):
         self._score_cache_value = result
         return result
 
-    def _score_from_features(self, n_rows: int, columns) -> dict:
-        """查表路径：hist_returns 是完整 returns 的前缀（n_rows 行），
-        最新一行 = 预计算矩阵第 n_rows-1 行；评分逻辑与暴力路径逐位一致。"""
+    def _score_from_features(self, returns_df) -> dict:
+        """查表路径：按日期映射到各股压缩序列（dropna 语义，与原暴力路径逐位一致）。
+        returns_df = hist_returns（完整 returns 的前缀），today = 其最后一行日期；
+        停牌日经 searchsorted 取最近有效交易日（等价于原 dropna 后 iloc[-1]）。"""
         scores = {}
-        f = self._feat
-        row = n_rows - 1
-        if row < self.long + 1:  # 至少要有 ma20 有效 + accel 前值
-            return scores
-        for code in columns:
-            col = self._col_idx[code]
-            curr_ma5 = f['ma5'][row, col]
-            curr_ma20 = f['ma20'][row, col]
-            if np.isnan(curr_ma5) or np.isnan(curr_ma20):
+        today = np.datetime64(returns_df.index[-1])
+        for code in returns_df.columns:
+            col = self._col_pos[code]
+            entry = self._feat_cols[col]
+            if entry is None:
                 continue
+            dates, feat = entry
+            pos = int(np.searchsorted(dates, today, side='right')) - 1
+            if pos < 0:
+                continue  # 该股首个交易日尚未到来
+            if pos < self.long:
+                continue  # 该股有效交易日 < long+1（等价原 len(series) < long+1 continue）
 
             if code not in self._buy_count:
                 self._buy_count[code] = 0
 
-            prev_ma5 = f['ma5'][row - 1, col]
-            prev_ma20 = f['ma20'][row - 1, col]
+            curr_ma5 = feat[pos, 0]
+            curr_ma20 = feat[pos, 1]
+            if np.isnan(curr_ma5) or np.isnan(curr_ma20):
+                continue  # rolling 未满（等价原 len < long+1 continue）
+
+            prev_ma5 = feat[pos - 1, 0]
+            prev_ma20 = feat[pos - 1, 1]
             prev_diff = prev_ma5 - prev_ma20
             curr_diff = curr_ma5 - curr_ma20
 
@@ -123,8 +138,8 @@ class SimpleStrategy(BaseStrategy):
                 is_golden_zone = curr_ma5 > curr_ma20
                 is_death_zone = curr_ma5 < curr_ma20
 
-            accel_t = f['accel'][row, col]
-            accel_t1 = f['accel'][row - 1, col]
+            accel_t = feat[pos, 3]
+            accel_t1 = feat[pos - 1, 3]
 
             if is_golden_zone:
                 if accel_t1 > 0 and accel_t < 0:
