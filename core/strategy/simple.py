@@ -407,22 +407,24 @@ class SimpleStrategy(BaseStrategy):
         return scores
 
     def get_buy_truth(self, symbol: str, last_date) -> dict:
-        """金叉买点真假特征（2026-08-29 举一反三死叉卖）：位置 + 顶背离，供封控层判买点真假
-        返回 {'pct_250d_high': float, 'top_divergence': bool}"""
-        out = {'pct_250d_high': None, 'top_divergence': False}
+        """金叉买点特征（2026-08-29 老板修正：防跌不防涨）——下跌趋势=反弹陷阱拒买
+        返回 {'downtrend': bool}：MA20下行 且 价格<MA20（阴跌态金叉=假反弹）"""
+        out = {'downtrend': False}
         col_i = self._col_pos.get(symbol)
         if col_i is None or self._feat_cols[col_i] is None:
             return out
-        s_index, _ = self._feat_cols[col_i]
+        s_index, feat = self._feat_cols[col_i]
         pos = int(np.searchsorted(s_index, np.datetime64(last_date), side='right')) - 1
         if pos < 0:
             return out
-        if symbol in self._q_p250h and self._q_p250h[symbol] is not None and pos < len(self._q_p250h[symbol]):
-            v = self._q_p250h[symbol][pos]
-            if not np.isnan(v):
-                out['pct_250d_high'] = float(v)
-        if symbol in self._q_top_div and self._q_top_div[symbol] is not None and pos < len(self._q_top_div[symbol]):
-            out['top_divergence'] = bool(self._q_top_div[symbol][pos])
+        # feat: [ma5, ma20, slope, accel, diff]
+        ma20 = feat[1][pos]
+        slope5 = None
+        if symbol in self._q_ma20slope and self._q_ma20slope[symbol] is not None and pos < len(self._q_ma20slope[symbol]):
+            slope5 = self._q_ma20slope[symbol][pos]
+        if (not np.isnan(ma20) and ma20 > 0 and slope5 is not None and not np.isnan(slope5)
+                and slope5 < 0 and feat[4][pos] < 0):
+            out['downtrend'] = True  # MA20下行 且 价格<MA20（diff<0）= 阴跌态
         return out
 
     def get_exit_signal(self, returns_df: pd.DataFrame, market_ret: pd.Series) -> dict:

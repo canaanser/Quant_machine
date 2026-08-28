@@ -125,19 +125,12 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
-    def judge_goldencross_buy(self, pct_250d_high, top_divergence: bool,
-                              high_threshold: float = None) -> tuple:
-        """金叉买点真假判定（2026-08-29 老板举一反三死叉卖：买点也判真假）
-        基于事实不预测：
-          1. 顶背离 → 拒买（价格创新高但 RSI 未创新高=涨不动=假金叉）【事实】
-          2. 高位金叉（距250日高点>goldencross_high）→ 拒买（追高接盘，违背'买低不买高'）【位置事实】
-          3. 低位/中位金叉 → 放行（质量/位置软加权/筑底继续筛选）
-        阈值 goldencross_high 可实验调（默认-0.20，实验发现太严拒掉正常回调，需放宽）。"""
-        high_threshold = high_threshold if high_threshold is not None else getattr(self, 'goldencross_high', -0.20)
-        if top_divergence:
-            return False, '顶背离金叉(价格新高RSI未新高)→拒买'
-        if pct_250d_high is not None and pct_250d_high > high_threshold:
-            return False, f'高位金叉(距250日高>{high_threshold:.0%})→拒买追高'
+    def judge_goldencross_buy(self, downtrend: bool) -> tuple:
+        """金叉买点判定（2026-08-29 老板修正：防跌不防涨）
+        涨无上限 + 机械止损兜底 → 高位金叉不怕（拒绝'怕涨'的判定，已废弃 gc-high）；
+        防的是'跌'：下跌趋势（MA20下行+价格<MA20）中的金叉 = 反弹陷阱 → 拒买（接飞刀）"""
+        if downtrend:
+            return False, '下跌趋势金叉(反弹陷阱)→拒买'
         return True, '金叉买点通过'
 
     def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
