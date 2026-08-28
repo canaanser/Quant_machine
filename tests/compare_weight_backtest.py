@@ -1,5 +1,5 @@
 """
-权重来源对比回测（强化版 TrendStrengthStrategy）
+权重来源对比回测（强化版 SimpleStrategy）
 ==============================================
 一键对比：同一策略分别用 现有权重表(legacy) 和 数据驱动权重表(data) 跑回测，
 输出四个核心指标对比，用数据决定权重表是否切换。
@@ -9,7 +9,7 @@
     python tests/compare_weight_backtest.py
 
 说明：
-  - 策略：TrendStrengthStrategy（趋势强度，短5/长20）
+  - 策略：SimpleStrategy（趋势强度，短5/长20）
   - 标的：中兴通讯 000063，区间 2023-01-01 ~ 2026-08-19
   - 权重来源切换通过修改 config.config.WEIGHT_SOURCE 实现（回测融合处函数内
     import 每次读取最新值，无需改文件）
@@ -24,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.data_loader import load_data
 from core.backtest import BacktestPipeline
-from core.strategy import TrendStrengthStrategy
+from core.strategy import SimpleStrategy
 import config.config as config_mod
 
 START, END = '2023-01-01', '2026-08-19'
@@ -48,7 +48,7 @@ def run_one(weight_source: str, tickers=None, start=None, end=None) -> dict:
         frequency='1d',
         fq='qfq'
     )
-    strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
+    strategy = SimpleStrategy(short=5, long=20, verbose=False)
     engine = BacktestPipeline(strategy, top_n=10, verbose=False)
     engine.run(market_data, initial_cash=INITIAL_CASH)
 
@@ -64,7 +64,7 @@ def run_one(weight_source: str, tickers=None, start=None, end=None) -> dict:
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="权重来源对比回测（强化版 TrendStrengthStrategy）")
+    parser = argparse.ArgumentParser(description="权重来源对比回测（强化版 SimpleStrategy）")
     parser.add_argument("--tickers", default="000063", help="股票代码，逗号分隔（默认 000063）")
     parser.add_argument("--start", default=START, help="起始日期（默认 2023-01-01）")
     parser.add_argument("--end", default=END, help="结束日期（默认 2026-08-19）")
@@ -74,7 +74,7 @@ def main():
     start, end = args.start, args.end
 
     print("=" * 66)
-    print("权重来源对比回测 · 强化版 TrendStrengthStrategy")
+    print("权重来源对比回测 · 强化版 SimpleStrategy")
     print(f"标的: {tickers} | 区间: {start} ~ {end}")
     print("=" * 66)
 

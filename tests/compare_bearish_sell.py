@@ -28,7 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.data_loader import load_data
 from core.backtest import BacktestPipeline
-from core.strategy import TrendStrengthStrategy
+from core.strategy import SimpleStrategy
 from structure_engine.scanner.pattern_scanner import scan_patterns
 
 DEFAULT_START, DEFAULT_END = "2020-01-01", "2026-07-31"
@@ -116,7 +116,7 @@ def run_one(tickers, start, end, mode):
     if market_data is None or market_data.price is None or market_data.price.empty:
         print("❌ 数据加载失败，请检查 stockdb 服务 / 股票代码")
         sys.exit(1)
-    strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
+    strategy = SimpleStrategy(short=5, long=20, verbose=False)
     strategy._market_data = market_data
     t0 = time.perf_counter()
     engine = make_engine(strategy, mode)

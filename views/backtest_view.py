@@ -23,7 +23,7 @@ def run_backtest():
     )
     strategy_choice = st.sidebar.selectbox(
         "策略类型",
-        ["Alpha剥离策略", "双均线金叉策略", "趋势强度策略"],
+        ["Alpha剥离策略", "双均线金叉策略"],
         index=1
     )
 
@@ -206,9 +206,6 @@ def run_backtest():
                 elif strategy_choice == "双均线金叉策略":
                     from core.strategy import SimpleStrategy
                     strategy = SimpleStrategy(short=5, long=20)
-                elif strategy_choice == "趋势强度策略":
-                    from core.strategy import TrendStrengthStrategy
-                    strategy = TrendStrengthStrategy(short=5, long=20)
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION)
 

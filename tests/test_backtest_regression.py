@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 回测回归测试（重，需本地缓存数据）
-2026-08-26 小二陈：固化 TrendStrengthStrategy 双均线在 000063 一年数据上的基线指标。
+2026-08-26 小二陈：固化双均线策略在 000063 一年数据上的基线指标。
 任何对回测引擎/策略/数据管线的改动，若改变这些指标即视为行为漂移。
+
+2026-08-28 小二陈：基线策略由 TrendStrengthStrategy 换为 SimpleStrategy——
+组合层面（84 只 10 年）趋势强度全面落败（收益 1/4、回撤 -80%、Sharpe 0.38），已删除。
 
 基线来源：core/backtest.py 拆包前后双版本对比验证（逐位一致）
 """
@@ -13,16 +16,15 @@ from conftest import cache_available
 
 pytestmark = pytest.mark.cache
 
-# ===== 基线指标（000063, 2025-01-01 ~ 2026-07-31, TrendStrength 5/20, top10, 50万）=====
-# 2026-08-28 更新2：修复合并列错位（SELECT * → 显式列名）后，strength 全量真实（real）时的基线。
-# 注：0.10556 是"strength 读不了→无形态信号"的污染假象；0.07593 为有真实形态融合的结果。
-# 形态融合目前在单标的上为负贡献 → 后续需调融合权重/信号质量（这是待办发现）。
+# ===== 基线指标（000063, 2025-01-01 ~ 2026-07-31, SimpleStrategy 5/20, top10, 50万）=====
+# 2026-08-28 更新3：基线策略 TrendStrength → SimpleStrategy（Trend 已删，组合层面落败）。
+# 实测：total_return 0.108798 / sharpe 0.407538 / maxDD -0.154928 / 208 笔——单票也全面优于 Trend 旧基线。
 BASELINE = {
-    "total_return": 0.075928,
-    "annual_return": 0.04959551318314781,
-    "sharpe": 0.31240601095629583,
-    "max_drawdown": -0.27392666227916496,
-    "trades": 117,
+    "total_return": 0.10879799999999995,
+    "annual_return": 0.07069599150635031,
+    "sharpe": 0.4075375229655252,
+    "max_drawdown": -0.154928,
+    "trades": 208,
 }
 
 TICKER = "000063"
@@ -45,8 +47,8 @@ def market_data():
 def engine(market_data):
     """跑一次完整回测"""
     from core.backtest import BacktestPipeline
-    from core.strategy import TrendStrengthStrategy
-    strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
+    from core.strategy import SimpleStrategy
+    strategy = SimpleStrategy(short=5, long=20, verbose=False)
     eng = BacktestPipeline(strategy, top_n=10, verbose=False)
     eng.run(market_data, initial_cash=500000)
     return eng

@@ -30,7 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.data_loader import load_data
 from core.backtest import BacktestPipeline
-from core.strategy import TrendStrengthStrategy
+from core.strategy import SimpleStrategy
 
 DEFAULT_START, DEFAULT_END = "2023-01-01", "2026-07-31"  # 全量 3.5 年
 INITIAL_CASH = 500000
@@ -121,7 +121,7 @@ def run_one(tickers, start, end, apply_constraint, source='freestockdb'):
         print("   3. 该区间是否有数据")
         print("   4. 或改用 --source stockdb_http 走本地缓存（data/cache/stockdb/*.csv）")
         sys.exit(1)
-    strategy = TrendStrengthStrategy(short=5, long=20, verbose=False)
+    strategy = SimpleStrategy(short=5, long=20, verbose=False)
     t0 = time.perf_counter()
     if apply_constraint:
         engine = make_constrained_engine(strategy)
