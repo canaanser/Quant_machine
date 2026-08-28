@@ -61,7 +61,7 @@ def main():
     parser.add_argument("--start", required=True, help="断点起始日期（如 2026-08-01）")
     parser.add_argument("--mode", choices=list(MODE_CONFIG.keys()), default='建仓')
     parser.add_argument("--end", default='2026-08-27', help="结束日期（默认数据最新 2026-08-27）")
-    parser.add_argument("--cash", type=float, default=None, help="当前现金（默认=初始50万）")
+    parser.add_argument("--total", type=float, default=500000, help="总资金（含持仓市值，默认50万）")
     args = parser.parse_args()
 
     pos_path = Path(args.position)
@@ -70,7 +70,11 @@ def main():
         return
     positions = json.loads(pos_path.read_text(encoding='utf-8'))
     tickers = list(positions.keys())
+    # 现金 = 总资金 - 持仓成本（2026-08-28 修复：此前现金没扣持仓成本，总资产虚高）
+    pos_cost = sum(p['shares'] * p.get('avg_cost', 0) for p in positions.values())
+    cash = args.total - pos_cost
     print(f"📦 持仓 {len(positions)} 只: {[(c, p['shares'], p.get('avg_cost')) for c, p in positions.items()]}")
+    print(f"💰 总资金 {args.total:,.0f} - 持仓成本 {pos_cost:,.0f} = 现金 {cash:,.0f}")
 
     cfg = MODE_CONFIG[args.mode]
     print(f"🎯 模式「{args.mode}」: {cfg['desc']}")
@@ -88,7 +92,7 @@ def main():
     rc.update(cfg['risk'])
     strategy = SimpleStrategy(5, 20, **cfg['strategy'])
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False)
-    engine.run(md, initial_cash=args.cash or 500000, auto_save=False, trade_start=args.start,
+    engine.run(md, initial_cash=cash, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 
     print("\n" + "=" * 60)
