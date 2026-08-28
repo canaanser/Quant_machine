@@ -82,6 +82,42 @@ def get_symbols(board_ref: str):
     return codes
 
 
+def pick_by_index(indexes: list, count: int):
+    """指数成分选股：拉成分+权重（假设 get_index_stocks 与 get_index_weights 顺序一致），
+    过滤已有池/ST 后按权重（市值代理）排序选 top count——天然避开微盘"""
+    from stock_sdk import get_index_stocks, get_index_weights
+    names = load_names()
+    merged = {}  # code -> weight
+    for idx in indexes:
+        print(f"🚀 指数「{idx}」拉成分+权重 ...")
+        codes = get_index_stocks(idx)
+        weights = get_index_weights(idx)
+        print(f"  成分 {len(codes)}，权重 {len(weights)}")
+        # 顺序配对（display_name 校验前 3）
+        for i, (c, w) in enumerate(zip(codes, weights)):
+            if i < 3:
+                nm = names.get(c, '?')
+                print(f"    配对 {c} {nm} vs {w.get('display_name')}")
+            if c not in merged:
+                merged[c] = w.get('weight', 0.0)
+    # 过滤
+    cand = []
+    for code, wt in merged.items():
+        code = str(code).zfill(6) if str(code).isdigit() else str(code)
+        if code in EXISTING:
+            continue
+        nm = names.get(code, '')
+        if 'ST' in nm.upper() or '退' in nm:
+            continue
+        cand.append((code, wt))
+    cand.sort(key=lambda x: -x[1])  # 权重降序
+    print(f"\n合并后 {len(merged)} 只，过滤后 {len(cand)} 只，按权重取前 {count}")
+    print("\n===== 候选清单 =====")
+    for code, wt in cand[:count]:
+        print(f"  {code} {names.get(code, '?'):<10} 权重{wt:.2f}%")
+    print(f"\n共 {count} 只")
+
+
 def pick(codes: list, per):
     """按申万一级板块代码拉成分，过滤后取 top N（市值排序尽力而为）"""
     names = load_names()
@@ -124,6 +160,8 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="行业板块扩池选股")
     parser.add_argument("--list-industries", action="store_true", help="列出全部行业板块")
+    parser.add_argument("--index", default="", help="指数成分选股：指数代码逗号分隔（如 000300.XSHG,000905.XSHG）")
+    parser.add_argument("--count", type=int, default=78, help="指数模式选几只")
     parser.add_argument("--codes", default="", help="申万一级板块代码，逗号分隔（如 801150.SL,801740.SL）")
     parser.add_argument("--industries", default="", help="（旧）行业名，逗号分隔")
     parser.add_argument("--per", type=int, default=8, help="每板块选几只")
@@ -131,12 +169,14 @@ def main():
 
     if args.list_industries:
         list_industries()
+    elif args.index:
+        pick_by_index([x.strip() for x in args.index.split(',') if x.strip()], args.count)
     elif args.codes:
         pick([x.strip() for x in args.codes.split(',') if x.strip()], args.per)
     elif args.industries:
-        print("⚠️ 中文板块名查询不稳，请用 --codes 传申万一级板块代码（如 801150.SL）")
+        print("⚠️ 中文板块名查询不稳，请用 --codes 传申万一级板块代码（如 801150.SL）或 --index 指数成分")
     else:
-        print("请指定 --list-industries 或 --codes")
+        print("请指定 --list-industries / --index / --codes")
 
 
 if __name__ == "__main__":
