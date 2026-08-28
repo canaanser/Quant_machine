@@ -138,17 +138,28 @@ def main():
         print(f"{r['代码']:<8}{r['名称']:<8}{r['买入笔数']:>5}{r['卖出笔数']:>5}"
               f"{r['实现盈亏']:>12,.0f}{win:>6}{hold:>7}{r['期末浮盈']:>12,.0f}{r['总贡献']:>12,.0f}")
     print("=" * 78)
-    # 只打印指定票的买卖记录（老板 2026-08-29 要单票明细）
+    # 只打印指定票的买卖记录，每笔带盈亏（加权平均成本配对，老板 2026-08-29 要每买每卖挣多少）
     if args.only:
         code = args.only
         g = df[df['Stock'] == code]
         nm = names.get(code, '?')
-        print(f"\n📊 {code} {nm} 买卖记录（共 {len(g)} 笔）")
-        print(f"{'日期':<12}{'操作':<6}{'价格':>10}{'数量':>8}")
-        print("-" * 40)
+        avg_cost, shares, cum_pnl = 0.0, 0, 0.0
+        print(f"\n📊 {code} {nm} 买卖记录（共 {len(g)} 笔）——卖出行显示该笔盈亏 + 累计盈亏")
+        print(f"{'日期':<12}{'操作':<5}{'价格':>9}{'数量':>7}{'成本':>8}{'该笔盈亏':>12}{'累计盈亏':>12}{'剩余':>6}")
+        print("-" * 82)
         for _, r in g.iterrows():
-            print(f"{str(r['Date'])[:10]:<12}{str(r['Action']):<6}{float(r['Price']):>10.2f}{int(r['Shares']):>8}")
-        print("=" * 78)
+            px = float(r['Price']); qty = int(r['Shares'])
+            if r['Action'] == 'BUY':
+                total = shares + qty
+                avg_cost = (avg_cost * shares + px * qty) / total if total else px
+                shares = total
+                print(f"{str(r['Date'])[:10]:<12}{'BUY':<5}{px:>9.2f}{qty:>7}{avg_cost:>8.2f}{'':>12}{'':>12}{shares:>6}")
+            else:
+                pnl = (px - avg_cost) * qty
+                cum_pnl += pnl
+                shares -= qty
+                print(f"{str(r['Date'])[:10]:<12}{'SELL':<5}{px:>9.2f}{qty:>7}{avg_cost:>8.2f}{pnl:>12,.0f}{cum_pnl:>12,.0f}{shares:>6}")
+        print("=" * 82)
         return
     # 汇总
     pos_sum = att[att['总贡献'] > 0]['总贡献'].sum()
