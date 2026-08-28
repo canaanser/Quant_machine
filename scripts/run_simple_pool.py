@@ -42,6 +42,8 @@ def main():
     parser.add_argument("--end", default=END)
     parser.add_argument("--no-quality", action="store_true",
                         help="关闭质量评分过滤（回到原版 Simple）")
+    parser.add_argument("--pos-off", action="store_true",
+                        help="关闭位置软加权（纯 v1：深跌+放量，不按价格位置调整）")
     parser.add_argument("--ext", action="store_true",
                         help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
     args = parser.parse_args()
@@ -51,6 +53,10 @@ def main():
         print(f"📦 合并池 {len(tickers)} 只（主池 {len(config_mod.SCAN_TICKERS)} + 扩展 {len(config_mod.SCAN_TICKERS_EXT)}）")
     else:
         tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
+
+    # 位置软加权（老板强调"越跌越买要看价格位置"）：默认开；--pos-off 关闭回纯 v1
+    pos_kw = {'quality_pos_boost': -1.0, 'quality_pos_trim': 1.0} if args.pos_off else {}
+    strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.1, **pos_kw)
 
     t0 = time.time()
     print(f"🚀 数据加载：{len(tickers)} 只，{args.start} ~ {args.end} ...")
@@ -62,9 +68,7 @@ def main():
     print(f"✅ 数据加载完成：{market_data.price.shape[0]} 交易日，耗时 {t_load:.1f}s")
 
     t0 = time.time()
-    # 2026-08-28 定型：质量评分 v1（深跌<-20%+放量>0.7，不满足降权×0.2）
-    # 84只10年扫描最优档位：Sharpe 0.51→0.64（+25%）、收益+18%；--no-quality 回到原版
-    strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.1)
+    # 2026-08-28 定型：质量评分 v1（深跌<-20%+放量>0.7，不满足降权×0.1）+ 位置软加权（默认开）
     # 配置自检（2026-08-28 小二陈：防 __pycache__ 旧代码——若输出与预期不符说明加载了旧版）
     print(f"⚙️ 策略配置: quality_filter={strategy.quality_filter} deep={strategy.quality_deep} "
           f"vol={strategy.quality_vol} pos_high={strategy.quality_pos_high} "

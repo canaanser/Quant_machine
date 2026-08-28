@@ -28,6 +28,7 @@ class SimpleStrategy(BaseStrategy):
                  quality_filter: bool = False, quality_deep: float = -0.20,
                  quality_vol: float = 0.7, quality_penalty: float = 0.2,
                  quality_pos_high: float = 0.0, quality_pos_range: float = 1.0,
+                 quality_pos_boost: float = -0.50, quality_pos_trim: float = -0.20,
                  freq_filter: bool = False):
         self.short = short
         self.long = long
@@ -39,19 +40,22 @@ class SimpleStrategy(BaseStrategy):
         self._prepared = False
         self.verbose = verbose
         # 事前质量评分（2026-08-28 小二陈）：
-        # v1 定型：深跌<-20% + 放量>0.7 = 84只组合 669.19%/Sharpe0.64（最优平衡）
-        #   = 样本外58.5%/Sharpe1.38（信号级）
-        # v2（+位置硬过滤：距250日高点<-50%/区间分位<10%）信号级更优（62.8%/2.13）
-        #   但 84 只组合失败（544.88%/0.49/回撤-58%）：硬过滤砍信号量且集中在暴跌后
-        #   → 集中度灾难。教训：信号胜率≠组合安全，质量过滤必须保信号量。
-        #   位置维度留作软加权（不硬过滤）待验证。默认位置不拦截（0.0/1.0 = 恒满足）。
-        # 不满足规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
+        # v1 定型：深跌<-20% + 放量>0.7 = 84只组合 857.43%/Sharpe0.58（penalty 0.1 扫描定型）
+        #   = 样本外62.8%/Sharpe2.13（信号级）
+        # v2（+位置硬过滤）信号级更优但组合失败（集中度灾难）→ 位置改软加权：
+        #   位置软加权（老板强调"越跌越买要看价格位置"）：
+        #   距250日高点 < quality_pos_boost(-50%) 大下坡 → 评分×1.3（重仓真谷底）
+        #   -50%~-20% 中位 → 不变
+        #   > -20% 高位刚跌 → ×0.6（轻仓试探，避免接高位飞刀）
+        # 不满足 v1 规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
         self.quality_filter = quality_filter
         self.quality_deep = quality_deep
         self.quality_vol = quality_vol
         self.quality_penalty = quality_penalty
         self.quality_pos_high = quality_pos_high
         self.quality_pos_range = quality_pos_range
+        self.quality_pos_boost = quality_pos_boost
+        self.quality_pos_trim = quality_pos_trim
         # 行情状态频率控制（2026-08-28 小二陈，老板第3点）：
         # 阴跌状态（MA20 下行 + 价格在 MA20 下方 = 反弹无力）的"跌势衰竭"多为假反弹，
         # 高频交易 → 死亡螺旋（震荡阴跌亏手续费/高买低卖）。freq_filter 开启时
@@ -228,18 +232,16 @@ class SimpleStrategy(BaseStrategy):
                             vr = self._q_vol.get(code)
                             if vr is not None and len(vr) > pos and not np.isnan(vr[pos]):
                                 ok = ok and vr[pos] > self.quality_vol
-                            # 位置维度：前面大下坡（距250日高点深跌）或 底部区域（区间分位低）
                             if ok:
+                                # 位置软加权（2026-08-28 老板强调：越跌越买要看价格位置）：
+                                # 大下坡（距250日高点<-50%）= 真谷底 → 加分重仓
+                                # 高位刚跌（>-20%）→ 降权轻仓（避免接高位飞刀）
                                 ph = self._q_p250h.get(code)
-                                rp = self._q_rp250.get(code)
-                                pos_ok = False
                                 if ph is not None and len(ph) > pos and not np.isnan(ph[pos]):
-                                    if ph[pos] < self.quality_pos_high:
-                                        pos_ok = True
-                                if not pos_ok and rp is not None and len(rp) > pos and not np.isnan(rp[pos]):
-                                    if rp[pos] < self.quality_pos_range:
-                                        pos_ok = True
-                                ok = ok and pos_ok
+                                    if ph[pos] < self.quality_pos_boost:
+                                        final_score = min(0.9, final_score * 1.3)
+                                    elif ph[pos] > self.quality_pos_trim:
+                                        final_score = final_score * 0.6
                             if not ok:
                                 final_score = final_score * self.quality_penalty
 
