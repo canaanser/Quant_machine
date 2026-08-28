@@ -56,7 +56,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         # 策略预计算钩子（2026-08-28 小二陈）：SimpleStrategy 等可一次性预计算
         # 全历史因果特征矩阵，回测主循环每天 O(1) 查表（原每天重算 O(N²)，84只10年≈100分钟）
         if hasattr(self.strategy, 'prepare'):
-            self.strategy.prepare(returns, market_ret)
+            kw = {}
+            if hasattr(market_data, 'volume') and market_data.volume is not None and not market_data.volume.empty:
+                kw['volume'] = market_data.volume  # 质量评分（深跌+放量）需要量比
+            self.strategy.prepare(returns, market_ret, **kw)
 
         if hasattr(self.strategy, 'window') and hasattr(self.strategy, 'lookback'):
             warmup_days = self.strategy.window + self.strategy.lookback

@@ -24,7 +24,9 @@ class SimpleStrategy(BaseStrategy):
     - 金叉/死叉发生当天立即切换区间
     - 仓位分配：第1次10%（评分放大1倍），第2次80%（评分放大2倍），第3次10%（评分放大2倍）
     """
-    def __init__(self, short=5, long=20, verbose: bool = False):
+    def __init__(self, short=5, long=20, verbose: bool = False,
+                 quality_filter: bool = False, quality_deep: float = -0.20,
+                 quality_vol: float = 0.7, quality_penalty: float = 0.2):
         self.short = short
         self.long = long
         self.window = long + 1
@@ -34,6 +36,13 @@ class SimpleStrategy(BaseStrategy):
         self._score_cache_value = None
         self._prepared = False
         self.verbose = verbose
+        # 事前质量评分（2026-08-28 小二陈，84只全量验证）：
+        # 规则"深跌<-20% + 放量>0.7"= 10日胜率65.1%/Sharpe2.18（样本外），
+        # 不满足规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
+        self.quality_filter = quality_filter
+        self.quality_deep = quality_deep
+        self.quality_vol = quality_vol
+        self.quality_penalty = quality_penalty
 
     def _get_position_weight(self, buy_count):
         weights = {0: 0.0, 1: 0.10, 2: 0.80, 3: 0.10}
@@ -46,15 +55,18 @@ class SimpleStrategy(BaseStrategy):
         final = (1 - w) * traditional_score + w * pattern_clipped
         return min(1.0, max(0.0, final))
 
-    def prepare(self, returns_df: pd.DataFrame, market_ret=None):
+    def prepare(self, returns_df: pd.DataFrame, market_ret=None, volume=None):
         """预计算全历史因果特征（按列 dropna，语义与原暴力路径逐位一致）。
         2026-08-28 小二陈（两版修复）：
           初版用 fillna(0) 处理停牌日，滚动窗口被停牌日拉长稀释 → 金叉/死叉判定错位，
           0.1% 评分差异经 _buy_count 状态链放大成 4 倍收益差（20 只验证：211% vs 49%）。
           现改为按列 dropna（压缩序列）后 cumprod+rolling，与暴力路径完全一致；
-          查表用 searchsorted 按日期映射（停牌日取最近有效交易日）。"""
+          查表用 searchsorted 按日期映射（停牌日取最近有效交易日）。
+        质量评分扩展：volume 传入时预计算 deep20/vol_ratio（同一压缩序列，pos 对齐）。"""
         self._col_pos = {code: i for i, code in enumerate(returns_df.columns)}
         self._feat_cols = []
+        self._q_deep = {}
+        self._q_vol = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -71,6 +83,19 @@ class SimpleStrategy(BaseStrategy):
                 slope.to_numpy(), accel.to_numpy(), diff.to_numpy(),
             ])
             self._feat_cols.append((s.index.to_numpy(), feat))
+            # ---- 质量特征（同压缩序列）----
+            deep20 = (price / price.shift(20) - 1).to_numpy()
+            self._q_deep[code] = deep20
+            vol_ratio = None
+            if volume is not None and code in volume.columns:
+                try:
+                    v = volume[code].reindex(s.index).to_numpy(dtype=float)
+                    v_series = pd.Series(v, index=s.index)
+                    vr = v_series / v_series.shift(1).rolling(20).mean()
+                    vol_ratio = vr.to_numpy()
+                except Exception:
+                    vol_ratio = None
+            self._q_vol[code] = vol_ratio
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -166,6 +191,20 @@ class SimpleStrategy(BaseStrategy):
                         final_score = 0.0
 
                     final_score = min(0.9, final_score)
+
+                    # ---- 事前质量评分过滤（2026-08-28 小二陈）----
+                    # 规则：深跌<-20% 且 放量>0.7 → 高质量（10日胜率65.1%/Sharpe2.18，84只样本外验证）
+                    # 不满足 → 评分降权（轻仓试探，不踏空）
+                    if self.quality_filter and code in self._q_deep:
+                        d20 = self._q_deep[code]
+                        if d20 is not None and len(d20) > pos and not np.isnan(d20[pos]):
+                            ok = d20[pos] < self.quality_deep
+                            vr = self._q_vol.get(code)
+                            if vr is not None and len(vr) > pos and not np.isnan(vr[pos]):
+                                ok = ok and vr[pos] > self.quality_vol
+                            if not ok:
+                                final_score = final_score * self.quality_penalty
+
 
                     if final_score > 0.001:
                         if self.verbose:
