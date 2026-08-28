@@ -43,40 +43,48 @@ import config.config as config_mod
 MODE_CONFIG = {
     '建仓': {
         'risk': {'MAX_SINGLE_POSITION_RATIO': 0.10, 'BASE_POSITION_RATIO': 0.20},
-        'strategy': {'quality_filter': True, 'quality_penalty': 0.1},
-        'stop_loss_pct': 0.20,  # 建仓档：极端止损 -20%（只防黑天鹅，敏感止损对抄底策略有害）
-        'desc': '轻仓10%上限/极端止损20%/质量过滤——攒安全垫',
+        'strategy': {'quality_filter': True, 'quality_penalty': 0.1, 'bottom_confirm': True},
+        'stop_loss_pct': 0.05,  # 铁律止损 5%（筑底确认保证买入质量，止损可行）
+        'batch_exit': True, 'protect_days': 2,
+        'desc': '轻仓10%/铁律止损5%/筑底确认/分批/保护期——实盘建仓保本',
     },
     '进攻': {
         'risk': {'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50},
-        'strategy': {'quality_filter': True, 'quality_penalty': 0.1},
-        'stop_loss_pct': 0.15,  # 进攻档：宽止损 -15%（有利润垫）
-        'desc': '重仓30%上限/宽止损15%/质量过滤——利润最大化',
+        'strategy': {'quality_filter': True, 'quality_penalty': 0.1, 'bottom_confirm': True},
+        'stop_loss_pct': 0.08,  # 宽止损 8%（有利润垫）
+        'batch_exit': True,
+        'desc': '重仓30%/止损8%/筑底确认/分批——利润最大化',
     },
 }
 
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="模式切换续跑（实盘持仓断点）")
-    parser.add_argument("--position", required=True, help="持仓 JSON 文件：{\"code\": {\"shares\": n, \"avg_cost\": p}}")
-    parser.add_argument("--start", required=True, help="断点起始日期（如 2026-08-01）")
+    parser = argparse.ArgumentParser(description="实盘介入模拟（零持仓/断点续跑）")
+    parser.add_argument("--position", default=None, help="持仓 JSON 文件（零持仓省略或空文件 {}）")
+    parser.add_argument("--tickers", default="", help="候选池（与持仓分离，零持仓建仓时用此选池）")
+    parser.add_argument("--start", required=True, help="介入起始日期（如 2025-01-01）")
     parser.add_argument("--mode", choices=list(MODE_CONFIG.keys()), default='建仓')
     parser.add_argument("--end", default='2026-08-27', help="结束日期（默认数据最新 2026-08-27）")
-    parser.add_argument("--total", type=float, default=500000, help="总资金（含持仓市值，默认50万）")
+    parser.add_argument("--total", type=float, default=500000, help="总资金（默认50万）")
     args = parser.parse_args()
 
-    pos_path = Path(args.position)
-    if not pos_path.exists():
-        print(f"❌ 持仓文件不存在: {pos_path}")
+    positions = {}
+    if args.position and Path(args.position).exists():
+        positions = json.loads(Path(args.position).read_text(encoding='utf-8'))
+    if args.tickers:
+        tickers = [t.strip() for t in args.tickers.split(',') if t.strip()]
+    else:
+        tickers = list(positions.keys())
+    if not tickers:
+        print("❌ 无标的：请用 --tickers 指定候选池，或 --position 传持仓文件")
         return
-    positions = json.loads(pos_path.read_text(encoding='utf-8'))
-    tickers = list(positions.keys())
     # 现金 = 总资金 - 持仓成本（2026-08-28 修复：此前现金没扣持仓成本，总资产虚高）
     pos_cost = sum(p['shares'] * p.get('avg_cost', 0) for p in positions.values())
     cash = args.total - pos_cost
-    print(f"📦 持仓 {len(positions)} 只: {[(c, p['shares'], p.get('avg_cost')) for c, p in positions.items()]}")
+    print(f"📦 初始持仓 {len(positions)} 只: {[(c, p['shares'], p.get('avg_cost')) for c, p in positions.items()]}")
     print(f"💰 总资金 {args.total:,.0f} - 持仓成本 {pos_cost:,.0f} = 现金 {cash:,.0f}")
+    print(f"🎯 候选池 {len(tickers)} 只，{args.start} 起 {'零持仓实盘介入' if not positions else '断点续跑'}")
 
     cfg = MODE_CONFIG[args.mode]
     print(f"🎯 模式「{args.mode}」: {cfg['desc']}")
@@ -94,7 +102,9 @@ def main():
     rc.update(cfg['risk'])
     strategy = SimpleStrategy(5, 20, **cfg['strategy'])
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False,
-                              stop_loss_pct=cfg.get('stop_loss_pct'))
+                              stop_loss_pct=cfg.get('stop_loss_pct'),
+                              batch_exit=cfg.get('batch_exit', False),
+                              protect_days=cfg.get('protect_days', 0))
     engine.run(md, initial_cash=cash, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 
