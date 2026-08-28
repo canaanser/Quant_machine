@@ -93,7 +93,7 @@ class _BacktestBase:
             print("📊 完整交易汇总（共 {} 笔）".format(len(self.trades)))
             print(f"  策略：{self.strategy.__class__.__name__}")
             print("=" * 70)
-            print(f"{'日期':<12} {'股票':<8} {'操作':<6} {'价格':>8} {'数量':>6} {'总资产':>14}")
+            print(f"{'日期':<12} {'股票':<8} {'操作':<6} {'价格':>8} {'数量':>6} {'总资产':>14} {'总仓位':>8}")
             print("-" * 70)
 
             asset_map = self.equity_curve.to_dict() if self.equity_curve is not None else {}
@@ -102,7 +102,13 @@ class _BacktestBase:
                 date_str = row['Date'].strftime('%Y-%m-%d') if hasattr(row['Date'], 'strftime') else str(row['Date'])[:10]
                 asset = asset_map.get(row['Date'], 0.0)
                 asset_str = f"{asset:,.2f}" if asset > 0 else ""
-                print(f"{date_str:<12} {row['Stock']:<8} {row['Action']:<6} {row['Price']:>8.2f} {row['Shares']:>6} {asset_str:>14}")
+                # 总仓位 = 该笔成交后持仓市值/总资产（2026-08-29 老板要求，无歧义）
+                try:
+                    tp = float(row.get('total_position', 0) or 0)
+                except Exception:
+                    tp = 0.0
+                tp_str = f"{tp:.1%}" if tp > 0 else ""
+                print(f"{date_str:<12} {row['Stock']:<8} {row['Action']:<6} {row['Price']:>8.2f} {row['Shares']:>6} {asset_str:>14} {tp_str:>8}")
             print("=" * 70)
             print("💡 提示：以上交易与前端 K 线图买卖点完全一致")
         else:
