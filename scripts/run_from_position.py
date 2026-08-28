@@ -69,6 +69,7 @@ def main():
     parser.add_argument("--total", type=float, default=500000, help="总资金（默认50万）")
     parser.add_argument("--dc-low", type=float, default=-0.40, help="死叉低位阈值（默认-0.40，疑似底背离不卖）")
     parser.add_argument("--dc-strength", type=float, default=0.15, help="死叉强度阈值（默认0.15，弱死叉不卖）")
+    parser.add_argument("--gc-high", type=float, default=-0.20, help="金叉高位阈值（默认-0.20，距250日高>-0.20拒买追高）")
     parser.add_argument("--print-trades", action="store_true",
                         help="打印每笔交易明细（含该笔完成后的总仓位=持仓市值/总资产）")
     args = parser.parse_args()
@@ -112,6 +113,7 @@ def main():
     # 死叉真假判定参数（2026-08-29 实验）：--dc-low/--dc-strength
     engine.risk_manager.deadcross_low = args.dc_low
     engine.risk_manager.deadcross_strength = args.dc_strength
+    engine.risk_manager.goldencross_high = args.gc_high
     print(f"🔍 死叉判定参数: 低位 {args.dc_low} / 强度 {args.dc_strength}")
     engine.run(md, initial_cash=cash, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
