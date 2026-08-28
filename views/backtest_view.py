@@ -255,7 +255,7 @@ def run_backtest():
                     from core.strategy import SimpleStrategy
                     strategy = SimpleStrategy(short=5, long=20,
                                               quality_filter=use_quality,
-                                              quality_penalty=0.2)
+                                              quality_penalty=0.1)
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION)
 
