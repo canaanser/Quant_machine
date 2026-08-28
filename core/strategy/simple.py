@@ -27,7 +27,8 @@ class SimpleStrategy(BaseStrategy):
     def __init__(self, short=5, long=20, verbose: bool = False,
                  quality_filter: bool = False, quality_deep: float = -0.15,
                  quality_vol: float = 0.7, quality_penalty: float = 0.2,
-                 quality_pos_high: float = -0.50, quality_pos_range: float = 0.10):
+                 quality_pos_high: float = -0.50, quality_pos_range: float = 0.10,
+                 freq_filter: bool = False):
         self.short = short
         self.long = long
         self.window = long + 1
@@ -48,6 +49,11 @@ class SimpleStrategy(BaseStrategy):
         self.quality_penalty = quality_penalty
         self.quality_pos_high = quality_pos_high
         self.quality_pos_range = quality_pos_range
+        # 行情状态频率控制（2026-08-28 小二陈，老板第3点）：
+        # 阴跌状态（MA20 下行 + 价格在 MA20 下方 = 反弹无力）的"跌势衰竭"多为假反弹，
+        # 高频交易 → 死亡螺旋（震荡阴跌亏手续费/高买低卖）。freq_filter 开启时
+        # 阴跌状态信号降权（轻仓试探），上涨/震荡状态保持频率。
+        self.freq_filter = freq_filter
 
     def _get_position_weight(self, buy_count):
         weights = {0: 0.0, 1: 0.10, 2: 0.80, 3: 0.10}
@@ -74,6 +80,7 @@ class SimpleStrategy(BaseStrategy):
         self._q_vol = {}
         self._q_p250h = {}
         self._q_rp250 = {}
+        self._q_ma20slope = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -110,6 +117,8 @@ class SimpleStrategy(BaseStrategy):
             self._q_p250h[code] = (price / p250_high - 1).to_numpy()
             rng250 = (p250_high - p250_low).replace(0, np.nan)
             self._q_rp250[code] = ((price - p250_low) / rng250).to_numpy()
+            # ---- 行情状态（freq_filter：MA20 的 5 日斜率 = 均线方向）----
+            self._q_ma20slope[code] = ma20.diff(5).to_numpy()
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -229,6 +238,15 @@ class SimpleStrategy(BaseStrategy):
                                         pos_ok = True
                                 ok = ok and pos_ok
                             if not ok:
+                                final_score = final_score * self.quality_penalty
+
+                    # ---- 行情状态频率控制（2026-08-28 小二陈）----
+                    # 阴跌态（MA20 下行且价格<MA20，反弹无力）的衰竭信号多为假反弹
+                    # → 降权轻仓，避免震荡阴跌的死亡螺旋（亏手续费/高买低卖）
+                    if self.freq_filter and code in self._q_ma20slope:
+                        slope5 = self._q_ma20slope[code]
+                        if slope5 is not None and len(slope5) > pos and not np.isnan(slope5[pos]):
+                            if slope5[pos] < 0 and curr_ma5 < curr_ma20:
                                 final_score = final_score * self.quality_penalty
 
 
