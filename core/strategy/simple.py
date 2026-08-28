@@ -25,8 +25,9 @@ class SimpleStrategy(BaseStrategy):
     - 仓位分配：第1次10%（评分放大1倍），第2次80%（评分放大2倍），第3次10%（评分放大2倍）
     """
     def __init__(self, short=5, long=20, verbose: bool = False,
-                 quality_filter: bool = False, quality_deep: float = -0.20,
-                 quality_vol: float = 0.7, quality_penalty: float = 0.2):
+                 quality_filter: bool = False, quality_deep: float = -0.15,
+                 quality_vol: float = 0.7, quality_penalty: float = 0.2,
+                 quality_pos_high: float = -0.50, quality_pos_range: float = 0.10):
         self.short = short
         self.long = long
         self.window = long + 1
@@ -36,13 +37,17 @@ class SimpleStrategy(BaseStrategy):
         self._score_cache_value = None
         self._prepared = False
         self.verbose = verbose
-        # 事前质量评分（2026-08-28 小二陈，84只全量验证）：
-        # 规则"深跌<-20% + 放量>0.7"= 10日胜率65.1%/Sharpe2.18（样本外），
+        # 事前质量评分（2026-08-28 小二陈）：
+        # v1"深跌<-20%+放量>0.7"= 样本外58.5%/Sharpe1.38
+        # v2 定型：深跌<-15% + 放量>0.7 +（距250日高点<-50% 或 区间分位<10%）
+        #   = 样本外62.8%/Sharpe2.13（84只验证）——"前面大下坡/底部区域"位置维度
         # 不满足规则的信号评分×quality_penalty 降权（轻仓试探，不踏空）。
         self.quality_filter = quality_filter
         self.quality_deep = quality_deep
         self.quality_vol = quality_vol
         self.quality_penalty = quality_penalty
+        self.quality_pos_high = quality_pos_high
+        self.quality_pos_range = quality_pos_range
 
     def _get_position_weight(self, buy_count):
         weights = {0: 0.0, 1: 0.10, 2: 0.80, 3: 0.10}
@@ -67,6 +72,8 @@ class SimpleStrategy(BaseStrategy):
         self._feat_cols = []
         self._q_deep = {}
         self._q_vol = {}
+        self._q_p250h = {}
+        self._q_rp250 = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -96,6 +103,13 @@ class SimpleStrategy(BaseStrategy):
                 except Exception:
                     vol_ratio = None
             self._q_vol[code] = vol_ratio
+            # ---- 位置特征（v2：距250日高点跌幅 + 250日区间分位，"前面大下坡/底部区域"）----
+            w250 = price.rolling(250, min_periods=120)
+            p250_high = w250.max()
+            p250_low = w250.min()
+            self._q_p250h[code] = (price / p250_high - 1).to_numpy()
+            rng250 = (p250_high - p250_low).replace(0, np.nan)
+            self._q_rp250[code] = ((price - p250_low) / rng250).to_numpy()
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -192,9 +206,9 @@ class SimpleStrategy(BaseStrategy):
 
                     final_score = min(0.9, final_score)
 
-                    # ---- 事前质量评分过滤（2026-08-28 小二陈）----
-                    # 规则：深跌<-20% 且 放量>0.7 → 高质量（10日胜率65.1%/Sharpe2.18，84只样本外验证）
-                    # 不满足 → 评分降权（轻仓试探，不踏空）
+                    # ---- 事前质量评分过滤（2026-08-28 小二陈，v2 定型）----
+                    # v2：深跌<-15% 且 放量>0.7 且（距250日高点<-50% 或 区间分位<10%）
+                    # = 样本外62.8%/Sharpe2.13（84只验证）；不满足 → 降权轻仓
                     if self.quality_filter and code in self._q_deep:
                         d20 = self._q_deep[code]
                         if d20 is not None and len(d20) > pos and not np.isnan(d20[pos]):
@@ -202,6 +216,18 @@ class SimpleStrategy(BaseStrategy):
                             vr = self._q_vol.get(code)
                             if vr is not None and len(vr) > pos and not np.isnan(vr[pos]):
                                 ok = ok and vr[pos] > self.quality_vol
+                            # 位置维度：前面大下坡（距250日高点深跌）或 底部区域（区间分位低）
+                            if ok:
+                                ph = self._q_p250h.get(code)
+                                rp = self._q_rp250.get(code)
+                                pos_ok = False
+                                if ph is not None and len(ph) > pos and not np.isnan(ph[pos]):
+                                    if ph[pos] < self.quality_pos_high:
+                                        pos_ok = True
+                                if not pos_ok and rp is not None and len(rp) > pos and not np.isnan(rp[pos]):
+                                    if rp[pos] < self.quality_pos_range:
+                                        pos_ok = True
+                                ok = ok and pos_ok
                             if not ok:
                                 final_score = final_score * self.quality_penalty
 
