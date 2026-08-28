@@ -162,18 +162,20 @@ def main():
         print("=" * 82)
         # 分年度汇总（老板 2026-08-29：要看每年代实现盈亏 + 总盈亏）
         g['Year'] = g['Date'].dt.year
+        # 2026-08-29 修复：avg_c/shares 跨年结转（每年从0算成本→跨年卖出天价）
+        avg_c, sh = 0.0, 0
         yearly = []
         for yr, yg in g.groupby('Year'):
-            avg_c, sh, realized = 0.0, 0, 0.0
+            realized_yr = 0.0
             for _, rr in yg.iterrows():
                 if rr['Action'] == 'BUY':
                     t = sh + rr['Shares']
                     avg_c = (avg_c * sh + rr['Price'] * rr['Shares']) / t if t else rr['Price']
                     sh = t
                 else:
-                    realized += (rr['Price'] - avg_c) * rr['Shares']
+                    realized_yr += (rr['Price'] - avg_c) * rr['Shares']
                     sh -= rr['Shares']
-            yearly.append((yr, realized))
+            yearly.append((yr, realized_yr))
         print(f"\n📅 {code} {nm} 分年度实现盈亏（总 {cum_pnl:,.0f} 元）")
         for yr, rl in yearly:
             print(f"  {yr}: {rl:>+12,.0f} 元")
