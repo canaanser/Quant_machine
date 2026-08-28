@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--end", default=END)
     parser.add_argument("--no-quality", action="store_true",
                         help="关闭质量评分过滤（回到原版 Simple）")
+    parser.add_argument("--verbose", action="store_true", help="打印诊断日志（定位仓位/审批问题）")
     parser.add_argument("--pos-off", action="store_true",
                         help="关闭位置软加权（纯 v1：深跌+放量，不按价格位置调整）")
     parser.add_argument("--bottom", action="store_true",
@@ -88,7 +89,7 @@ def main():
         rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
         stop_loss, batch = 0.08, True
     print(f"🎯 模式: {args.mode or '标准'} 风控={rc.get('MAX_SINGLE_POSITION_RATIO')} 止损={stop_loss}")
-    engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False,
+    engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=args.verbose,
                               stop_loss_pct=stop_loss, batch_exit=batch, protect_days=protect)
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
