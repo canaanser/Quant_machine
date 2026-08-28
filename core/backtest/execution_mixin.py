@@ -32,7 +32,8 @@ class _ExecutionMixin:
                     pass
 
     def _execute_stop_loss(self, holdings_dict, current_prices, today):
-        """通用止损（2026-08-28 小二陈）：持仓跌破成本 stop_loss_pct 强制全卖，不依赖信号"""
+        """铁律机械止损（2026-08-28 老板架构）：持仓跌破成本 stop_loss_pct 强制全卖。
+        最高优先级——任何策略信号/分批/因子都不能覆盖；人买错（抄底/追高失败）同样执行。"""
         if not self.stop_loss_pct:
             return
         for symbol, pos in list(holdings_dict.items()):
@@ -41,35 +42,85 @@ class _ExecutionMixin:
                 continue
             pnl = (price - pos['avg_cost']) / pos['avg_cost']
             if pnl <= -self.stop_loss_pct:
-                order_id = self.adapter.place_order(symbol, 'SELL', pos['shares'], trade_date=today)
-                if not order_id.startswith('ERROR'):
-                    status = self.adapter.get_order_status(order_id)
-                    if status['status'] == 'FILLED':
-                        exec_report = {
-                            'order_id': order_id, 'symbol': symbol, 'action': 'SELL',
-                            'filled_volume': status['filled_volume'],
-                            'filled_amount': status['filled_volume'] * status['filled_price'],
-                            'commission': 0, 'fill_price': status['filled_price'],
-                            'timestamp': pd.Timestamp(today),
-                        }
-                        self.performance_analyzer.record_trade(exec_report)
-                        if self.verbose:
-                            logger.debug(f"🛑 止损卖出: {symbol} {pos['shares']}股 @ {price:.2f} (盈亏{pnl:.2%})")
+                self._sell(symbol, pos['shares'], price, today, '铁律止损')
+                if self.verbose:
+                    logger.debug(f"🛑 铁律止损: {symbol} 全清 @ {price:.2f} (盈亏{pnl:.2%})")
+
+    def _execute_take_profit(self, holdings_dict, current_prices, today):
+        """止盈（自平衡：止盈≥2×止损）：触发卖一半锁利润（2026-08-28 老板架构）"""
+        if not self.take_profit_pct:
+            return
+        for symbol, pos in list(holdings_dict.items()):
+            price = current_prices.get(symbol)
+            if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
+                continue
+            pnl = (price - pos['avg_cost']) / pos['avg_cost']
+            if pnl >= self.take_profit_pct:
+                sell_shares = max(100, int(pos['shares'] * 0.5 // 100) * 100)
+                self._sell(symbol, sell_shares, price, today, '止盈半仓')
+                if self.verbose:
+                    logger.debug(f"🟢 止盈: {symbol} 卖{sell_shares}股 @ {price:.2f} (盈亏{pnl:.2%})")
+
+    def _in_protection(self, symbol, pos, today):
+        """保护期：人主动买入 protect_days 日内，策略信号不卖（止损/止盈照常）"""
+        if not self.protect_days or pos.get('buy_source') != 'human':
+            return False
+        buy_date = pos.get('buy_date')
+        if buy_date is None:
+            return False
+        return (pd.Timestamp(today) - pd.Timestamp(buy_date)).days < self.protect_days
+
+    def _sell(self, symbol, shares, price, today, reason=''):
+        """统一卖出执行（2026-08-28）"""
+        if shares <= 0:
+            return
+        order_id = self.adapter.place_order(symbol, 'SELL', shares, trade_date=today)
+        if not order_id.startswith('ERROR'):
+            status = self.adapter.get_order_status(order_id)
+            if status['status'] == 'FILLED':
+                exec_report = {
+                    'order_id': order_id, 'symbol': symbol, 'action': 'SELL',
+                    'filled_volume': status['filled_volume'],
+                    'filled_amount': status['filled_volume'] * status['filled_price'],
+                    'commission': 0, 'fill_price': status['filled_price'],
+                    'timestamp': pd.Timestamp(today),
+                }
+                self.performance_analyzer.record_trade(exec_report)
+                return exec_report
+        return None
 
     def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market):
-        # ---------- 卖出逻辑 ----------
-        # 调用策略自己的退出信号接口
+        # ---------- 策略卖出逻辑（分批退出，2026-08-28 老板架构）----------
+        # 死叉等策略信号 → 分批卖（1/3），不全清；铁律止损/止盈在更高优先级执行
         exit_series = self.strategy.get_exit_signal(hist_returns, hist_market)
         sell_signals = [sym for sym, should_exit in exit_series.items() if should_exit]
 
         for symbol in list(holdings_dict.keys()):
-            if symbol in sell_signals:
-                pos = holdings_dict[symbol]
-                score = final_scores.get(symbol, 0.5)
-                tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
+            if symbol not in sell_signals:
+                continue
+            pos = holdings_dict[symbol]
+            if self._in_protection(symbol, pos, today):
+                if self.verbose:
+                    logger.debug(f"🛡️ 保护期: {symbol} 策略信号暂不执行（人买入观察期）")
+                continue
+            score = final_scores.get(symbol, 0.5)
+            tag = market_data.info.loc[symbol].get('tag') if symbol in market_data.info.index and 'tag' in market_data.info.columns else None
+            price = current_prices.get(symbol, 0)
+            if not price or pos['shares'] <= 0:
+                continue
 
+            if self.batch_exit:
+                # 分批退出：死叉卖 1/3（剩余等后续信号/止损；铁律止损仍全清）
+                sell_shares = max(100, int(pos['shares'] * 0.34 // 100) * 100)
+                if sell_shares >= pos['shares']:
+                    sell_shares = pos['shares']
+                if self.verbose:
+                    logger.debug(f"🔔 分批退出: {symbol} 卖{sell_shares}/{pos['shares']}股 (评分{score:.4f})")
+                self._sell(symbol, sell_shares, price, today, '死叉分批')
+            else:
                 if self.verbose:
                     logger.debug(f"🔔 死叉信号触发卖出: {symbol}, 持仓={pos['shares']}股, 评分={score:.4f}")
+                self._sell(symbol, pos['shares'], price, today, '死叉清仓')
 
                 temp_account = create_default_account(account.cash)
                 temp_account.positions = {
@@ -152,5 +203,9 @@ class _ExecutionMixin:
                                 'timestamp': pd.Timestamp(today)
                             }
                             self.performance_analyzer.record_trade(exec_report)
+                            # 买入来源标记（2026-08-28：保护期需区分 人/系统 买入）
+                            if symbol in self.adapter.positions:
+                                self.adapter.positions[symbol]['buy_source'] = 'system'
+                                self.adapter.positions[symbol]['buy_date'] = str(pd.Timestamp(today).date())
                             if self.verbose:
                                 logger.debug(f"   ✅ 买入成交: {symbol} {status['filled_volume']}股 @ {status['filled_price']:.2f}，金额: {exec_report['filled_amount']:.2f}")

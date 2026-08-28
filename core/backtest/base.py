@@ -20,15 +20,22 @@ class _BacktestBase:
     """回测流水线基类：初始化与结果处理（run 主循环在子类）"""
 
     def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False,
-                 stop_loss_pct: float = None):
-        """stop_loss_pct: 通用止损线（持仓跌破成本 X% 强制卖出，None=关闭）
-        （2026-08-28 小二陈：实盘回撤控制——不依赖信号的强制止损）"""
+                 stop_loss_pct: float = None, take_profit_pct: float = None,
+                 batch_exit: bool = False, protect_days: int = 0):
+        """铁律风控层参数（2026-08-28 小二陈，老板架构要求）：
+        stop_loss_pct: 机械止损铁律（最高优先级，任何信号/因子不能覆盖）None=关
+        take_profit_pct: 止盈（默认 None=自动 2×止损，自平衡）；触发卖一半锁利润
+        batch_exit: 分批退出（死叉等策略信号 → 分批卖，不全清；止损仍是全卖铁律）
+        protect_days: 保护期（人主动买入 N 日内策略信号不卖；止损/止盈照常）"""
         self.strategy = strategy
         self.top_n = top_n
         self.commission = commission
         self.risk_config = risk_config or DEFAULT_RISK_CONFIG
         self.verbose = verbose
         self.stop_loss_pct = stop_loss_pct
+        self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)  # 止盈≥2×止损
+        self.batch_exit = batch_exit
+        self.protect_days = protect_days
         self.risk_manager = RiskManager(self.risk_config, verbose=self.verbose)
         self.order_executor = OrderExecutor()
         self.performance_analyzer = PerformanceAnalyzer()

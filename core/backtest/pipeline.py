@@ -30,10 +30,12 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
     """
 
     def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False,
-                 stop_loss_pct: float = None, market_gate: str = None,
-                 gate_crash: float = -0.03, gate_ma200_half: bool = True):
+                 stop_loss_pct: float = None, take_profit_pct: float = None,
+                 batch_exit: bool = False, protect_days: int = 0,
+                 market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True):
         super().__init__(strategy, top_n=top_n, commission=commission,
-                         risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct)
+                         risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct,
+                         take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days)
         # 大盘风控开关（2026-08-28 小二陈）：'crash'=单日暴跌不开仓；'ma200'=大盘MA200下方半仓；'both'
         self.market_gate = market_gate
         self.gate_crash = gate_crash
@@ -79,6 +81,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             raise ValueError(f"数据长度不足，需要 {warmup_days} 天，实际 {len(dates)} 天")
 
         initial_positions = initial_positions or {}  # 断点续跑：实盘持仓导入
+        # 人持仓标记（2026-08-28：initial_positions=实盘人买入，保护期生效）
+        for sym, p in initial_positions.items():
+            p.setdefault('buy_source', 'human')
+            p.setdefault('buy_date', str(pd.Timestamp(trade_start or dates[0]).date()))
         self.adapter = SimulatedBrokerAdapter(
             initial_cash=initial_cash,
             initial_positions=initial_positions,
@@ -181,9 +187,11 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
 
-            self._execute_stop_loss(holdings_dict, current_prices, today)  # 通用止损（2026-08-28）
+            self._execute_stop_loss(holdings_dict, current_prices, today)    # ① 铁律止损（最高优先级）
 
-            self._execute_sells(holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market)
+            self._execute_take_profit(holdings_dict, current_prices, today)  # ② 止盈（≥2×止损，卖半锁利润）
+
+            self._execute_sells(holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market)  # ③ 策略信号（分批/保护期）
 
             self._execute_buys(buy_list, final_scores, market_data, account, current_prices, today)
 
