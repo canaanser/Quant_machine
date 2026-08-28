@@ -64,17 +64,29 @@ class _BacktestBase:
         if account:
             self.performance_analyzer.record_daily_snapshot(account, date, {})
     def _extract_results(self, dates, auto_save: bool = True):
-        trades_list = []
-        if hasattr(self.adapter, 'pending_orders'):
-            for order_id, order in self.adapter.pending_orders.items():
-                if order.get('status') == 'FILLED':
-                    trades_list.append({
-                        'Date': pd.Timestamp(order.get('submitted_at', dates[0])),
-                        'Stock': order.get('symbol', ''),
-                        'Action': order.get('action', ''),
-                        'Price': order.get('price', 0),
-                        'Shares': order.get('volume', 0)
-                    })
+        # 2026-08-29 优先用 performance_analyzer.trade_history（exec_report 全字段，含 total_position 总仓位）
+        if getattr(self.performance_analyzer, 'trade_history', None):
+            th = self.performance_analyzer.trade_history
+            trades_list = [{
+                'Date': pd.Timestamp(r.get('timestamp', dates[0])),
+                'Stock': r.get('symbol', ''),
+                'Action': r.get('action', ''),
+                'Price': r.get('fill_price', 0),
+                'Shares': r.get('filled_volume', 0),
+                'total_position': r.get('total_position', 0),
+            } for r in th]
+        else:
+            trades_list = []
+            if hasattr(self.adapter, 'pending_orders'):
+                for order_id, order in self.adapter.pending_orders.items():
+                    if order.get('status') == 'FILLED':
+                        trades_list.append({
+                            'Date': pd.Timestamp(order.get('submitted_at', dates[0])),
+                            'Stock': order.get('symbol', ''),
+                            'Action': order.get('action', ''),
+                            'Price': order.get('price', 0),
+                            'Shares': order.get('volume', 0)
+                        })
         self.trades = pd.DataFrame(trades_list) if trades_list else pd.DataFrame(columns=['Date', 'Stock', 'Action', 'Price', 'Shares'])
 
         snapshots = self.performance_analyzer.daily_snapshots
