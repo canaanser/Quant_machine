@@ -69,6 +69,8 @@ def main():
     parser.add_argument("--total", type=float, default=500000, help="总资金（默认50万）")
     parser.add_argument("--dc-low", type=float, default=-0.40, help="死叉低位阈值（默认-0.40，疑似底背离不卖）")
     parser.add_argument("--dc-strength", type=float, default=0.15, help="死叉强度阈值（默认0.15，弱死叉不卖）")
+    parser.add_argument("--print-trades", action="store_true",
+                        help="打印每笔交易明细（含该笔完成后的总仓位=持仓市值/总资产）")
     args = parser.parse_args()
 
     positions = {}
@@ -135,6 +137,18 @@ def main():
         print(f"  {sym}: {p['shares']}股 @ {p['avg_cost']:.2f}")
     print(f"期末现金: {engine.adapter.cash:,.0f}")
     print("=" * 60)
+
+    # 每笔交易明细（含该笔完成后的总仓位，2026-08-29 老板要求，无歧义）
+    if args.print_trades:
+        print("\n📊 每笔交易明细（总仓位 = 该笔成交后持仓市值/总资产）")
+        print(f"{'日期':<12}{'代码':<8}{'操作':<6}{'价格':>9}{'数量':>8}{'总仓位':>9}")
+        print("-" * 55)
+        for _, r in engine.trades.iterrows():
+            tp = float(r.get('total_position', 0) or 0)
+            print(f"{str(r.get('Date', ''))[:10]:<12}{r.get('Stock', ''):<8}"
+                  f"{str(r.get('Action', '')):<6}{float(r.get('Price', 0)):>9.2f}"
+                  f"{int(r.get('Shares', 0)):>8}{tp:>8.1%}")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
