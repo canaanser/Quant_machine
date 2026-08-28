@@ -59,8 +59,23 @@ def list_industries():
     print(f"原始: {str(boards)[:500]}")
 
 
+def get_float_mv(code: str):
+    """尽力拉流通市值（float_mv），失败返回 None（排最后）"""
+    try:
+        import stock_sdk
+        client = stock_sdk.get_default_client()
+        rec = client.get_data(code, fields="float_mv")
+        if isinstance(rec, dict):
+            v = rec.get('float_mv') or rec.get('0')
+        else:
+            v = rec
+        return float(v) if v else None
+    except Exception:
+        return None
+
+
 def pick(industries, per):
-    """按行业拉成分，过滤后按市值排序选 top N（市值接口确认后完善）"""
+    """按行业拉成分，过滤后按市值排序选 top N"""
     names = load_names()
     chosen = []
     for ind in industries:
@@ -85,11 +100,21 @@ def pick(industries, per):
             if 'ST' in nm.upper() or '退' in nm:
                 continue
             cand.append(code)
-        print(f"  成分 {len(symbols)} → 过滤后 {len(cand)}（取前 {per}，市值排序待完善）")
-        chosen.extend([(c, ind) for c in cand[:per]])
+        print(f"  成分 {len(symbols)} → 过滤后 {len(cand)}，拉市值排序 ...")
+        # 市值排序（尽力而为）
+        ranked = []
+        for code in cand:
+            mv = get_float_mv(code)
+            ranked.append((code, mv))
+        ranked.sort(key=lambda x: -(x[1] if x[1] is not None else -1))
+        if not any(mv is not None for _, mv in ranked):
+            print("  ⚠️ 市值拉取失败，按板块顺序取")
+        for code, mv in ranked[:per]:
+            chosen.append((code, ind, mv))
     print("\n===== 候选清单 =====")
-    for code, ind in chosen:
-        print(f"  {code} {names.get(code, '?'):<10} [{ind}]")
+    for code, ind, mv in chosen:
+        mv_s = f"{mv/1e8:.0f}亿" if mv else "?"
+        print(f"  {code} {names.get(code, '?'):<10} [{ind}] {mv_s}")
     print(f"\n共 {len(chosen)} 只（目标 {len(industries) * per}）")
 
 
