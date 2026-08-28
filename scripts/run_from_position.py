@@ -44,12 +44,14 @@ MODE_CONFIG = {
     '建仓': {
         'risk': {'MAX_SINGLE_POSITION_RATIO': 0.10, 'BASE_POSITION_RATIO': 0.20},
         'strategy': {'quality_filter': True, 'quality_penalty': 0.1},
-        'desc': '轻仓10%上限/严风控/质量过滤——攒安全垫',
+        'stop_loss_pct': 0.20,  # 建仓档：极端止损 -20%（只防黑天鹅，敏感止损对抄底策略有害）
+        'desc': '轻仓10%上限/极端止损20%/质量过滤——攒安全垫',
     },
     '进攻': {
         'risk': {'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50},
         'strategy': {'quality_filter': True, 'quality_penalty': 0.1},
-        'desc': '重仓30%上限/宽风控/质量过滤——利润最大化',
+        'stop_loss_pct': 0.15,  # 进攻档：宽止损 -15%（有利润垫）
+        'desc': '重仓30%上限/宽止损15%/质量过滤——利润最大化',
     },
 }
 
@@ -91,7 +93,8 @@ def main():
     rc = dict(DEFAULT_RISK_CONFIG)
     rc.update(cfg['risk'])
     strategy = SimpleStrategy(5, 20, **cfg['strategy'])
-    engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False)
+    engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False,
+                              stop_loss_pct=cfg.get('stop_loss_pct'))
     engine.run(md, initial_cash=cash, auto_save=False, trade_start=args.start,
                initial_positions={c: {"name": c, "shares": p['shares'], "avg_cost": p.get('avg_cost', 0)} for c, p in positions.items()})
 

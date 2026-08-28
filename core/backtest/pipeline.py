@@ -29,9 +29,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
     - RiskManager 只负责审批（不持有账户状态）
     """
 
-    def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False):
+    def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False,
+                 stop_loss_pct: float = None):
         super().__init__(strategy, top_n=top_n, commission=commission,
-                         risk_config=risk_config, verbose=verbose)
+                         risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct)
         # verbose=True 时，本包 logger 提升到 DEBUG 级（调试细节可见，保持原有行为）
         if verbose:
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
@@ -164,6 +165,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             buy_list = final_scores.head(self.top_n).index.tolist() if len(final_scores) > 0 else []
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
+
+            self._execute_stop_loss(holdings_dict, current_prices, today)  # 通用止损（2026-08-28）
 
             self._execute_sells(holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market)
 

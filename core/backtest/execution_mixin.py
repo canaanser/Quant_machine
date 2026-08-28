@@ -31,6 +31,31 @@ class _ExecutionMixin:
                 except Exception:
                     pass
 
+    def _execute_stop_loss(self, holdings_dict, current_prices, today):
+        """通用止损（2026-08-28 小二陈）：持仓跌破成本 stop_loss_pct 强制全卖，不依赖信号"""
+        if not self.stop_loss_pct:
+            return
+        for symbol, pos in list(holdings_dict.items()):
+            price = current_prices.get(symbol)
+            if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
+                continue
+            pnl = (price - pos['avg_cost']) / pos['avg_cost']
+            if pnl <= -self.stop_loss_pct:
+                order_id = self.adapter.place_order(symbol, 'SELL', pos['shares'], trade_date=today)
+                if not order_id.startswith('ERROR'):
+                    status = self.adapter.get_order_status(order_id)
+                    if status['status'] == 'FILLED':
+                        exec_report = {
+                            'order_id': order_id, 'symbol': symbol, 'action': 'SELL',
+                            'filled_volume': status['filled_volume'],
+                            'filled_amount': status['filled_volume'] * status['filled_price'],
+                            'commission': 0, 'fill_price': status['filled_price'],
+                            'timestamp': pd.Timestamp(today),
+                        }
+                        self.performance_analyzer.record_trade(exec_report)
+                        if self.verbose:
+                            logger.debug(f"🛑 止损卖出: {symbol} {pos['shares']}股 @ {price:.2f} (盈亏{pnl:.2%})")
+
     def _execute_sells(self, holdings_dict, final_scores, market_data, account, current_prices, today, hist_returns, hist_market):
         # ---------- 卖出逻辑 ----------
         # 调用策略自己的退出信号接口
