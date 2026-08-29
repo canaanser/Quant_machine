@@ -39,7 +39,9 @@ def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31')
     results = {}
     # 估值/指标表用 date（指定日前最新披露）；利润/现金流/资产负债表用 statDate（季度）
     table_cfgs = [
-        # 2026-08-30 只拉本地库3表：valuation/indicator 需在线API（mapi_url未配置报错）——估值用本地日K pe_ttm/pb（data/fundamentals/），ROE等用 income/balance 算
+        # 2026-08-30 在线API配置后全5表（valuation估值/indicator指标/income利润/cash_flow现金流/balance资产负债表）
+        ('valuation', 'statDate', quarters),
+        ('indicator', 'statDate', quarters),
         ('income', 'statDate', quarters),
         ('cash_flow', 'statDate', quarters),
         ('balance', 'statDate', quarters),
@@ -71,6 +73,12 @@ def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31')
 
 
 def main():
+    # 2026-08-30 配置在线API（官网start.html：set_init("8.138.149.215:12328")——在线财务/实时Tick接口）
+    try:
+        stock_sdk.set_init("8.138.149.215:12328")
+        print("✅ 在线API已配置: 8.138.149.215:12328")
+    except Exception as e:
+        print(f"⚠️ set_init 失败: {e}")
     os.makedirs(OUT_DIR, exist_ok=True)
     test_n = 0
     if '--test' in sys.argv:
@@ -86,7 +94,7 @@ def main():
     if test_n:
         pool = pool[:test_n]
     print(f"📦 拉取 {len(pool)} 只财务（{'测试' if test_n else '全量'}）→ {OUT_DIR}")
-    print(f"   季度: {quarters[:4]}... 表: income/cash_flow/balance（本地库）")
+    print(f"   季度: {quarters[:4]}... 表: valuation/indicator/income/cash_flow/balance")
     ok = fail = 0
     for i, code in enumerate(pool):
         suffix = market_suffix(code)
