@@ -94,11 +94,11 @@ class RiskManager:
                     stop_pct = stop_pct * (1 + min(pnl, 0.5))
                     stop_price = max(pos['avg_cost'] * (1 - stop_pct), pos['avg_cost'])
                 else:
+                    # 2026-08-30 A修正：凯利只放宽不收紧——负凯利×0.7在熊市段频繁割肉（84只收益379%→120%）
+                    # 负/低凯利用标准 base（认错基线统一），高凯利才 ×1.3 给空间
                     k = kelly_factors.get(symbol, 0.0)
                     if k >= 0.1:
                         stop_pct *= 1.3
-                    elif k < 0:
-                        stop_pct *= 0.7
                     stop_price = pos['avg_cost'] * (1 - stop_pct)
                 if price <= stop_price:
                     orders.append({'symbol': symbol, 'action': 'SELL',
