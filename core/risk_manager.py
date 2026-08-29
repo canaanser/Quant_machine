@@ -52,6 +52,7 @@ class RiskManager:
         self.config = config
         self.verbose = verbose
         self.max_pos_ratio = config.get('MAX_SINGLE_POSITION_RATIO', 0.80)
+        self.max_total_ratio = config.get('MAX_TOTAL_POSITION_RATIO', 0.70)  # 总仓位上限（2026-08-30）
         self.stop_loss_aggressive = config.get('STOP_LOSS_AGGRESSIVE', 0.07)
         self.stop_loss_gentle = config.get('STOP_LOSS_GENTLE', 0.10)
         self.profit_take = config.get('PROFIT_TAKE_THRESHOLD', 0.30)
@@ -148,7 +149,7 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
-    def approve_order(self, signal: dict, account: Account, current_price: float) -> Optional[dict]:
+    def approve_order(self, signal: dict, account: Account, current_price: float, total_position: float = 0.0) -> Optional[dict]:
         """
         审批订单主流程
         """
@@ -198,6 +199,10 @@ class RiskManager:
                 max_allowed = account.total_asset * self.max_pos_ratio
                 current_value = pos.shares * current_price
                 remaining_slot = max_allowed - current_value
+                # 总仓位上限（2026-08-30 老板：分散池回撤靠总仓控制）：当前总仓位+目标 ≤ 上限
+                if self.max_total_ratio:
+                    total_slot = account.total_asset * self.max_total_ratio - total_position * account.total_asset
+                    remaining_slot = min(remaining_slot, total_slot)
                 
                 if self.verbose:
                     print(f"   🧮 仓位检查: {symbol} 持仓市值={current_value:.0f} max_allowed={max_allowed:.0f} "
