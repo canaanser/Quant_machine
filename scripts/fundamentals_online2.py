@@ -89,7 +89,7 @@ def main():
     for i, code in enumerate(pool):
         suffix = market_suffix(code)
         cache = OUT_DIR / f"{code}.csv"
-        if cache.exists() and cache.stat().st_size > 100:
+        if cache.exists() and cache.stat().st_size > 500:  # 新格式缓存（含5表JSON）才命中；旧api/json小缓存作废重拉
             ok += 1
             continue
         try:
