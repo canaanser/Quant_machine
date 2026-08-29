@@ -70,23 +70,41 @@ class RiskManager:
         # 死叉驳回统计（诊断用）
         self.deadcross_stats = {'浮盈': 0, '底背离': 0, '低位': 0, '真死叉': 0}
 
-    def evaluate_exits(self, positions: dict, prices: dict, today) -> List[dict]:
+    def evaluate_exits(self, positions: dict, prices: dict, today, kelly_factors: dict = None) -> List[dict]:
         """封控层止损/止盈评估（判定在此，执行由执行层 _sell）：
-        机械止损=认错（企稳后抄底仍跌超止损线=抄错底，最高优先级全卖）；
+        动态止损=认错（2026-08-30 凯利驱动，老板拍板）：
+          机械止损 base（默认10%）为底线；
+          有盈利垫子（浮盈>0）→ 止损放宽 base×(1+min(浮盈,0.5))，且不跌破成本（不把浮盈全吐）；
+          无浮盈 → 凯利调节：高凯利(f*≥0.1)×1.3给空间 / 中(0≤f*<0.1)×1.0 / 负(f*<0)×0.7认错快；
+          凯利负不拒买（老板：买入不额外拒买，涨不怕+止损兜底）。
         止盈=盈利垫子锁利（≥2×止损 卖一半）。
         positions: {symbol: {'shares','avg_cost','buy_source','buy_date'}}"""
         orders = []
+        kelly_factors = kelly_factors or {}
         for symbol, pos in positions.items():
             price = prices.get(symbol)
             if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
                 continue
             pnl = (price - pos['avg_cost']) / pos['avg_cost']
-            # 机械止损（最高优先级，认错——不扛抄错的单）
-            if self.stop_loss_pct and pnl <= -self.stop_loss_pct:
-                orders.append({'symbol': symbol, 'action': 'SELL',
-                               'target_volume': pos['shares'],
-                               'reason': '机械止损(认错)', 'priority': 9})
-                continue
+            # 动态止损（最高优先级，认错——不扛抄错的单）
+            if self.stop_loss_pct:
+                stop_pct = self.stop_loss_pct
+                if pnl > 0:
+                    # 盈利垫子：浮盈越多止损越宽（保垫子），最多 1.5×base；不跌破成本
+                    stop_pct = stop_pct * (1 + min(pnl, 0.5))
+                    stop_price = max(pos['avg_cost'] * (1 - stop_pct), pos['avg_cost'])
+                else:
+                    k = kelly_factors.get(symbol, 0.0)
+                    if k >= 0.1:
+                        stop_pct *= 1.3
+                    elif k < 0:
+                        stop_pct *= 0.7
+                    stop_price = pos['avg_cost'] * (1 - stop_pct)
+                if price <= stop_price:
+                    orders.append({'symbol': symbol, 'action': 'SELL',
+                                   'target_volume': pos['shares'],
+                                   'reason': f'动态止损(认错,{stop_pct:.0%})', 'priority': 9})
+                    continue
             # 止盈（盈利垫子锁利，卖一半）
             if self.take_profit_pct and pnl >= self.take_profit_pct:
                 half = (pos['shares'] // 2 // 100) * 100

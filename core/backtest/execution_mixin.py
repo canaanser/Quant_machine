@@ -37,12 +37,18 @@ class _ExecutionMixin:
         成交=T日收盘价（尾盘最后一秒）"""
         if not self.risk_manager.stop_loss_pct:
             return
-        for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today):
-            if order['reason'] == '机械止损(认错)':
+        kelly = {}
+        if hasattr(self.strategy, 'get_kelly_factors'):
+            try:
+                kelly = self.strategy.get_kelly_factors(today)
+            except Exception:
+                kelly = {}
+        for order in self.risk_manager.evaluate_exits(holdings_dict, current_prices, today, kelly_factors=kelly):
+            if order['reason'].startswith('动态止损'):
                 price = current_prices.get(order['symbol'])
                 self._sell(order['symbol'], order['target_volume'], price, today, order['reason'])
                 if self.verbose:
-                    logger.debug(f"🛑 机械止损(认错): {order['symbol']} 全清 @ {price:.2f}")
+                    logger.debug(f"🛑 {order['reason']}: {order['symbol']} 全清 @ {price:.2f}")
 
     def _execute_take_profit(self, holdings_dict, current_prices, today):
         """止盈（判定在封控层，卖一半锁利润——盈利垫子）；T+1 成交价"""
