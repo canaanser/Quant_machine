@@ -37,8 +37,16 @@ def fetch_kline(code: str, year: int) -> list:
 
 
 def fetch_stock_fundamentals(code: str, start_year: int = 2020) -> pd.DataFrame:
-    """拉一只票多年度基本面，合并去重，返回 DataFrame"""
+    """拉一只票多年度基本面（优先读已有行情缓存——缓存里自带 pe_ttm/pb 等字段，零成本）
+    2026-08-30 发现：日K缓存 data/cache/stockdb/{code}_1d.csv 一直含基本面字段（上次找独立接口失败=方向错）
+    没有缓存才走 HTTP 增量拉"""
     code = str(code).zfill(6)
+    cache_k = os.path.join(ROOT, 'data', 'cache', 'stockdb', f"{code}_1d.csv")
+    if os.path.exists(cache_k) and os.path.getsize(cache_k) > 100:
+        df = pd.read_csv(cache_k, encoding='utf-8')
+        df['date'] = pd.to_datetime(df['date'].astype(str), format='%Y%m%d', errors='coerce')
+        df = df.dropna(subset=['date']).sort_values('date')
+        return df
     frames = []
     end_year = 2026
     for year in range(start_year, end_year + 1):
