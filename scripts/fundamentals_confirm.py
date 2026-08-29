@@ -18,9 +18,9 @@ DATE = '2025-12-31'
 
 
 def main():
-    print(f"🔬 确认调用（消耗 1 次限额）：get_fundamentals(query('finance').filter('{CODE}'), date='{DATE}')")
+    print(f"🔬 确认调用（消耗 1 次限额）：get_fundamentals(query('finance').filter(\"code = '{CODE}'\"), date='{DATE}')")
     try:
-        q = stock_sdk.query('finance').filter(CODE)
+        q = stock_sdk.query('finance').filter(f"code = '{CODE}'")  # SQL条件版（SQLAlchemy线索：filter接受SQL表达式）
         r = stock_sdk.get_fundamentals(q, date=DATE)
         print(f"✅ 成功！类型: {type(r)}")
         if hasattr(r, 'head'):
