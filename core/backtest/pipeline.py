@@ -6,6 +6,7 @@
 run() 主循环骨架：段落逻辑已下沉到各 Mixin 的私有方法。
 """
 
+from core.backtest.kalman_pid import KalmanPID
 import logging
 
 import pandas as pd
@@ -187,6 +188,15 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             buy_list = final_scores.head(self.top_n).index.tolist() if len(final_scores) > 0 else []
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
+
+            # 卡尔曼+PID：每日用当日总资产更新总仓位乘数（只用过去观测，无未来函数）
+            try:
+                _x, _dd = self.kp.update(float(account.total_asset))
+                self._total_ratio = self.kp.ratio(_dd)
+                if self.verbose:
+                    logger.debug(f"   🎛️ 卡尔曼PID: x̂={_x:.0f} 回撤={_dd:.1%} u={self._total_ratio:.2f}")
+            except Exception:
+                self._total_ratio = 1.0
 
             self._execute_stop_loss(holdings_dict, current_prices, today)    # ① 铁律止损（最高优先级）
 

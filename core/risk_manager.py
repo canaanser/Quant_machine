@@ -149,7 +149,8 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
-    def approve_order(self, signal: dict, account: Account, current_price: float, total_position: float = 0.0) -> Optional[dict]:
+    def approve_order(self, signal: dict, account: Account, current_price: float, total_position: float = 0.0,
+                      total_ratio: float = 1.0) -> Optional[dict]:
         """
         审批订单主流程
         """
@@ -196,6 +197,7 @@ class RiskManager:
                 effective_ratio = min_ratio + (max_ratio - min_ratio) * (effective_score ** 2)
                 
                 target_amount = account.total_asset * effective_ratio
+                target_amount *= total_ratio  # 卡尔曼PID总仓乘数（2026-08-30：回撤深→整体降仓，保持评分²相对分配）
                 max_allowed = account.total_asset * self.max_pos_ratio
                 current_value = pos.shares * current_price
                 remaining_slot = max_allowed - current_value

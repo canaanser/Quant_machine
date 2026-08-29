@@ -221,8 +221,10 @@ class _ExecutionMixin:
             signal = {'symbol': symbol, 'action': 'BUY', 'score': score, 'tag': tag}
             # 2026-08-29 老板：买入不额外拒买（涨不怕+机械止损兜底）——靠质量/位置/筑底筛选
             cur_total_pos = self._total_position_after_trade()  # 当前总仓位（总仓上限检查用）
+            total_ratio = getattr(self, '_total_ratio', 1.0)  # 卡尔曼PID总仓乘数（pipeline每日更新）
             approved = self.risk_manager.approve_order(
-                signal, temp_account, current_price, total_position=cur_total_pos
+                signal, temp_account, current_price, total_position=cur_total_pos,
+                total_ratio=total_ratio
             )
             if approved:
                 # 2026-08-29 修复：审批可能返回 SELL（Step1 止盈/止损）——之前固定当 BUY 下单，
