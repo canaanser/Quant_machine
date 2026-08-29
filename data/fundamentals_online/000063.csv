@@ -1,0 +1,2 @@
+api,json
+get_security_info,"{""code"": ""000063"", ""display_name"": ""中兴通讯"", ""name"": ""ZXTX"", ""start_date"": ""1997-11-18"", ""end_date"": ""2200-01-01"", ""type"": ""stock"", ""parent"": null}"
