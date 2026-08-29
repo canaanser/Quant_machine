@@ -49,6 +49,10 @@ def main():
                         help="筑底确认（低点抬高企稳才买）")
     parser.add_argument("--mode", choices=['建仓', '进攻'], default=None,
                         help="模式档位：建仓=轻仓10%+铁律止损5%+分批+保护期；进攻=30%+止损8%")
+    parser.add_argument("--stop-loss", type=float, default=None,
+                        help="止损比例（如0.10）；不传用模式默认（建仓5%/进攻8%/标准无）")
+    parser.add_argument("--take-profit", type=float, default=None,
+                        help="止盈比例（如0.40）；不传=2×止损")
     parser.add_argument("--ext", action="store_true",
                         help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
     args = parser.parse_args()
@@ -89,8 +93,11 @@ def main():
         rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
         stop_loss, batch = 0.08, True
     print(f"🎯 模式: {args.mode or '标准'} 风控={rc.get('MAX_SINGLE_POSITION_RATIO')} 止损={stop_loss}")
+    if args.stop_loss is not None:
+        stop_loss = args.stop_loss  # 敏感性测试：显式止损覆盖模式默认
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=args.verbose,
-                              stop_loss_pct=stop_loss, batch_exit=batch, protect_days=protect)
+                              stop_loss_pct=stop_loss, take_profit_pct=args.take_profit,
+                              batch_exit=batch, protect_days=protect)
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 
