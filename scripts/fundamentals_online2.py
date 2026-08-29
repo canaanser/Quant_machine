@@ -12,6 +12,7 @@
 用法（Windows）：python -B scripts/fundamentals_online2.py [--test 1] [--quarters 4]
 """
 import sys
+import json
 import os
 import time
 from pathlib import Path
@@ -34,42 +35,33 @@ def market_suffix(code: str) -> str:
     return code + '.XSHE'
 
 
-def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31'):
-    """拉一只票各财务表（按季度 statDate 拉，合并）"""
-    results = {}
-    # 估值/指标表用 date（指定日前最新披露）；利润/现金流/资产负债表用 statDate（季度）
-    table_cfgs = [
-        # 2026-08-30 在线API配置后全5表（valuation估值/indicator指标/income利润/cash_flow现金流/balance资产负债表）
-        ('valuation', 'statDate', quarters),
-        ('indicator', 'statDate', quarters),
-        ('income', 'statDate', quarters),
-        ('cash_flow', 'statDate', quarters),
-        ('balance', 'statDate', quarters),
-    ]
-    for tname, mode, qlist in table_cfgs:
+def fetch_all_tables_batch(all_suffixes: list, quarters: list):
+    """批量拉全池财务（2026-08-30 优化：filter(code.in_(全池)) 每表每期 1 次查询——总共 ~40 次调用，不超限额）
+    返回 {code: {表名: DataFrame}}"""
+    tables = ('valuation', 'indicator', 'income', 'cash_flow', 'balance')
+    per_code = {}
+    for tname in tables:
         tbl = getattr(stock_sdk, tname, None)
         if tbl is None:
             print(f"  ⚠️ 表 {tname} 不存在")
             continue
-        rows = []
-        params = [date_str] if mode == 'date' else qlist
-        for p in params:
+        for p in quarters:
             try:
-                q = stock_sdk.query(tbl).filter(getattr(tbl, 'code') == code_suffix)
-                kw = {mode: p}
-                r = stock_sdk.get_fundamentals(q, **kw)
-                if isinstance(r, list):  # 返回 list of dict（诊断确认）——转 DataFrame
-                    rows.append(pd.DataFrame(r))
-                elif hasattr(r, 'columns'):
-                    rows.append(r)
+                q = stock_sdk.query(tbl).filter(getattr(tbl, 'code').in_(all_suffixes))
+                r = stock_sdk.get_fundamentals(q, statDate=p)
+                if isinstance(r, list) and r:
+                    df = pd.DataFrame(r)
+                    for _, row in df.iterrows():
+                        code = str(row.get('code', '')).zfill(6)
+                        per_code.setdefault(code, {})
+                        per_code[code].setdefault(tname, []).append(row.to_dict())
+                    print(f"  ✅ {tname} {p}: {len(df)} 条")
                 elif isinstance(r, str):
                     print(f"  ⚠️ {tname} {p}: {r[:100]}")
             except Exception as e:
                 print(f"  ⚠️ {tname} {p}: {str(e)[:100]}")
-            time.sleep(0.2)
-        if rows:
-            results[tname] = rows
-    return results
+            time.sleep(0.3)
+    return per_code
 
 
 def main():
@@ -96,33 +88,23 @@ def main():
     print(f"📦 拉取 {len(pool)} 只财务（{'测试' if test_n else '全量'}）→ {OUT_DIR}")
     print(f"   季度: {quarters[:4]}... 表: valuation/indicator/income/cash_flow/balance")
     ok = fail = 0
-    for i, code in enumerate(pool):
-        suffix = market_suffix(code)
+    # 批量：filter(code.in_(全池)) 每表每期 1 次查询（~40 次调用，不超限额）
+    all_suffixes = [market_suffix(c) for c in pool]
+    per_code = fetch_all_tables_batch(all_suffixes, quarters)
+    for code in pool:
         cache = OUT_DIR / f"{code}.csv"
-        if cache.exists() and cache.stat().st_size > 500:  # 新格式缓存（含5表JSON）才命中；旧api/json小缓存作废重拉
+        if cache.exists() and cache.stat().st_size > 500:
             ok += 1
             continue
-        try:
-            res = fetch_tables(suffix, quarters)
-            if not res:
-                fail += 1
-                print(f"  ❌ {code}: 所有表失败")
-                continue
-            import pandas as pd
-            # 合并各表 → 一行一表（宽表）
-            flat = {}
-            for tname, rows in res.items():
-                try:
-                    df = pd.concat(rows, ignore_index=True) if len(rows) > 1 else rows[0]
-                    flat[tname] = df.to_json(orient='records', force_ascii=False)
-                except Exception:
-                    pass
-            pd.DataFrame([{'code': code, 'suffix': suffix, **flat}]).to_csv(cache, index=False, encoding='utf-8')
-            print(f"  ✅ {code}{suffix}: {list(res.keys())}")
-            ok += 1
-        except Exception as e:
-            print(f"  ❌ {code}: {e}")
+        data = per_code.get(code)
+        if not data:
             fail += 1
+            print(f"  ❌ {code}: 无数据")
+            continue
+        flat = {tname: json.dumps(rows, ensure_ascii=False, default=str) for tname, rows in data.items()}
+        pd.DataFrame([{'code': code, 'suffix': market_suffix(code), **flat}]).to_csv(cache, index=False, encoding='utf-8')
+        ok += 1
+        print(f"  ✅ {code}: {list(data.keys())}")
     print(f"\n完成: 成功 {ok}，失败 {fail}")
 
 
