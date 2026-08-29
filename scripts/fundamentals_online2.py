@@ -39,8 +39,9 @@ def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31')
     results = {}
     # 估值/指标表用 date（指定日前最新披露）；利润/现金流/资产负债表用 statDate（季度）
     table_cfgs = [
-        ('valuation', 'date', None),
-        ('indicator', 'date', None),
+        # 2026-08-30 统一 statDate（本地库）：valuation/indicator 的 date 模式走在线API（mapi_url未配置）
+        ('valuation', 'statDate', quarters),
+        ('indicator', 'statDate', quarters),
         ('income', 'statDate', quarters),
         ('cash_flow', 'statDate', quarters),
         ('balance', 'statDate', quarters),
