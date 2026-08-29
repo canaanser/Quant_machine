@@ -39,9 +39,7 @@ def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31')
     results = {}
     # 估值/指标表用 date（指定日前最新披露）；利润/现金流/资产负债表用 statDate（季度）
     table_cfgs = [
-        # 2026-08-30 统一 statDate（本地库）：valuation/indicator 的 date 模式走在线API（mapi_url未配置）
-        ('valuation', 'statDate', quarters),
-        ('indicator', 'statDate', quarters),
+        # 2026-08-30 只拉本地库3表：valuation/indicator 需在线API（mapi_url未配置报错）——估值用本地日K pe_ttm/pb（data/fundamentals/），ROE等用 income/balance 算
         ('income', 'statDate', quarters),
         ('cash_flow', 'statDate', quarters),
         ('balance', 'statDate', quarters),
@@ -88,7 +86,7 @@ def main():
     if test_n:
         pool = pool[:test_n]
     print(f"📦 拉取 {len(pool)} 只财务（{'测试' if test_n else '全量'}）→ {OUT_DIR}")
-    print(f"   季度: {quarters[:4]}... 表: valuation/indicator/income/cash_flow/balance")
+    print(f"   季度: {quarters[:4]}... 表: income/cash_flow/balance（本地库）")
     ok = fail = 0
     for i, code in enumerate(pool):
         suffix = market_suffix(code)
