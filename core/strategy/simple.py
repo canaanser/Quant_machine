@@ -187,12 +187,13 @@ class SimpleStrategy(BaseStrategy):
                 gc[0] = False
                 gc_idx = np.where(gc)[0]
                 if len(gc_idx) > 0:
-                    # 金叉点 t 的 20 日后收益
+                    # 金叉点 t 的 20 日后收益（2026-08-30 修NaN：无效信号置0，不计入盈亏——原NaN被当亏损致胜率低估/凯利NaN污染）
                     r20 = np.full(len(gc_idx), np.nan)
                     valid = gc_idx + 20 < n
                     r20[valid] = price_np[gc_idx[valid] + 20] / price_np[gc_idx[valid]] - 1
+                    r20 = np.where(np.isnan(r20), 0.0, r20)
                     win = (r20 > 0).astype(int)
-                    lose = (r20 <= 0).astype(int)
+                    lose = (r20 < 0).astype(int)  # 0=无效信号，不算胜也不算负
                     win_ret = np.where(win, r20, 0.0)
                     lose_ret = np.where(lose, -r20, 0.0)  # 亏损绝对值
                     # 逐日累积统计（滚动：当日位置只用当日及之前的金叉信号）
