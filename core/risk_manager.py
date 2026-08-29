@@ -64,6 +64,8 @@ class RiskManager:
         self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)
         self.batch_exit = batch_exit
         self.protect_days = protect_days
+        # 凯利动态止损开关（2026-08-30 半凯利；--no-kelly 关闭=固定base止损，对照用）
+        self.dynamic_stop = config.get('DYNAMIC_STOP_LOSS', True)
         # 死叉真假判定参数（2026-08-29 实验可调）：低位阈值/强度阈值
         self.deadcross_low = deadcross_low
         self.deadcross_strength = deadcross_strength
@@ -89,7 +91,7 @@ class RiskManager:
             # 动态止损（最高优先级，认错——不扛抄错的单）
             if self.stop_loss_pct:
                 stop_pct = self.stop_loss_pct
-                if pnl > 0:
+                if self.dynamic_stop and pnl > 0:
                     # 半凯利（老板2026-08-30）：浮盈放宽幅度减半 min(浮盈,0.25)，最多1.25×base
                     stop_pct = stop_pct * (1 + min(pnl, 0.25))
                     # 修bug：底线=机械止损线（成本×(1-base)），不是成本——原max(...,成本)=浮盈回吐到成本就卖
@@ -98,7 +100,8 @@ class RiskManager:
                                      pos['avg_cost'] * (1 - self.stop_loss_pct))
                 else:
                     # 半凯利：凯利只放宽不收紧——高凯利 ×1.15（放宽减半），负/低凯利用标准base（不割肉循环）
-                    k = kelly_factors.get(symbol, 0.0)
+                    # --no-kelly 时走固定 base（对照）
+                    k = kelly_factors.get(symbol, 0.0) if self.dynamic_stop else 0.0
                     if k >= 0.1:
                         stop_pct *= 1.15
                     stop_price = pos['avg_cost'] * (1 - stop_pct)
