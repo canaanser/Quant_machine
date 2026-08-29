@@ -36,31 +36,43 @@ def market_suffix(code: str) -> str:
 
 
 def fetch_all_tables_batch(all_suffixes: list, quarters: list):
-    """批量拉全池财务（2026-08-30 优化：filter(code.in_(全池)) 每表每期 1 次查询——总共 ~40 次调用，不超限额）
-    返回 {code: {表名: DataFrame}}"""
+    """批量拉全池财务（2026-08-30 v4 按老板方案：表外层循环，表之间间隔 5 秒）
+    每表：分批 in_(10只) × 4期；表间 sleep 5s；限流重试3次——全量 ~40 次查询不超限额"""
     tables = ('valuation', 'indicator', 'income', 'cash_flow', 'balance')
     per_code = {}
-    for tname in tables:
+    BATCH, SLEEP = 10, 1.0
+    for tname in tables:  # 表外层（老板：一只表拉完再下一只）
         tbl = getattr(stock_sdk, tname, None)
         if tbl is None:
             print(f"  ⚠️ 表 {tname} 不存在")
             continue
-        for p in quarters:
-            try:
-                q = stock_sdk.query(tbl).filter(getattr(tbl, 'code').in_(all_suffixes))
-                r = stock_sdk.get_fundamentals(q, statDate=p)
-                if isinstance(r, list) and r:
-                    df = pd.DataFrame(r)
-                    for _, row in df.iterrows():
-                        code = str(row.get('code', '')).zfill(6)
-                        per_code.setdefault(code, {})
-                        per_code[code].setdefault(tname, []).append(row.to_dict())
-                    print(f"  ✅ {tname} {p}: {len(df)} 条")
-                elif isinstance(r, str):
-                    print(f"  ⚠️ {tname} {p}: {r[:100]}")
-            except Exception as e:
-                print(f"  ⚠️ {tname} {p}: {str(e)[:100]}")
-            time.sleep(0.3)
+        print(f"  --- 拉 {tname} 表 ---")
+        for bi in range(0, len(all_suffixes), BATCH):
+            batch = all_suffixes[bi:bi + BATCH]
+            for p in quarters:
+                q = stock_sdk.query(tbl).filter(getattr(tbl, 'code').in_(batch))
+                for attempt in range(3):
+                    try:
+                        r = stock_sdk.get_fundamentals(q, statDate=p)
+                        if isinstance(r, list) and r:
+                            df = pd.DataFrame(r)
+                            for _, row in df.iterrows():
+                                code = str(row.get('code', '')).zfill(6)
+                                per_code.setdefault(code, {})
+                                per_code[code].setdefault(tname, []).append(row.to_dict())
+                            print(f"  ✅ {tname} {p} 批{bi//BATCH}: {len(df)} 条")
+                            break
+                        elif isinstance(r, str) and 'later' in r:
+                            time.sleep(5)  # 限流：等5s重试
+                            continue
+                        else:
+                            print(f"  ⚠️ {tname} {p} 批{bi//BATCH}: {str(r)[:80]}")
+                            break
+                    except Exception as e:
+                        print(f"  ⚠️ {tname} {p} 批{bi//BATCH}: {str(e)[:80]}")
+                        time.sleep(3)
+                time.sleep(SLEEP)
+        time.sleep(5)  # ← 老板：表之间间隔 5 秒
     return per_code
 
 
@@ -75,7 +87,7 @@ def main():
     test_n = 0
     if '--test' in sys.argv:
         test_n = int(sys.argv[sys.argv.index('--test') + 1])
-    quarters = ['2024q4', '2024q3', '2024q2', '2024q1', '2023q4', '2023q3', '2023q2', '2023q1']
+    quarters = ['2024q4', '2024q3', '2024q2', '2024q1']  # 4期够算同比（限流降负）
     pool = []
     seen = set()
     for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
