@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
 from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED
 import stock_sdk
+import pandas as pd
 
 OUT_DIR = PROJECT_ROOT / 'data' / 'fundamentals_online'
 
@@ -56,7 +57,9 @@ def fetch_tables(code_suffix: str, quarters: list, date_str: str = '2025-12-31')
                 q = stock_sdk.query(tbl).filter(getattr(tbl, 'code') == code_suffix)
                 kw = {mode: p}
                 r = stock_sdk.get_fundamentals(q, **kw)
-                if hasattr(r, 'to_dict') or hasattr(r, 'to_records'):
+                if isinstance(r, list):  # 返回 list of dict（诊断确认）——转 DataFrame
+                    rows.append(pd.DataFrame(r))
+                elif hasattr(r, 'columns'):
                     rows.append(r)
                 elif isinstance(r, str):
                     print(f"  ⚠️ {tname} {p}: {r[:100]}")
