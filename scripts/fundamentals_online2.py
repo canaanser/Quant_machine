@@ -27,6 +27,18 @@ import pandas as pd
 OUT_DIR = PROJECT_ROOT / 'data' / 'fundamentals_online'
 
 
+def cache_ok(path) -> bool:
+    """缓存校验：5 表全在才算有效（2026-08-30 防部分缓存挡路——上次失败的部分表缓存会跳过补拉）"""
+    if not (path.exists() and path.stat().st_size > 500):
+        return False
+    try:
+        df = pd.read_csv(path, encoding='utf-8')
+        cols = list(df.columns)
+        return all(t in cols for t in ('valuation', 'indicator', 'income', 'cash_flow', 'balance'))
+    except Exception:
+        return False
+
+
 def market_suffix(code: str) -> str:
     """A股代码 → 带交易所后缀（深市XSHE/沪市XSHG；北交所暂按XSHE试）"""
     code = str(code).zfill(6)
@@ -105,7 +117,7 @@ def main():
     per_code = fetch_all_tables_batch(all_suffixes, quarters)
     for code in pool:
         cache = OUT_DIR / f"{code}.csv"
-        if cache.exists() and cache.stat().st_size > 500:
+        if cache_ok(cache):  # 5表完整才命中；部分缓存作废重拉
             ok += 1
             continue
         data = per_code.get(code)
