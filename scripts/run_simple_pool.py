@@ -49,8 +49,6 @@ def main():
                         help="筑底确认（低点抬高企稳才买）")
     parser.add_argument("--mode", choices=['建仓', '进攻'], default=None,
                         help="模式档位：建仓=轻仓10%+铁律止损5%+分批+保护期；进攻=30%+止损8%")
-    parser.add_argument("--no-kelly", action="store_true",
-                        help="关闭凯利动态止损（固定base止损，对照用）")
     parser.add_argument("--stop-loss", type=float, default=None,
                         help="止损比例（如0.10）；不传用模式默认（建仓5%/进攻8%/标准无）")
     parser.add_argument("--take-profit", type=float, default=None,
@@ -97,8 +95,6 @@ def main():
     print(f"🎯 模式: {args.mode or '标准'} 风控={rc.get('MAX_SINGLE_POSITION_RATIO')} 止损={stop_loss}")
     if args.stop_loss is not None:
         stop_loss = args.stop_loss  # 敏感性测试：显式止损覆盖模式默认
-    if args.no_kelly:
-        rc['DYNAMIC_STOP_LOSS'] = False  # 对照：固定base止损
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=args.verbose,
                               stop_loss_pct=stop_loss, take_profit_pct=args.take_profit,
                               batch_exit=batch, protect_days=protect)

@@ -127,6 +127,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 PATTERN_DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
 
 # ===== 辅助函数 =====
+# ===== 财报信息存储路径（2026-08-30 小二陈：Information 层，与回测 Data 区分） =====
+# daily/   = 每日估值快照（原 data/fundamentals/，T 日实时 pe_ttm/pb/市值/股本/ST）
+# reports/ = 定期财报期表（原 data/fundamentals_online/，5表JSON，含 pubDate/statDate）
+FUNDAMENTALS_DAILY_DIR = "data/info/fundamentals/daily"      # 每日估值快照
+FUNDAMENTALS_REPORTS_DIR = "data/info/fundamentals/reports"  # 定期财报期表
+
+
 def get_data_path(subdir: str = "") -> Path:
     """获取数据目录路径"""
     base = Path("data")
@@ -140,6 +147,8 @@ def ensure_dirs():
         "data/index_store",
         "data/user_data",
         "outputs/backtest_results/performance",
+        FUNDAMENTALS_DAILY_DIR,
+        FUNDAMENTALS_REPORTS_DIR,
     ]
     for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
@@ -167,6 +176,17 @@ SCAN_TICKERS_CURATED = [
 ]
 
 
+# ===== 选池筛选器配置（2026-08-30 小二陈） =====
+# 王文五标准绝对阈值（与 selection/wangwen.py 一致，单一事实源）
+WANGWEN_PE_MAX = 30.0      # ① 低估值：pe < 30
+WANGWEN_PB_MAX = 5.0       # ① 低估值：pb < 5
+WANGWEN_OCF_MIN = 0.5      # ② 高现金流：经营现金流/营业利润 > 0.5
+WANGWEN_GROSS_MIN = 20.0   # ④ 业务可持续：毛利率 > 20%
+WANGWEN_NET_MIN = 0.0      # ④ 业务可持续：净利率 > 0
+WANGWEN_REV_YOY_MIN = 0.0  # ⑤ 有梦想：营收同比 > 0
+WANGWEN_NP_YOY_MIN = 0.0   # ⑤ 有梦想：净利同比 > 0
+
+
 # ===== 导出清单（供 config/__init__.py 转发，单一事实源） =====
 __all__ = [
     'START_DATE', 'END_DATE', 'INITIAL_CASH', 'COMMISSION', 'TOP_N', 'WINDOW', 'LOOKBACK',
@@ -177,6 +197,9 @@ __all__ = [
     'TREND_STRATEGY_WEIGHTS', 'TREND_THRESHOLD', 'TREND_CURVE_POWER',
     'PATTERN_WEIGHT_LEARNING_RATE', 'PATTERN_MIN_SAMPLES',
     'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'SCAN_TICKERS_EXT', 'SCAN_TICKERS_CURATED',
-    'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH',
+    'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH', 'PROJECT_ROOT',
+    'FUNDAMENTALS_DAILY_DIR', 'FUNDAMENTALS_REPORTS_DIR',
+    'WANGWEN_PE_MAX', 'WANGWEN_PB_MAX', 'WANGWEN_OCF_MIN',
+    'WANGWEN_GROSS_MIN', 'WANGWEN_NET_MIN', 'WANGWEN_REV_YOY_MIN', 'WANGWEN_NP_YOY_MIN',
     'get_data_path', 'ensure_dirs',
 ]

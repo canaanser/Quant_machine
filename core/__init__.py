@@ -17,3 +17,6 @@ from .signal_modulator import SignalModulator
 from .standard_structures import PositionInfo, AccountInfo
 from .base_adapter import BrokerAdapter
 from .simulated_adapter import SimulatedBrokerAdapter
+
+# ---------- 选池/筛选器模块导出（2026-08-30 小二陈：selection 在根目录） ----------
+from selection import BaseSelector, WangwenSelector

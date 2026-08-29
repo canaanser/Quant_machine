@@ -65,51 +65,39 @@ class RiskManager:
         self.take_profit_pct = take_profit_pct or (stop_loss_pct * 2 if stop_loss_pct else None)
         self.batch_exit = batch_exit
         self.protect_days = protect_days
-        # 凯利动态止损开关（2026-08-30 半凯利；--no-kelly 关闭=固定base止损，对照用）
-        self.dynamic_stop = config.get('DYNAMIC_STOP_LOSS', True)
         # 死叉真假判定参数（2026-08-29 实验可调）：低位阈值/强度阈值
         self.deadcross_low = deadcross_low
         self.deadcross_strength = deadcross_strength
         # 死叉驳回统计（诊断用）
         self.deadcross_stats = {'浮盈': 0, '底背离': 0, '低位': 0, '真死叉': 0}
 
-    def evaluate_exits(self, positions: dict, prices: dict, today, kelly_factors: dict = None) -> List[dict]:
+    def evaluate_exits(self, positions: dict, prices: dict, today) -> List[dict]:
         """封控层止损/止盈评估（判定在此，执行由执行层 _sell）：
-        动态止损=认错（2026-08-30 凯利驱动，老板拍板）：
-          机械止损 base（默认10%）为底线；
-          有盈利垫子（浮盈>0）→ 止损放宽 base×(1+min(浮盈,0.5))，且不跌破成本（不把浮盈全吐）；
-          无浮盈 → 凯利调节：高凯利(f*≥0.1)×1.3给空间 / 中(0≤f*<0.1)×1.0 / 负(f*<0)×0.7认错快；
-          凯利负不拒买（老板：买入不额外拒买，涨不怕+止损兜底）。
+        止损=认错（机械止损线为底线）：有盈利垫子（浮盈>0）→ 止损放宽 base×(1+min(浮盈,0.25))，
+          底线=机械止损线（成本×(1-base)）——浮盈票允许回吐到机械线，保住垫子但不保本。
         止盈=盈利垫子锁利（≥2×止损 卖一半）。
         positions: {symbol: {'shares','avg_cost','buy_source','buy_date'}}"""
         orders = []
-        kelly_factors = kelly_factors or {}
         for symbol, pos in positions.items():
             price = prices.get(symbol)
             if not price or pos.get('avg_cost', 0) <= 0 or pos['shares'] <= 0:
                 continue
             pnl = (price - pos['avg_cost']) / pos['avg_cost']
-            # 动态止损（最高优先级，认错——不扛抄错的单）
+            # 止损（最高优先级，认错——不扛抄错的单）
             if self.stop_loss_pct:
                 stop_pct = self.stop_loss_pct
-                if self.dynamic_stop and pnl > 0:
-                    # 半凯利（老板2026-08-30）：浮盈放宽幅度减半 min(浮盈,0.25)，最多1.25×base
+                if pnl > 0:
+                    # 浮盈放宽：垫子越厚放宽越多（min(浮盈,0.25)），最多 1.25×base
                     stop_pct = stop_pct * (1 + min(pnl, 0.25))
-                    # 修bug：底线=机械止损线（成本×(1-base)），不是成本——原max(...,成本)=浮盈回吐到成本就卖
-                    # （84只8628笔过度交易元凶）；浮盈票允许回吐到机械线，保住垫子但不保本
+                    # 底线=机械止损线（成本×(1-base)），不是成本——浮盈票允许回吐到机械线
                     stop_price = max(pos['avg_cost'] * (1 - stop_pct),
                                      pos['avg_cost'] * (1 - self.stop_loss_pct))
                 else:
-                    # 半凯利：凯利只放宽不收紧——高凯利 ×1.15（放宽减半），负/低凯利用标准base（不割肉循环）
-                    # --no-kelly 时走固定 base（对照）
-                    k = kelly_factors.get(symbol, 0.0) if self.dynamic_stop else 0.0
-                    if k >= 0.1:
-                        stop_pct *= 1.15
                     stop_price = pos['avg_cost'] * (1 - stop_pct)
                 if price <= stop_price:
                     orders.append({'symbol': symbol, 'action': 'SELL',
                                    'target_volume': pos['shares'],
-                                   'reason': f'动态止损(认错,{stop_pct:.0%})', 'priority': 9})
+                                   'reason': f'止损(认错,{stop_pct:.0%})', 'priority': 9})
                     continue
             # 止盈（盈利垫子锁利，卖一半）
             if self.take_profit_pct and pnl >= self.take_profit_pct:
@@ -149,8 +137,7 @@ class RiskManager:
         self.deadcross_stats['真死叉'] += 1
         return True, '真死叉→执行卖出'
 
-    def approve_order(self, signal: dict, account: Account, current_price: float, total_position: float = 0.0,
-                      total_ratio: float = 1.0) -> Optional[dict]:
+    def approve_order(self, signal: dict, account: Account, current_price: float, total_position: float = 0.0) -> Optional[dict]:
         """
         审批订单主流程
         """
@@ -197,7 +184,6 @@ class RiskManager:
                 effective_ratio = min_ratio + (max_ratio - min_ratio) * (effective_score ** 2)
                 
                 target_amount = account.total_asset * effective_ratio
-                target_amount *= total_ratio  # 卡尔曼PID总仓乘数（2026-08-30：回撤深→整体降仓，保持评分²相对分配）
                 max_allowed = account.total_asset * self.max_pos_ratio
                 current_value = pos.shares * current_price
                 remaining_slot = max_allowed - current_value

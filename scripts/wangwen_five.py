@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """王文五标准基本面筛选（2026-08-30 老板：事前标准选池——回答"怎么知道它是精选"）
-数据：data/fundamentals_online/*.csv（valuation/indicator/income——84只全）
+数据：data/info/fundamentals/reports/*.csv（valuation/indicator/income——84只全）
 标准（日斗投资董事长王文）：
   ① 低估值：pe_ratio 低 + pb_ratio 低（安全边际）
   ② 高现金流：ocf_to_operating_profit（经营现金流/营业利润）> 0.5
@@ -18,7 +18,8 @@ import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-OUT = os.path.join(ROOT, 'data', 'fundamentals_online')
+from config.config import FUNDAMENTALS_REPORTS_DIR
+OUT = os.path.join(ROOT, FUNDAMENTALS_REPORTS_DIR)
 
 
 def latest_row(data_list):

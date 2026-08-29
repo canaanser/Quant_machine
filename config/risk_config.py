@@ -4,7 +4,7 @@
 
 # 风控参数
 MAX_SINGLE_POSITION_RATIO = 0.30      # 单只个股最大仓位（%总资产）；2026-08-30 老板拍板 0.20→0.30（配合评分²非线性：满分才顶格30%，一般票到不了）
-MAX_TOTAL_POSITION_RATIO = 0.90      # 总仓位上限（%总资产）；2026-08-30 老板拍板 0.70→0.90：牛市放开吃beta（90%满仓），回撤靠卡尔曼PID动态降仓（而非固定低仓）
+MAX_TOTAL_POSITION_RATIO = 0.90      # 总仓位上限（%总资产）；2026-08-30 老板拍板 0.70→0.90：牛市放开吃beta（90%满仓）
 STOP_LOSS_AGGRESSIVE = 0.20           # 妖股硬止损线（7%亏损）
 STOP_LOSS_GENTLE = 0.30               # 蓝筹软止损线（10%亏损）
 PROFIT_TAKE_THRESHOLD = 0.50          # 止盈线（30%盈利）

@@ -2,7 +2,7 @@
 数据源：free-stockdb 本地 HTTP 服务（127.0.0.1:7899）——本地接口，不烧在线限额
 字段：pe_ttm（市盈率TTM）/ pb（市净率）/ total_mv（总市值）/ float_mv（流通市值）
      / total_share（总股本）/ float_share（流通股本）/ is_st（ST标记）
-存储：data/fundamentals/{code}.csv（拉到就存，重复拉直接读缓存——不浪费）
+存储：data/info/fundamentals/daily/{code}.csv（每日估值快照，拉到就存，重复拉直接读缓存）
 用法：python fundamentals_fetch.py [--test 5]  # --test 只拉前N只验证
 """
 import os
@@ -15,12 +15,12 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED  # 84只主池 + 精选15只
+from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED, FUNDAMENTALS_DAILY_DIR  # 84只主池 + 精选15只
 
 HOST = "127.0.0.1"
 PORT = 7899
 FIELDS = ['pe_ttm', 'pb', 'total_mv', 'float_mv', 'total_share', 'float_share', 'is_st']
-OUT_DIR = os.path.join(ROOT, 'data', 'fundamentals')
+OUT_DIR = os.path.join(ROOT, FUNDAMENTALS_DAILY_DIR)
 
 
 def fetch_kline(code: str, year: int) -> list:

@@ -28,8 +28,9 @@ def main():
             print(f"   列: {list(r.columns)}")
             print(r.head(5).to_string())
             # 存缓存
-            out = PROJECT_ROOT / 'data' / 'fundamentals_online'
-            out.mkdir(exist_ok=True)
+            # 存缓存（定期财报期表）
+            out = PROJECT_ROOT / 'data' / 'info' / 'fundamentals' / 'reports'
+            out.mkdir(parents=True, exist_ok=True)
             r.to_csv(out / f'{CODE}.csv', index=False, encoding='utf-8')
             print(f"   💾 已存 {out / f'{CODE}.csv'}")
         else:

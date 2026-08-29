@@ -3,7 +3,7 @@
 数据源：stock_sdk 在线接口（get_fundamentals 等——上次2000次限额的接口）
 ⚠️ 防重蹈覆辙（老板提醒）：
   1. 先 --test 1 只确认接口通、返回字段、限额状态——再全量
-  2. 拉到即存 data/fundamentals_online/{code}.csv（缓存，重复拉跳过）
+  2. 拉到即存 data/info/fundamentals/reports/{code}.csv（缓存，重复拉跳过）
   3. 小批量分批（默认一次10只，可 --batch 调）——避免一次打光限额
 用法（Windows）：python -B scripts/fundamentals_online.py [--test 1] [--batch 10] [--start 000001]
 """
@@ -16,9 +16,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
-from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED
+from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED, FUNDAMENTALS_REPORTS_DIR
 
-OUT_DIR = PROJECT_ROOT / 'data' / 'fundamentals_online'
+OUT_DIR = PROJECT_ROOT / FUNDAMENTALS_REPORTS_DIR
 
 
 def try_call(name, fn):

@@ -20,11 +20,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
-from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED
+from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED, FUNDAMENTALS_REPORTS_DIR
 import stock_sdk
 import pandas as pd
 
-OUT_DIR = PROJECT_ROOT / 'data' / 'fundamentals_online'
+OUT_DIR = PROJECT_ROOT / FUNDAMENTALS_REPORTS_DIR
 
 
 def cache_ok(path) -> bool:

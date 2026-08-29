@@ -51,16 +51,24 @@ def fetch_data_stockdb_http(
         # 1. 读本地缓存
         cached_df = _load_stockdb_cache(code, frequency)
 
-        # 2. 确定需要拉取的年份（增量：只拉缓存未覆盖的）
+        # 2. 确定需要拉取的年份（增量：只拉缓存未覆盖的——头尾都要看）
         need_years = list(range(start_year, end_year + 1))
         if cached_df is not None and not cached_df.empty:
+            cached_first_date = cached_df.index.min()
             cached_last_date = cached_df.index.max()
-            need_years = [y for y in need_years if y > cached_last_date.year]
-            # 修复（2026-08-28）：缓存尾日期 < 请求结束日时，同一年内的新数据也要补拉
-            # （原逻辑按年份跳过，导致 stockdb 更新到 8/27 后缓存仍停在 8/19）
+            # 修复（2026-08-30 小二陈）：缓存可能只有近期数据（如只拉到2024起），
+            # 原逻辑只看尾年（y > 尾年）→ 2017-2023 永远不会往前补拉 → 全区间回测数据缺失。
+            # 正确语义：缓存**缺失**的年份都要补——头年之前缺的往前补，尾年之后缺的往后补。
+            need_years = [y for y in need_years
+                          if y < cached_first_date.year or y > cached_last_date.year]
+            # 尾年补拉（2026-08-28 修复保留）：缓存尾日期 < 请求结束日时，同一年内新数据也要补
             if (str(cached_last_date)[:10] < str(end)[:10]
                     and cached_last_date.year >= start_year):
                 need_years.append(cached_last_date.year)
+            # 头年补拉（2026-08-30 对称修复）：缓存头日期 > 请求开始日时，同一年内旧数据也要补
+            if (str(cached_first_date)[:10] > str(start)[:10]
+                    and cached_first_date.year <= end_year):
+                need_years.append(cached_first_date.year)
 
         # 3. 拉取缺失年份
         rows_all = []

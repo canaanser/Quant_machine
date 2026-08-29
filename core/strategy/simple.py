@@ -95,7 +95,6 @@ class SimpleStrategy(BaseStrategy):
         self._q_bottom = {}
         self._q_bottom_div = {}
         self._q_top_div = {}
-        self._q_kelly = {}
         for code in returns_df.columns:
             s = returns_df[code].dropna()  # 停牌日删除（原暴力路径语义）
             if len(s) < self.long + 1:
@@ -174,58 +173,6 @@ class SimpleStrategy(BaseStrategy):
                 except Exception:
                     td = np.zeros(n, dtype=bool)
             self._q_top_div[code] = td
-            # ---- 凯利动态止损预计算（2026-08-30 老板拍板：凯利公式驱动动态止损，防过拟合不精调）----
-            # p=胜率：历史金叉信号（ma5上穿ma20）后20日涨幅>0比例（老板定20日口径）
-            # b=赔率：历史金叉信号平均盈利/平均亏损（绝对值）
-            # f*=(b·p−(1−p))/b，clip[-0.2,0.3]；滚动统计（当日只用之前信号，无未来函数）
-            # 样本<20 标记 0，prepare 结束用池子均值回填（防单票小样本抖动=过拟合）
-            kl = np.zeros(n, dtype=float)
-            try:
-                price_np = price.to_numpy()
-                diff_np = diff.to_numpy()
-                gc = (diff_np > 0) & (np.roll(diff_np, 1) <= 0)
-                gc[0] = False
-                gc_idx = np.where(gc)[0]
-                if len(gc_idx) > 0:
-                    # 金叉点 t 的 20 日后收益（2026-08-30 修NaN：无效信号置0，不计入盈亏——原NaN被当亏损致胜率低估/凯利NaN污染）
-                    r20 = np.full(len(gc_idx), np.nan)
-                    valid = gc_idx + 20 < n
-                    r20[valid] = price_np[gc_idx[valid] + 20] / price_np[gc_idx[valid]] - 1
-                    r20 = np.where(np.isnan(r20), 0.0, r20)
-                    win = (r20 > 0).astype(int)
-                    lose = (r20 < 0).astype(int)  # 0=无效信号，不算胜也不算负
-                    win_ret = np.where(win, r20, 0.0)
-                    lose_ret = np.where(lose, -r20, 0.0)  # 亏损绝对值
-                    # 逐日累积统计（滚动：当日位置只用当日及之前的金叉信号）
-                    cum_w = np.cumsum(np.bincount(gc_idx, weights=win, minlength=n))
-                    cum_l = np.cumsum(np.bincount(gc_idx, weights=lose, minlength=n))
-                    cum_wr = np.cumsum(np.bincount(gc_idx, weights=win_ret, minlength=n))
-                    cum_lr = np.cumsum(np.bincount(gc_idx, weights=lose_ret, minlength=n))
-                    for i in range(n):
-                        w, l = int(cum_w[i]), int(cum_l[i])
-                        tot = w + l
-                        if tot < 20:
-                            continue  # 样本不足→0，池均值回填
-                        p = w / tot
-                        avg_win = cum_wr[i] / w if w else 0.0
-                        avg_lose = cum_lr[i] / l if l else 0.0
-                        if avg_win <= 0 or avg_lose <= 0:
-                            kl[i] = -0.2  # 无盈利/无亏损样本→保守认错快
-                            continue
-                        b = avg_win / avg_lose
-                        f = (b * p - (1 - p)) / b
-                        kl[i] = max(-0.2, min(0.3, f))
-            except Exception:
-                kl = np.zeros(n, dtype=float)
-            self._q_kelly[code] = kl
-        # 池子均值回填：样本<20 的票/日期用全池均值（老板：防过拟合，不精调单票）
-        pool_means = [float(a[a != 0].mean()) for a in self._q_kelly.values() if (a != 0).any()]
-        if pool_means:
-            pm = float(np.mean(pool_means))
-            for code in self._q_kelly:
-                arr = self._q_kelly[code]
-                arr[arr == 0] = pm
-                self._q_kelly[code] = arr
         self._prepared = True
 
     def score_stocks(self, returns_df, market_ret):
@@ -485,21 +432,6 @@ class SimpleStrategy(BaseStrategy):
                     if sym in self._q_bottom_div and self._q_bottom_div[sym] is not None and pos < len(self._q_bottom_div[sym]):
                         bottom_div = bool(self._q_bottom_div[sym][pos])
             out[sym] = {'exit': exit_flag, 'pct_250d_high': p250h, 'bottom_divergence': bottom_div}
-        return out
-
-    def get_kelly_factors(self, date) -> dict:
-        """当日各股凯利因子 f*（T日之前历史金叉信号滚动统计，无未来函数；2026-08-30）
-        供封控层动态止损：高凯利=该票值得给空间（止损放宽×1.3），负凯利=认错快（×0.7）"""
-        out = {}
-        d = np.datetime64(date)
-        for sym, arr in self._q_kelly.items():
-            col_i = self._col_pos.get(sym)
-            if col_i is None or self._feat_cols[col_i] is None:
-                continue
-            s_index, _ = self._feat_cols[col_i]
-            pos = int(np.searchsorted(s_index, d, side='right')) - 1
-            if 0 <= pos < len(arr):
-                out[sym] = float(arr[pos])
         return out
 
     @staticmethod
