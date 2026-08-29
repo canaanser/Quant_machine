@@ -90,15 +90,17 @@ class RiskManager:
             if self.stop_loss_pct:
                 stop_pct = self.stop_loss_pct
                 if pnl > 0:
-                    # 盈利垫子：浮盈越多止损越宽（保垫子），最多 1.5×base；不跌破成本
-                    stop_pct = stop_pct * (1 + min(pnl, 0.5))
-                    stop_price = max(pos['avg_cost'] * (1 - stop_pct), pos['avg_cost'])
+                    # 半凯利（老板2026-08-30）：浮盈放宽幅度减半 min(浮盈,0.25)，最多1.25×base
+                    stop_pct = stop_pct * (1 + min(pnl, 0.25))
+                    # 修bug：底线=机械止损线（成本×(1-base)），不是成本——原max(...,成本)=浮盈回吐到成本就卖
+                    # （84只8628笔过度交易元凶）；浮盈票允许回吐到机械线，保住垫子但不保本
+                    stop_price = max(pos['avg_cost'] * (1 - stop_pct),
+                                     pos['avg_cost'] * (1 - self.stop_loss_pct))
                 else:
-                    # 2026-08-30 A修正：凯利只放宽不收紧——负凯利×0.7在熊市段频繁割肉（84只收益379%→120%）
-                    # 负/低凯利用标准 base（认错基线统一），高凯利才 ×1.3 给空间
+                    # 半凯利：凯利只放宽不收紧——高凯利 ×1.15（放宽减半），负/低凯利用标准base（不割肉循环）
                     k = kelly_factors.get(symbol, 0.0)
                     if k >= 0.1:
-                        stop_pct *= 1.3
+                        stop_pct *= 1.15
                     stop_price = pos['avg_cost'] * (1 - stop_pct)
                 if price <= stop_price:
                     orders.append({'symbol': symbol, 'action': 'SELL',
