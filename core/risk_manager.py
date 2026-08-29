@@ -190,7 +190,9 @@ class RiskManager:
                 effective_score = min(1.0, raw_score)
                 min_ratio = self.min_position_ratio
                 max_ratio = self.base_position_ratio
-                effective_ratio = min_ratio + (max_ratio - min_ratio) * effective_score
+                # 2026-08-30 老板：评分²非线性——"评分难度更大"（满分才顶格30%，一般票到不了）
+                # 好票重仓/一般票轻仓，恢复评分对仓位的区分度（原线性+20%上限=评分≥0.23全顶格，76%区间无区分）
+                effective_ratio = min_ratio + (max_ratio - min_ratio) * (effective_score ** 2)
                 
                 target_amount = account.total_asset * effective_ratio
                 max_allowed = account.total_asset * self.max_pos_ratio
