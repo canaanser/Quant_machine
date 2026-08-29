@@ -198,6 +198,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             except Exception:
                 self._total_ratio = 1.0
 
+            self._pid_reduce(holdings_dict, current_prices, today)            # ⓪ PID减仓（回撤控仓：卖浮盈降总仓——防跌不防涨完整版）
+
             self._execute_stop_loss(holdings_dict, current_prices, today)    # ① 铁律止损（最高优先级）
 
             self._execute_take_profit(holdings_dict, current_prices, today)  # ② 止盈（≥2×止损，卖半锁利润）

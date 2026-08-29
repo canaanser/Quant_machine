@@ -31,6 +31,33 @@ class _ExecutionMixin:
                 except Exception:
                     pass
 
+    def _pid_reduce(self, holdings_dict, current_prices, today):
+        """PID减仓（2026-08-30 老板：回撤深自动卖浮盈降仓——防跌不防涨完整版）
+        目标总仓 = u × 总仓上限（90%）；当前超了 → 卖浮盈最高的持仓（落袋），不卖浮亏（浮亏能扛）"""
+        if not getattr(self, '_total_ratio', None) or not self.risk_manager.max_total_ratio:
+            return
+        target_total = self._total_ratio * self.risk_manager.max_total_ratio
+        cur = self._total_position_after_trade()
+        if cur <= target_total + 0.01:
+            return
+        # 浮盈候选（只卖浮盈，不卖浮亏——老板哲学：浮亏能扛等反弹）
+        candidates = []
+        for symbol, pos in holdings_dict.items():
+            price = current_prices.get(symbol)
+            if not price or pos.get('shares', 0) <= 0 or pos.get('avg_cost', 0) <= 0:
+                continue
+            pnl = (price - pos['avg_cost']) / pos['avg_cost']
+            if pnl > 0:
+                candidates.append((pnl, symbol, pos))
+        candidates.sort(key=lambda x: -x[0])  # 浮盈高优先（落袋先）
+        for pnl, symbol, pos in candidates:
+            if self._total_position_after_trade() <= target_total + 0.01:
+                break
+            price = current_prices.get(symbol)
+            self._sell(symbol, pos['shares'], price, today, 'PID减仓(回撤控仓)')
+            if self.verbose:
+                logger.debug(f"   🎛️ PID减仓: {symbol} 浮盈{pnl:.0%} 全清（总仓→{self._total_position_after_trade():.0%}，目标{target_total:.0%}）")
+
     def _execute_stop_loss(self, holdings_dict, current_prices, today):
         """机械止损（判定在封控层 risk_manager.evaluate_exits，2026-08-29 老板：封控层全权）
         止损=认错：企稳后抄底仍跌超止损线=抄错底，最高优先级全卖——不扛抄错的单。
