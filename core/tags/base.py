@@ -41,6 +41,8 @@ class BaseTagGenerator(ABC):
     version: str = "v1"
     #: 取值域（合法标签值列表，报告/校验用）
     value_domain: List[str] = []
+    #: 附加列（标准 TAG_COLUMNS 之外的扩展列，如 weak/score）
+    extra_columns: List[str] = []
 
     @abstractmethod
     def generate(self, codes: Optional[List[str]] = None,
@@ -61,7 +63,11 @@ class BaseTagGenerator(ABC):
         for col in TAG_COLUMNS:
             if col not in out.columns:
                 out[col] = None
-        out = out[TAG_COLUMNS]
+        cols = list(TAG_COLUMNS)
+        for col in self.extra_columns:
+            if col in out.columns and col not in cols:
+                cols.append(col)
+        out = out[cols]
         out['code'] = out['code'].astype(str).str.zfill(6)
         out['valid_from'] = pd.to_datetime(out['valid_from'])
         out['valid_to'] = pd.to_datetime(out['valid_to'])

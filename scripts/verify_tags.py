@@ -32,7 +32,7 @@ def main():
     print(f"✅ 标签池自动扫描: {[t['name'] for t in tags]}")
 
     # 2. 生成落盘（幂等：已存在跳过）
-    for tag in ['oscillation', 'marketcap']:
+    for tag in ['oscillation', 'marketcap', 'wangwen_tag']:
         p = produce(tag)
         print(f"✅ 生成 {tag}: {p}")
 
@@ -46,7 +46,8 @@ def main():
     osc = filter(None, '2026-08-28', oscillation='震荡票')
     assert len(osc) == 26, f"震荡票应26只，实际{len(osc)}"
     osc_large = assemble('2026-08-28', {'oscillation': '震荡票', 'marketcap': '大盘'})
-    print(f"✅ filter: 震荡票 {len(osc)} 只 | assemble: 震荡∩大盘 {len(osc_large)} 只")
+    combo = assemble('2026-08-28', {'oscillation': '震荡票', 'wangwen_tag': '4'})
+    print(f"✅ filter: 震荡票 {len(osc)} 只 | 震荡∩大盘 {len(osc_large)} 只 | 震荡∩王文五4项 {len(combo)} 只")
 
     # 5. 层级
     h = hierarchy('oscillation', 'marketcap', '2026-08-28')

@@ -41,6 +41,7 @@ def load(tag: str) -> pd.DataFrame:
         df['code'] = df['code'].str.zfill(6)
         df['valid_from'] = pd.to_datetime(df['valid_from'])
         df['valid_to'] = pd.to_datetime(df['valid_to'])
+        df['value'] = df['value'].astype(str)   # 统一字符串（避免 int '4' vs str '4' 歧义）
         return df
     return gen.generate()
 
