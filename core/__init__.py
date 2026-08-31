@@ -20,3 +20,8 @@ from .simulated_adapter import SimulatedBrokerAdapter
 
 # ---------- 选池/筛选器模块导出（2026-08-30 小二陈：selection 在根目录） ----------
 from selection import BaseSelector, WangwenSelector
+
+# ---------- 标签系统导出（2026-08-30 老板：标签归类系统） ----------
+from .tags import (BaseTagGenerator, register, unregister, get, list_tags,
+                   load, produce, backfill, tag_at, filter,
+                   assemble, hierarchy)

@@ -133,6 +133,16 @@ PATTERN_DB_PATH = PROJECT_ROOT / "data" / "index_store" / "pattern_history.db"
 FUNDAMENTALS_DAILY_DIR = "data/info/fundamentals/daily"      # 每日估值快照
 FUNDAMENTALS_REPORTS_DIR = "data/info/fundamentals/reports"  # 定期财报期表
 
+# ===== 标签系统路径（2026-08-30 老板：标签归类系统） =====
+# data/info/tags/      标签数据（独立存储，可回填/可组装）
+#   labels.json        标签池注册表（目录）
+#   data/              标签长表（每生成器一文件：{name}_{version}.csv）
+#   assembly/          组装结果缓存（可选）
+TAGS_DIR = "data/info/tags"
+TAGS_DATA_DIR = "data/info/tags/data"
+TAGS_LABELS_PATH = "data/info/tags/labels.json"
+TAGS_ASSEMBLY_DIR = "data/info/tags/assembly"
+
 
 def get_data_path(subdir: str = "") -> Path:
     """获取数据目录路径"""
@@ -149,6 +159,9 @@ def ensure_dirs():
         "outputs/backtest_results/performance",
         FUNDAMENTALS_DAILY_DIR,
         FUNDAMENTALS_REPORTS_DIR,
+        TAGS_DIR,
+        TAGS_DATA_DIR,
+        TAGS_ASSEMBLY_DIR,
     ]
     for d in dirs:
         Path(d).mkdir(parents=True, exist_ok=True)
@@ -199,6 +212,7 @@ __all__ = [
     'WEIGHT_SOURCE', 'SCAN_TICKERS', 'SCAN_TICKERS_AI', 'SCAN_TICKERS_EXT', 'SCAN_TICKERS_CURATED',
     'SCAN_TICKERS_INDEX', 'PATTERN_DB_PATH', 'PROJECT_ROOT',
     'FUNDAMENTALS_DAILY_DIR', 'FUNDAMENTALS_REPORTS_DIR',
+    'TAGS_DIR', 'TAGS_DATA_DIR', 'TAGS_LABELS_PATH', 'TAGS_ASSEMBLY_DIR',
     'WANGWEN_PE_MAX', 'WANGWEN_PB_MAX', 'WANGWEN_OCF_MIN',
     'WANGWEN_GROSS_MIN', 'WANGWEN_NET_MIN', 'WANGWEN_REV_YOY_MIN', 'WANGWEN_NP_YOY_MIN',
     'get_data_path', 'ensure_dirs',
