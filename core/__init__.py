@@ -25,3 +25,6 @@ from selection import BaseSelector, WangwenSelector
 from .tags import (BaseTagGenerator, register, unregister, get, list_tags,
                    load, produce, backfill, tag_at, filter,
                    assemble, hierarchy)
+
+# ---------- 档案系统导出（2026-08-30 老板：股票=人，数据=档案） ----------
+from .profile import StockProfile, assemble as assemble_profile, assemble_one
