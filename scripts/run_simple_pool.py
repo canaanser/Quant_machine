@@ -57,6 +57,10 @@ def main():
                         help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
     parser.add_argument("--old-sell", action="store_true",
                         help="旧版直接卖（2026-08-30 实验A）：死叉 score<-0.05 直接卖，跳过封控层浮盈/底背离/低位驳回")
+    parser.add_argument("--trend-gate", choices=['week', 'month', 'multi'], default=None,
+                        help="趋势线买入过滤器（2026-09-02 实验，无未来函数）：week=周线门 / month=月线门 / multi=月+周+日≥2级共振。实验结论：84池用 month 最优，精选15用 multi 最优")
+    parser.add_argument("--multi-threshold", type=int, default=2,
+                        help="multi 模式共振阈值（默认2=至少2级趋势向上才放行）")
     args = parser.parse_args()
 
     if args.ext:
@@ -100,9 +104,13 @@ def main():
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=args.verbose,
                               stop_loss_pct=stop_loss, take_profit_pct=args.take_profit,
                               batch_exit=batch, protect_days=protect,
-                              old_sell=args.old_sell)
+                              old_sell=args.old_sell,
+                              trend_gate=args.trend_gate)
     if args.old_sell:
         print("🔧 旧版直接卖已启用（跳过封控层：浮盈/底背离/低位驳回）")
+    if args.trend_gate:
+        engine.trend_gate_threshold = args.multi_threshold
+        print(f"📈 趋势线过滤器已启用: {args.trend_gate}（multi 阈值={args.multi_threshold}）")
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 

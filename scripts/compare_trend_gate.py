@@ -28,7 +28,7 @@ from core.strategy import SimpleStrategy
 import config.config as cfg
 
 START, END = '2022-06-01', '2026-08-27'
-GATES = [None, 'week', 'month', 'multi']
+GATES = [None, 'week', 'month', 'boll', 'multi']
 POOLS = {
     '84': ('84池', lambda: list(cfg.SCAN_TICKERS)),
     'curated': ('精选15', lambda: list(cfg.SCAN_TICKERS_CURATED)),

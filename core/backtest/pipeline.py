@@ -230,12 +230,12 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         return self
 
     def _precompute_trend_state(self, market_data):
-        """趋势线状态预计算：每票建"周期末→状态"表（无前视）。
+        """趋势线/布林带状态预计算：每票建"周期末→状态"表（无前视）。
 
-        week/month: 单级别门。multi: 月+周+日 三级打分。
+        week/month: 单级别趋势门。multi: 月+周+日 三级打分。boll: 布林带 Squeeze 闸。
         数据用 market_data 的 OHLCV（与回测同源，无未来数据）。
         """
-        from core.trendline.state import period_state_map, multi_level_score
+        from core.trendline.state import period_state_map, multi_level_score, bollinger_gate_state
         self._trend_state = {}
         self._trend_score = {}
         freq = 'W-FRI' if self.trend_gate == 'week' else ('ME' if self.trend_gate == 'month' else None)
@@ -248,6 +248,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 continue
             if freq:
                 self._trend_state[code] = period_state_map(df, freq=freq)
+            elif self.trend_gate == 'boll':
+                self._trend_state[code] = bollinger_gate_state(df)
             else:  # multi
                 self._trend_score[code] = multi_level_score(df)
 
@@ -279,11 +281,11 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         故用"没有足够数据就放行"，有状态才严格判）"""
         import pandas as pd
         ts = pd.Timestamp(today)
-        if self.trend_gate in ('week', 'month'):
+        if self.trend_gate in ('week', 'month', 'boll'):
             s = self._trend_state.get(symbol)
             if s is None or len(s) == 0:
                 return True
-            past = s[s.index < ts]  # 只消费严格早于 T 的周期（杜绝周内偷看）
+            past = s[s.index < ts]  # 只消费严格早于 T 的状态（杜绝当天偷看）
             if len(past) == 0:
                 return True
             return bool(past.iloc[-1])

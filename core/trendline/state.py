@@ -114,3 +114,32 @@ def daily_close_gate(daily: pd.DataFrame, min_bars: int = 40) -> pd.Series:
         st = _period_state(seg, min_bars=10)
         out.iloc[i:min(n, i + 5)] = True if st is None else st
     return out
+
+
+# ---------- 布林带闸（2026-09-02 老板：买卖由指标定，布林带加进来） ----------
+# ⚠️ [DEPRECATED 2026-09-02] 实验结论：Squeeze 窄带才买两池都最差
+#    （84池 Sharpe0.40<无门0.58，精选15 收益腰斩回撤-48.6%全场最差）。
+#    波动收窄≠要涨（A股窄带后常继续跌）；布林只适合观察工具不适合买入过滤。
+#    保留不删：见 docs/dev_notes/2026-09-02/README.md §九。未来换用法（带宽扩张追势/
+#    上轨压力卖出参考）可复用其中 rolling 计算。
+def bollinger_gate_state(daily: pd.DataFrame, window: int = 20, ndev: float = 2.0,
+                         lookback: int = 250, q: float = 0.4) -> pd.Series:
+    """布林带 Squeeze 闸（无前视，逐日判定）：
+    - mid/upper/lower = MA20 ± 2σ（rolling 只用当日及之前 → 无未来函数）
+    - bandwidth = (upper-lower)/mid：带宽越窄 = 越 Squeeze（整理末端，酝酿破位）
+    - 放行条件 = 今日带宽 ≤ 近 lookback 日带宽的 q 分位（窄带期）
+    逻辑（知乎文方法二）：金叉若发生在窄带期 = 整理破位启动（真信号）→ 放行；
+    金叉发生在带宽宽阔期 = 高位震荡/趋势尾部（假金叉多）→ 拦截。
+    返回与日线 index 对齐的 bool Series（True=放行）。数据不足的早期 → True。
+    """
+    close = daily['close']
+    if len(close) < window + 5:
+        return pd.Series(True, index=daily.index)
+    mid = close.rolling(window).mean()
+    std = close.rolling(window).std()
+    upper = mid + ndev * std
+    lower = mid - ndev * std
+    bw = (upper - lower) / mid.replace(0, float('nan'))
+    th = bw.rolling(lookback, min_periods=60).quantile(q)
+    gate = bw <= th
+    return gate.fillna(True).astype(bool)
