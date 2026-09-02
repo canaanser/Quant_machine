@@ -128,6 +128,57 @@
 1. **王文五滚动池 + 底背离反转**组合测试——"好票（王文五筛过）+ 底背离反转"应是最优组合（好票质地下背离反转才有效）
 2. 底背离反转如需落地：作为可选开关（默认关），仅对精选/王文五池生效，84只杂票不开
 
+### 4.7 标签归类系统 v1（2026-08-30 老板拍板，已提交 ce1f6af 之前 7dd1135/a1518b0）
+
+**架构（干湿分离）**：tag = 股票 × 时间区间 × 值
+- `core/tags/base.py`：BaseTagGenerator(ABC)，name/version/value_domain/extra_columns；normalize → 长格式 CSV `data/info/tags/data/{name}_{version}.csv`（code/valid_from/valid_to/value/version+extra）
+- `core/tags/registry.py`：register/unregister/get/list_tags + 自动扫描 `core/tags/generators/`；labels.json 在 data/info/tags/
+- `core/tags/engine.py`：load/produce/backfill/tag_at/filter/assemble/hierarchy；**load 时 value 必须 astype(str)**（int/str 匹配坑）
+- 生成器：`oscillation`（震荡票/趋势票：center_stab<0.25 且 reg_corr<0 且 range_ratio<10→震荡）、`marketcap`（大盘/中盘/小盘）、`wangwen_tag`（王文五符合几项 0-4 + weak 弱项，pubDate≤T 无前视；**与 selection/wangwen.py 完全独立，阈值本地复制**）
+
+**数据现状**：震荡票 26 只 / 趋势票 57 只（83 只）；multi-tag 组装验证：震荡∩王文五4项=6只，∩大盘=2只（600941/601728）
+
+### 4.8 档案系统 v1（2026-08-30 老板拍板"股票=人，数据=档案"，已提交 ce1f6af）
+
+**虚拟组装 + 干湿分离**（不落盘，运行时生成）：
+- `core/profile/base.py`：BaseProfileReader(ABC) name/read/read_many
+- `core/profile/readers/`：kline（freestockdb OHLCV）/ fundamentals（daily 实时 pe_ttm/pb/total_mv + reports 财报 indicator，**pubDate≤T 取最新一期，与 selection/wangwen.py 同文件同规则**）/ tags（core.tags）/ meta（data/stock_names.json）
+- `core/profile/__init__.py`：StockProfile(code) 便捷查询 name()/tag()/indicator()/realtime()/latest_close()；assemble(codes,date,fields) 批量；core/__init__ 导出 StockProfile/assemble_profile/assemble_one
+- 验证：000063 中兴 震荡/大盘/王文五3，000657 中钨 趋势/大盘/王文五4，600941 移动 震荡/大盘/王文五4
+
+### 4.9 趋势线检测 + 过滤器实验（2026-08-30 老板：先 demo 后当买入过滤器，关止损测）
+
+**趋势线检测 `core/trendline/detector.py`**（v3 定版）：fractal 摆动点(k=5) → 同类 pivot 两两连线 → 验证：方向对 + 触碰≥min_touches(3，含两端锚点=第三点确认) + 中间点不强制贴合 + 大幅破位(>8%)线截断不废线；去冗余：同类型且在末端线值差<5% 只留触碰最多。默认 touch_pct=2%、min_span=15、max_span=250 根(≈1年)、max_lines=4。画图：`utils/kline_plotter.py` 加 trendlines 参数（红=上升支撑/蓝=下降压力，实线≥4点虚线3点，圆点=触碰），HTML 输出 outputs/trendline_{code}.html（demo: `scripts/demo_trendline.py`）
+
+**状态表 `core/trendline/state.py`**（无前视核心）：周/月线重采样 → 逐周期滚动检测（只用截至该期数据）→ 返回**周期末→状态** Series；回测 T 日只消费"结束日<T"的最近一期（杜绝周内偷看周末结果）。接入：BacktestPipeline 加 trend_gate 参数（None/week/month/multi）+ trend_gate_threshold（multi 默认≥2 级放行），买入前过滤 final_scores。
+
+**实验结果（关止损 2022-06~2026-08 五年，`scripts/compare_trend_gate.py`）**：
+| 池 | gate | 累计 | 近2年 | 近1年 | Sharpe | 回撤 | 交易 |
+|---|---|---|---|---|---|---|---|
+| 84池 | 无门 | +56.7% | +24.5% | -6.1% | 0.58 | -29.5% | 909 |
+| 84池 | 周线门 | +100.2% | +65.8% | +17.7% | 0.81 | **-24.2%** | 959 |
+| 84池 | **月线门** | **+132.8%** | **+109.5%** | **+38.8%** | **0.82** | -29.5% | 748 |
+| 84池 | multi≥2 | +70.5% | +52.0% | +26.1% | 0.76 | -30.8% | 1006 |
+| 精选15 | 无门 | +456.4% | +392.5% | +172.7% | 1.30 | -34.1% | 1273 |
+| 精选15 | 周线门 | +380.1% | +460.9% | +188.2% | 1.30 | -40.4% | 1240 |
+| 精选15 | 月线门 | +251.2% | +194.6% | +76.6% | 1.02 | -38.9% | 762 |
+| 精选15 | **multi≥2** | **+537.5%** | +452.8% | **+200.4%** | **1.42** | -36.3% | 1413 |
+
+**结论（老板哲学应验：牛熊不兼容、好票差票分治）**：
+- ✅ **84池（普通票）→ 月线门**：大级别门越狠越赢，近1年 -6.1% 扭成 +38.8%；周线门回撤最小(-24.2%)可选做保守档
+- ✅ **精选15（好票）→ multi(≥2)**：月线门重伤好票（拦掉回调买点，-200点），multi 要求月+周+日≥2级共振，收益最高且 Sharpe 1.42 全场最高
+- ⚠️ **关止损发现**：无止损时精选15无门也 +392% 近2年（vs 实验A 带止损进攻 +74.8%）——**止损一直在切利润**；但回撤全在 -24%~-40%（趋势门只能部分替代止损，压不到 10% 级）
+- 000063 单票周线门反而差（震荡票低位买被门拦）——单票不代表池，以池为准
+- **待办 ⏳**：门+止损组合测试（门定风险、止损兜底）；84池 月线 vs 周线取舍（贪 vs 稳）；旧卖逻辑(--old-sell)与趋势门是否叠加
+
+**实验A 旧卖逻辑（同日，`--old-sell` 开关已入 base/pipeline/execution_mixin，近2年进攻模式带止损）**：
+| 池 | 当前版(有浮盈不卖) | 旧版直接卖 |
+|---|---|---|
+| 84池 | +15.81%/0.58/-10.38% | **+36.43%/1.00/-14.84%** ✅ |
+| 精选15 | **+74.81%/1.21/-22.00%** ✅ | +69.82%/1.06/-21.73% |
+| 000063 | +0.96% | +5.61% ✅ |
+→ 结论同趋势门：84池旧版赢（认错快），精选15当前版赢（好票让利润跑）。**两实验指向同一分治原则：普通票认错快/严门控，好票松一点。**
+
 ## 4.5 修复与数据完整性（2026-08-29 凌晨，分支 feature/risk-consolidation）
 
 - **正确盘尾模型**：评分用 T-1 日完整数据（昨日收盘），成交=T 日尾盘收盘价（无限接近尾盘最后一秒）——去未来函数

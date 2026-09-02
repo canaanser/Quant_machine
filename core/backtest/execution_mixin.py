@@ -113,13 +113,17 @@ class _ExecutionMixin:
                     logger.debug(f"🛡️ 保护期: {symbol} 策略信号暂不执行（人买入观察期）")
                 continue
             # 封控层判死叉真假（2026-08-28 老板：死叉可能是底背离/浮盈/小反转）
+            # old_sell（2026-08-30 老板实验A）：跳过封控层，死叉 score<-0.05 直接卖（旧版行为）
             price = current_prices.get(symbol, 0)
             if not price or pos['shares'] <= 0:
                 continue
             pnl = (price - pos.get('avg_cost', 0)) / pos.get('avg_cost', 1) if pos.get('avg_cost') else 0
             info = exit_info.get(symbol, {})
-            should_sell, reason = self.risk_manager.judge_deadcross_exit(
-                pnl, info.get('pct_250d_high'), info.get('bottom_divergence', False))
+            if self.old_sell:
+                should_sell, reason = True, '旧版直接卖（跳过封控层）'
+            else:
+                should_sell, reason = self.risk_manager.judge_deadcross_exit(
+                    pnl, info.get('pct_250d_high'), info.get('bottom_divergence', False))
             if not should_sell:
                 if self.verbose:
                     logger.debug(f"🔍 死叉被封控层驳回: {symbol}（{reason}）")

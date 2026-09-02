@@ -32,10 +32,20 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
     def __init__(self, strategy, top_n=10, commission=COMMISSION, risk_config=None, verbose: bool = False,
                  stop_loss_pct: float = None, take_profit_pct: float = None,
                  batch_exit: bool = False, protect_days: int = 0,
-                 market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True):
+                 market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True,
+                 old_sell: bool = False, trend_gate: str = None):
         super().__init__(strategy, top_n=top_n, commission=commission,
                          risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct,
-                         take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days)
+                         take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days,
+                         old_sell=old_sell)
+        # 趋势线买入过滤器（2026-08-30 老板：做法二/三，先关止损测）
+        #   None   = 不过滤（原行为）
+        #   'week' = 周线趋势门：价站在周线上升趋势线上方才允许买（做法二）
+        #   'month'= 月线趋势门（做法二，更大级别）
+        #   'multi'= 多级别共振（做法三：月+周+日 各自判上升，≥threshold 才买）
+        self.trend_gate = trend_gate
+        self.trend_gate_threshold = 2  # multi 模式：几级向上才放行（默认≥2级）
+        self._trend_state = None  # 预计算：{code: pd.Series(周期末→状态)}
         # 大盘风控开关（2026-08-28 小二陈）：'crash'=单日暴跌不开仓；'ma200'=大盘MA200下方半仓；'both'
         self.market_gate = market_gate
         self.gate_crash = gate_crash
@@ -71,6 +81,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             if hasattr(market_data, 'volume') and market_data.volume is not None and not market_data.volume.empty:
                 kw['volume'] = market_data.volume  # 质量评分（深跌+放量）需要量比
             self.strategy.prepare(returns, market_ret, **kw)
+
+        # 趋势线过滤器预计算（2026-08-30 老板：做法二/三，无前视周期状态表）
+        if self.trend_gate:
+            self._precompute_trend_state(market_data)
 
         if hasattr(self.strategy, 'window') and hasattr(self.strategy, 'lookback'):
             warmup_days = self.strategy.window + self.strategy.lookback
@@ -184,6 +198,12 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     if self.verbose:
                         logger.debug(f"   🛡️ 大盘风控: gate={gate} ({today.date()})")
 
+            if self.trend_gate and not final_scores.empty:
+                allowed = [sym for sym in final_scores.index if self._trend_allows(sym, today)]
+                final_scores = final_scores[final_scores.index.isin(allowed)]
+                if self.verbose and len(allowed) < len(final_scores):
+                    logger.debug(f"   📉 趋势线过滤器: {today.date()} 拦截 {len(final_scores) - len(allowed)} 只")
+
             buy_list = final_scores.head(self.top_n).index.tolist() if len(final_scores) > 0 else []
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
             self.daily_selected[today] = buy_list
@@ -208,6 +228,74 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                     dates[0].strftime('%Y-%m-%d'), dates[-1].strftime('%Y-%m-%d'),
                     _time.time() - _t0)
         return self
+
+    def _precompute_trend_state(self, market_data):
+        """趋势线状态预计算：每票建"周期末→状态"表（无前视）。
+
+        week/month: 单级别门。multi: 月+周+日 三级打分。
+        数据用 market_data 的 OHLCV（与回测同源，无未来数据）。
+        """
+        from core.trendline.state import period_state_map, multi_level_score
+        self._trend_state = {}
+        self._trend_score = {}
+        freq = 'W-FRI' if self.trend_gate == 'week' else ('ME' if self.trend_gate == 'month' else None)
+        codes = [c for c in market_data.price.columns
+                 if c in market_data.price.columns]
+        ohlc = self._build_ohlc_frames(market_data, codes)
+        for code in codes:
+            df = ohlc[code]
+            if df is None or len(df) < 30:
+                continue
+            if freq:
+                self._trend_state[code] = period_state_map(df, freq=freq)
+            else:  # multi
+                self._trend_score[code] = multi_level_score(df)
+
+    def _build_ohlc_frames(self, market_data, codes):
+        """从 metadata 抽每票 OHLC DataFrame（trendline 检测需要 high/low）"""
+        import pandas as pd
+        out = {}
+        for code in codes:
+            try:
+                close = market_data.price[code]
+                df = pd.DataFrame({'close': close})
+                for col, src in (('open', 'open_price'), ('high', 'high_price'),
+                                 ('low', 'low_price'), ('volume', 'volume')):
+                    m = getattr(market_data, src, None)
+                    if m is not None and code in m.columns:
+                        df[col] = m[code]
+                if 'high' not in df or df['high'].isna().all():
+                    df['high'] = df['close']
+                if 'low' not in df or df['low'].isna().all():
+                    df['low'] = df['close']
+                df = df.dropna(subset=['close'])
+                out[code] = df
+            except Exception:
+                out[code] = None
+        return out
+
+    def _trend_allows(self, symbol, today) -> bool:
+        """T 日该票是否通过趋势门。无状态/数据不足 → 放行（False 不拦截的保守策略会踏空，
+        故用"没有足够数据就放行"，有状态才严格判）"""
+        import pandas as pd
+        ts = pd.Timestamp(today)
+        if self.trend_gate in ('week', 'month'):
+            s = self._trend_state.get(symbol)
+            if s is None or len(s) == 0:
+                return True
+            past = s[s.index < ts]  # 只消费严格早于 T 的周期（杜绝周内偷看）
+            if len(past) == 0:
+                return True
+            return bool(past.iloc[-1])
+        if self.trend_gate == 'multi':
+            sc = self._trend_score.get(symbol)
+            if sc is None or len(sc) == 0:
+                return True
+            past = sc[sc.index < ts]
+            if len(past) == 0:
+                return True
+            return int(past.iloc[-1]) >= self.trend_gate_threshold
+        return True
 
     def _market_risk_gate(self, market_ret, market_data, today, i):
         """大盘风控开关（2026-08-28 小二陈）：

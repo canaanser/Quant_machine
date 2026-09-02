@@ -7,7 +7,11 @@ from plotly.subplots import make_subplots
 import pandas as pd
 
 
-def plot_kline_with_trades(price_data, trades_df, stock_code, stock_name=""):
+def plot_kline_with_trades(price_data, trades_df, stock_code, stock_name="", trendlines=None):
+    """
+    trendlines: core/trendline/detector.detect_trendlines 的返回（list of dict），
+                叠加到主图。None=不画（保持原行为）。2026-08-30 老板：趋势线跟随我们的图。
+    """
     if price_data is None or price_data.empty:
         return go.Figure()
     
@@ -240,5 +244,32 @@ def plot_kline_with_trades(price_data, trades_df, stock_code, stock_name=""):
             text=price_data['early_score'].round(2),
             yaxis='y'
         ))
-    
+
+    # ----- 趋势线叠加（2026-08-30 老板：趋势线跟随我们的图）-----
+    if trendlines:
+        dates = list(price_data.index)
+        for i, tl in enumerate(trendlines):
+            color = '#C0392B' if tl['type'] == 'up' else '#2980B9'  # 升=红（支撑），降=蓝（压力）
+            dash = 'solid' if tl['touches'] >= 4 else 'dash'
+            name = f"上升趋势线({tl['touches']}点)" if tl['type'] == 'up' else f"下降趋势线({tl['touches']}点)"
+            x0, x1 = dates[tl['x0']], dates[tl['x_end']]
+            y0, y1 = tl['y0'], tl['y_end']
+            fig.add_trace(go.Scatter(
+                x=[x0, x1], y=[y0, y1],
+                mode='lines', name=name,
+                line=dict(color=color, width=2, dash=dash),
+                hovertemplate=f'{name}<br>%{{x|%Y-%m-%d}} 线值: %{{y:.2f}}<extra></extra>'
+            ), row=1, col=1)
+            # 触碰点
+            touch_x = [dates[t] for t in tl['touch_idx']]
+            touch_y = [price_data['low'].iloc[t] if tl['type'] == 'up' else price_data['high'].iloc[t]
+                       for t in tl['touch_idx']]
+            fig.add_trace(go.Scatter(
+                x=touch_x, y=touch_y,
+                mode='markers', showlegend=False,
+                marker=dict(size=7, color=color, symbol='circle',
+                            line=dict(width=1, color='white')),
+                hovertemplate='触碰: %{x|%Y-%m-%d}<extra></extra>'
+            ), row=1, col=1)
+
     return fig

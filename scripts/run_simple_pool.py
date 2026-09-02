@@ -55,6 +55,8 @@ def main():
                         help="止盈比例（如0.40）；不传=2×止损")
     parser.add_argument("--ext", action="store_true",
                         help="合并扩池：84 主池 + 78 只行业扩展池（162 只）")
+    parser.add_argument("--old-sell", action="store_true",
+                        help="旧版直接卖（2026-08-30 实验A）：死叉 score<-0.05 直接卖，跳过封控层浮盈/底背离/低位驳回")
     args = parser.parse_args()
 
     if args.ext:
@@ -97,7 +99,10 @@ def main():
         stop_loss = args.stop_loss  # 敏感性测试：显式止损覆盖模式默认
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=args.verbose,
                               stop_loss_pct=stop_loss, take_profit_pct=args.take_profit,
-                              batch_exit=batch, protect_days=protect)
+                              batch_exit=batch, protect_days=protect,
+                              old_sell=args.old_sell)
+    if args.old_sell:
+        print("🔧 旧版直接卖已启用（跳过封控层：浮盈/底背离/低位驳回）")
     engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 
