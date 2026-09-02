@@ -16,6 +16,7 @@
 | `scripts/demo_trendline.py` | scripts/ | --tickers/--start/--end | outputs/trendline_{code}.html | ✅ 新增：趋势线可视化 demo |
 | `scripts/compare_trend_gate.py` | scripts/ | --pool 84/curated | 汇总表（累计/近1年/近2年/Sharpe/回撤/交易） | ✅ 新增：过滤器对比实验入口 |
 | `scripts/run_simple_pool.py --trend-gate` | scripts/ | month/week/multi + --multi-threshold | 主入口带趋势门回测 | 🔄 修改：正式固化（老板 2026-09-02 拍板） |
+| `views/backtest_view.py` | views/ | +🧪实验口径 checkbox +趋势门 selectbox +multi阈值 | 前端可复现实验 | 🔄 修改：前端对齐（老板 2026-09-02） |
 
 ## 二、数据结构（今天涉及的）
 

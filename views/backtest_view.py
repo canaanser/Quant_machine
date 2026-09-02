@@ -53,6 +53,26 @@ def run_backtest():
         value=True,
         help="近5日低点≥前5日低点（低点抬高企稳）才放行，未企稳降权——减少铁律止损误伤"
     )
+    # 🧪 实验口径一键复现（2026-09-02 老板：前端要么跟我们测的一样，要么开关能做到一样）
+    # 实验（compare_trend_gate.py）= 关质量 + 关筑底 + 止损0 + 趋势门——纯指标买卖，关止损测门
+    replicate_exp = st.sidebar.checkbox(
+        "🧪 复现 09-02 趋势门实验口径",
+        value=False,
+        help="勾选后强制 关质量评分 + 关筑底确认（忽略上方勾选）+ 止损0 —— 与实验 scripts/compare_trend_gate.py 完全同口径；配合下方'趋势过滤器'使用"
+    )
+    # 趋势线过滤器（2026-09-02 老板拍板固化，无未来函数）
+    trend_gate_choice = st.sidebar.selectbox(
+        "📈 趋势过滤器（无未来函数）",
+        ["无", "周线门 (week)", "月线门 (month)", "多级共振 (multi)"],
+        index=0,
+        help="买入前过滤：价站在趋势线上方才允许买。实验结论（关止损5年）：84池→月线门最优(+133%/Sharpe0.82)；精选15→multi≥2最优(+537%/Sharpe1.42)"
+    )
+    multi_threshold = 2
+    if trend_gate_choice == "多级共振 (multi)":
+        multi_threshold = st.sidebar.number_input(
+            "multi 共振阈值（几级向上放行）", min_value=1, max_value=3, value=2,
+            help="月+周+日各自判'价在上升趋势线上方'，≥阈值级放行"
+        )
     # 模式档位（老板两阶段打法）
     mode_choice = st.sidebar.radio(
         "模式档位",
@@ -295,14 +315,37 @@ def run_backtest():
                         sl, batch, protect = 0.05, True, 2
                     elif mode_choice == "进攻（30%+止损8%）":
                         sl, batch = 0.08, True
+                    # 🧪 实验口径：强制关质量/关筑底（2026-09-02 老板：与 compare_trend_gate 一致）
+                    eff_quality = use_quality
+                    eff_bottom = use_bottom
+                    if replicate_exp:
+                        eff_quality = False
+                        eff_bottom = False
+                        sl = 0.0  # 实验关止损（模式档位若选了建仓/进攻会被覆盖回 0）
                     strategy = SimpleStrategy(short=5, long=20,
-                                              quality_filter=use_quality,
+                                              quality_filter=eff_quality,
                                               quality_penalty=0.1,
-                                              bottom_confirm=use_bottom)
+                                              bottom_confirm=eff_bottom)
+
+                # 趋势过滤器映射（2026-09-02 老板拍板固化，无未来函数）
+                trend_gate = None
+                if trend_gate_choice == "周线门 (week)":
+                    trend_gate = 'week'
+                elif trend_gate_choice == "月线门 (month)":
+                    trend_gate = 'month'
+                elif trend_gate_choice == "多级共振 (multi)":
+                    trend_gate = 'multi'
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION,
                                           stop_loss_pct=sl if sl > 0 else None,
-                                          batch_exit=batch, protect_days=int(protect))
+                                          batch_exit=batch, protect_days=int(protect),
+                                          trend_gate=trend_gate)
+                if trend_gate == 'multi':
+                    engine.trend_gate_threshold = int(multi_threshold)
+                if replicate_exp:
+                    st.sidebar.success("🧪 实验口径已启用：关质量/关筑底/止损0")
+                if trend_gate:
+                    st.sidebar.info(f"📈 趋势过滤器: {trend_gate}" + (f"（阈值≥{int(multi_threshold)}）" if trend_gate == 'multi' else ""))
 
                 auto_save = (test_mode == "继承性测试（保存文件+记住金额）")
                 engine.run(market_data=market_data, initial_cash=initial_cash, auto_save=auto_save)
