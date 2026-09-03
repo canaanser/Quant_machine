@@ -33,7 +33,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                  stop_loss_pct: float = None, take_profit_pct: float = None,
                  batch_exit: bool = False, protect_days: int = 0,
                  market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True,
-                 old_sell: bool = False, trend_gate: str = None):
+                 old_sell: bool = False, trend_gate: str = None,
+                 trend_gate_split: bool = False):
         super().__init__(strategy, top_n=top_n, commission=commission,
                          risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct,
                          take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days,
@@ -46,6 +47,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         self.trend_gate = trend_gate
         self.trend_gate_threshold = 2  # multi 模式：几级向上才放行（默认≥2级）
         self._trend_state = None  # 预计算：{code: pd.Series(周期末→状态)}
+        # 标签分治（2026-09-02 老板：震荡票不该用趋势门——84只实证门效果-5.5%）
+        #   trend_gate_split=True 时：加载振荡标签，震荡票跳过趋势过滤（只放行、不拦截）
+        self.trend_gate_split = trend_gate_split
+        self._osc_codes = None  # 震荡票代码集合（从振荡标签 v1 加载）
         # 大盘风控开关（2026-08-28 小二陈）：'crash'=单日暴跌不开仓；'ma200'=大盘MA200下方半仓；'both'
         self.market_gate = market_gate
         self.gate_crash = gate_crash
@@ -85,6 +90,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         # 趋势线过滤器预计算（2026-08-30 老板：做法二/三，无前视周期状态表）
         if self.trend_gate:
             self._precompute_trend_state(market_data)
+        if self.trend_gate_split:
+            self._osc_codes = self._load_osc_codes()
 
         if hasattr(self.strategy, 'window') and hasattr(self.strategy, 'lookback'):
             warmup_days = self.strategy.window + self.strategy.lookback
@@ -276,11 +283,29 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 out[code] = None
         return out
 
+    def _load_osc_codes(self) -> set:
+        """加载振荡标签 v1 的震荡票代码集（data/info/tags/data/oscillation_v1.csv）
+        标签是静态分类（valid_from 2017 起全历史特性），取 value=震荡票 的全部代码"""
+        import os
+        import pandas as pd
+        from config.config import PROJECT_ROOT, TAGS_DATA_DIR
+        try:
+            p = os.path.join(PROJECT_ROOT, TAGS_DATA_DIR, 'oscillation_v1.csv')
+            df = pd.read_csv(p, dtype={'code': str})
+            df['code'] = df['code'].str.zfill(6)
+            return set(df[df['value'] == '震荡票']['code'])
+        except Exception:
+            return set()
+
     def _trend_allows(self, symbol, today) -> bool:
         """T 日该票是否通过趋势门。无状态/数据不足 → 放行（False 不拦截的保守策略会踏空，
-        故用"没有足够数据就放行"，有状态才严格判）"""
+        故用"没有足够数据就放行"，有状态才严格判）
+        trend_gate_split=True 时：震荡票不拦（标签实证：震荡票用趋势门平均-5.5%）"""
         import pandas as pd
         ts = pd.Timestamp(today)
+        # 标签分治：震荡票跳过趋势过滤（直接放行）
+        if self.trend_gate_split and self._osc_codes is not None and symbol in self._osc_codes:
+            return True
         if self.trend_gate in ('week', 'month', 'boll'):
             s = self._trend_state.get(symbol)
             if s is None or len(s) == 0:
