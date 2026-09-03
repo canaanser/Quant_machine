@@ -89,9 +89,14 @@ def main():
     import logging
     parser = argparse.ArgumentParser(description="股票池归因分析")
     parser.add_argument("--tickers", default=",".join(config_mod.SCAN_TICKERS))
-    parser.add_argument("--mode", default='建仓', choices=['建仓', '进攻'])
+    parser.add_argument("--mode", default='建仓', choices=['建仓', '进攻', 'none'])
     parser.add_argument("--start", default='2017-01-01')
     parser.add_argument("--end", default='2026-08-27')
+    # 2026-09-02 老板：扩池 8 只归因需要趋势门+无止损配置（--mode none = 无止损无止盈无分批）
+    parser.add_argument("--gate", choices=['none', 'week', 'month', 'multi'], default=None,
+                        help="趋势线买入过滤器（month/multi 等）；默认 None 不过滤")
+    parser.add_argument("--no-quality", action="store_true",
+                        help="关质量评分+筑底（实验口径，默认开）")
     args = parser.parse_args()
 
     logging.disable(logging.INFO)  # 静默中间日志（老板要求最终表集中）
@@ -103,15 +108,23 @@ def main():
     md = load_data(source='freestockdb', tickers=tickers,
                    start=args.start, end=args.end, frequency='1d', fq='qfq')
     rc = copy.deepcopy(DEFAULT_RISK_CONFIG)
+    sl, batch, protect = None, False, 0
     if args.mode == '建仓':
         rc.update({'MAX_SINGLE_POSITION_RATIO': 0.10, 'BASE_POSITION_RATIO': 0.20})
         sl, batch, protect = 0.05, True, 2
-    else:
+    elif args.mode == '进攻':
         rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
-        sl, batch, protect = 0.08, True, 0
-    strategy = SimpleStrategy(5, 20, quality_filter=True, quality_penalty=0.1, bottom_confirm=True)
+        sl, batch = 0.08, True
+    gate = None if args.gate == 'none' else args.gate
+    strategy = SimpleStrategy(5, 20,
+                              quality_filter=False if args.no_quality else True,
+                              quality_penalty=0.1,
+                              bottom_confirm=False if args.no_quality else True)
     engine = BacktestPipeline(strategy, top_n=10, risk_config=rc, verbose=False,
-                              stop_loss_pct=sl, batch_exit=batch, protect_days=protect)
+                              stop_loss_pct=sl, batch_exit=batch, protect_days=protect,
+                              trend_gate=gate)
+    if gate == 'multi':
+        engine.trend_gate_threshold = 2
     engine.run(md, initial_cash=500000, auto_save=False)
     print(f"✅ 回测完成：累计 {engine.total_return:.2%} / Sharpe {engine.sharpe:.2f} / 回撤 {engine.max_drawdown:.2%} / {len(engine.trades)} 笔")
 

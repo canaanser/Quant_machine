@@ -44,7 +44,8 @@ def fetch_stock_fundamentals(code: str, start_year: int = 2020) -> pd.DataFrame:
     cache_k = os.path.join(ROOT, 'data', 'cache', 'stockdb', f"{code}_1d.csv")
     if os.path.exists(cache_k) and os.path.getsize(cache_k) > 100:
         df = pd.read_csv(cache_k, encoding='utf-8')
-        df['date'] = pd.to_datetime(df['date'].astype(str), format='%Y%m%d', errors='coerce')
+        # date 兼容 %Y%m%d / %Y-%m-%d / ISO（2026-09-02 修复：老缓存 ISO 格式被 %Y%m%d 解析成全 NaN → 0 行）
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
         df = df.dropna(subset=['date']).sort_values('date')
         return df
     frames = []
@@ -71,14 +72,20 @@ def main():
     if '--test' in sys.argv:
         test_n = int(sys.argv[sys.argv.index('--test') + 1])
     os.makedirs(OUT_DIR, exist_ok=True)
-    # 池：84主池 + 精选15（去重）
+    # --codes 指定代码（2026-09-02 老板扩池：新票不在 84+15 池）
+    custom_codes = []
+    if '--codes' in sys.argv:
+        custom_codes = [c.strip().zfill(6) for c in sys.argv[sys.argv.index('--codes') + 1].split(',') if c.strip()]
     pool = []
     seen = set()
-    for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
-        c = str(c).zfill(6)
-        if c not in seen:
-            seen.add(c)
-            pool.append(c)
+    if custom_codes:
+        pool = custom_codes
+    else:
+        for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
+            c = str(c).zfill(6)
+            if c not in seen:
+                seen.add(c)
+                pool.append(c)
     if test_n > 0:
         pool = pool[:test_n]
     print(f"📦 拉取 {len(pool)} 只基本面（{'测试模式前'+str(test_n) if test_n else '全量'}）→ {OUT_DIR}")

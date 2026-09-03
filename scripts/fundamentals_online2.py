@@ -100,13 +100,20 @@ def main():
     if '--test' in sys.argv:
         test_n = int(sys.argv[sys.argv.index('--test') + 1])
     quarters = ['2024q4', '2024q3', '2024q2', '2024q1']  # 4期够算同比（限流降负）
+    # --codes 指定代码（2026-09-02 老板扩池：新票不在 84+15 池，需显式指定）
+    custom_codes = []
+    if '--codes' in sys.argv:
+        custom_codes = [c.strip().zfill(6) for c in sys.argv[sys.argv.index('--codes') + 1].split(',') if c.strip()]
     pool = []
     seen = set()
-    for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
-        c = str(c).zfill(6)
-        if c not in seen:
-            seen.add(c)
-            pool.append(c)
+    if custom_codes:
+        pool = custom_codes
+    else:
+        for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
+            c = str(c).zfill(6)
+            if c not in seen:
+                seen.add(c)
+                pool.append(c)
     if test_n:
         pool = pool[:test_n]
     print(f"📦 拉取 {len(pool)} 只财务（{'测试' if test_n else '全量'}）→ {OUT_DIR}")
