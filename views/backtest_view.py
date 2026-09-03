@@ -75,17 +75,31 @@ def run_backtest():
             "multi 共振阈值（几级向上放行）", min_value=1, max_value=3, value=2,
             help="月+周+日各自判'价在上升趋势线上方'，≥阈值级放行"
         )
-    # 模式档位（老板两阶段打法）
-    mode_choice = st.sidebar.radio(
-        "模式档位",
-        ["标准", "建仓（轻仓10%+止损5%）", "进攻（30%+止损8%）"],
+    # 🧯 底线止损（唯一止损入口，2026-09-02 老板：止损规范化）
+    # 分仓稀释逻辑：单票满仓 30% 时，票跌 X% ≈ 账户伤 0.3X%——底线止损是"单票保险丝"
+    # 实验结论（2026-09-02）：机械止损(5%/8%)是负资产（压不住回撤反放大），认错靠死叉信号；
+    # 底线止损只做"防灾难保险丝"（防黑天鹅/连续阴跌），不参与日常买卖判定
+    sl_choice = st.sidebar.radio(
+        "🧯 底线止损（单票）",
+        ["无止损", "自定义 %"],
         index=0,
-        help="建仓=实盘初期保本（铁律止损5%+分批+保护期）；进攻=有利润垫后切换"
+        help="单票保险丝：跌破成本 X% 强制全卖（最高优先级）。分仓稀释：满仓30%时票跌X%≈账户伤0.3X%。"
+             "实验：机械止损压不住回撤反放大（认错靠死叉），底线只防灾难，日常不触发。默认无止损=实验口径"
     )
-    # 铁律风控层（止损/分批/保护期）
-    st.sidebar.caption("铁律风控层")
-    stop_loss_pct = st.sidebar.number_input("机械止损 %", min_value=0.0, max_value=30.0, value=0.0, step=0.5,
-                                            help="持仓跌破成本 X% 强制全卖（铁律，最高优先级）；0=关闭")
+    stop_loss_pct = 0.0
+    if sl_choice == "自定义 %":
+        stop_loss_pct = st.sidebar.number_input(
+            "单票止损 %", min_value=0.5, max_value=30.0, value=10.0, step=0.5,
+            help="跌破成本 X% 强制全卖；建议 10% 档（满仓30%→账户最大伤3%）；5% 太紧会被洗盘误杀（实验证负收益）"
+        )
+    # 模式档位（只管分仓仓位节奏，2026-09-02 老板：止损已收敛到上面单票底线，档位不再绑止损）
+    mode_choice = st.sidebar.radio(
+        "模式档位（分仓）",
+        ["标准（单票30%）", "建仓（单票10%）", "进攻（单票30%+分批）"],
+        index=0,
+        help="只控制单票仓位上限与分批节奏；止损统一由上方'底线止损'管。标准=默认30%；建仓=10%轻仓试探；进攻=30%满配"
+    )
+    # 分批退出/保护期（建仓档特性，2026-09-02 收起默认关）
     use_batch = st.sidebar.checkbox("分批退出（死叉卖1/3，不全清）", value=False)
     protect_days = st.sidebar.number_input("保护期（天，人买入策略信号不卖）", min_value=0, max_value=10, value=0)
 
@@ -313,27 +327,35 @@ def run_backtest():
                     # 2026-09-02 老板：纯金叉上穿MA20买/下穿MA20卖，无任何附加（84池实证胜出）
                     from core.strategy import PureMACrossStrategy
                     strategy = PureMACrossStrategy(short=5, long=20)
-                    sl, batch, protect = stop_loss_pct / 100.0, use_batch, protect_days
-                    # 纯金叉是纯区间切换策略：模式档位（建仓/进攻的加仓节奏）对它无意义，忽略
                 elif strategy_choice == "双均线金叉策略":
                     from core.strategy import SimpleStrategy
-                    # 模式档位参数（2026-08-28：建仓=铁律止损5%+分批+保护期；进攻=8%）
-                    sl, batch, protect = stop_loss_pct / 100.0, use_batch, protect_days
-                    if mode_choice == "建仓（轻仓10%+止损5%）":
-                        sl, batch, protect = 0.05, True, 2
-                    elif mode_choice == "进攻（30%+止损8%）":
-                        sl, batch = 0.08, True
                     # 🧪 实验口径：强制关质量/关筑底（2026-09-02 老板：与 compare_trend_gate 一致）
                     eff_quality = use_quality
                     eff_bottom = use_bottom
                     if replicate_exp:
                         eff_quality = False
                         eff_bottom = False
-                        sl = 0.0  # 实验关止损（模式档位若选了建仓/进攻会被覆盖回 0）
                     strategy = SimpleStrategy(short=5, long=20,
                                               quality_filter=eff_quality,
                                               quality_penalty=0.1,
                                               bottom_confirm=eff_bottom)
+
+                # 模式档位映射（2026-09-02 老板：档位只管分仓仓位+分批节奏，止损由底线控件统一）
+                # 标准=默认30%；建仓=10%轻仓+分批+保护期；进攻=30%+分批
+                import copy as _copy
+                from config.risk_config import DEFAULT_RISK_CONFIG
+                rc = _copy.deepcopy(DEFAULT_RISK_CONFIG)
+                batch, protect = use_batch, int(protect_days)
+                if mode_choice == "建仓（单票10%）":
+                    rc.update({'MAX_SINGLE_POSITION_RATIO': 0.10, 'BASE_POSITION_RATIO': 0.20})
+                    batch, protect = True, 2
+                elif mode_choice == "进攻（单票30%+分批）":
+                    rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
+                    batch = True
+                # 底线止损（唯一止损来源；实验口径=无止损）
+                sl = (stop_loss_pct / 100.0) if sl_choice == "自定义 %" else None
+                if replicate_exp:
+                    sl = None  # 实验口径：无止损
 
                 # 趋势过滤器映射（2026-09-02 老板拍板固化，无未来函数）
                 trend_gate = None
@@ -345,7 +367,8 @@ def run_backtest():
                     trend_gate = 'multi'
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION,
-                                          stop_loss_pct=sl if sl > 0 else None,
+                                          risk_config=rc,
+                                          stop_loss_pct=sl,
                                           batch_exit=batch, protect_days=int(protect),
                                           trend_gate=trend_gate)
                 if trend_gate == 'multi':
