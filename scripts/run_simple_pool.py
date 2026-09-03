@@ -61,6 +61,8 @@ def main():
                         help="趋势线买入过滤器（2026-09-02 实验，无未来函数）：week=周线门 / month=月线门 / multi=月+周+日≥2级共振。实验结论：84池用 month 最优，精选15用 multi 最优")
     parser.add_argument("--multi-threshold", type=int, default=2,
                         help="multi 模式共振阈值（默认2=至少2级趋势向上才放行）")
+    parser.add_argument("--pure-ma", action="store_true",
+                        help="纯双均线金叉（教科书版，2026-09-02）：上穿MA20买/下穿卖，无质量/筑底/加速度附加")
     args = parser.parse_args()
 
     if args.ext:
@@ -73,7 +75,13 @@ def main():
     pos_kw = {"quality_pos_boost": -1.0, "quality_pos_trim": 1.0} if args.pos_off else {}
     if args.bottom:
         pos_kw["bottom_confirm"] = True
-    strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.1, **pos_kw)
+    if args.pure_ma:
+        # 2026-09-02 老板：纯双均线金叉（上穿MA20买/下穿卖，无附加）——84池实证 +133% 胜出
+        from core.strategy import PureMACrossStrategy
+        strategy = PureMACrossStrategy(5, 20)
+        print("🎯 策略: 纯双均线金叉（PureMACross，无质量/筑底/加速度）")
+    else:
+        strategy = SimpleStrategy(5, 20, quality_filter=not args.no_quality, quality_penalty=0.1, **pos_kw)
 
     t0 = time.time()
     print(f"🚀 数据加载：{len(tickers)} 只，{args.start} ~ {args.end} ...")

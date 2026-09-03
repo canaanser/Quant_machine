@@ -36,8 +36,10 @@ def run_backtest():
     )
     strategy_choice = st.sidebar.selectbox(
         "策略类型",
-        ["Alpha剥离策略", "双均线金叉策略"],
-        index=1
+        ["Alpha剥离策略", "双均线金叉策略", "纯双均线金叉（教科书版）"],
+        index=1,
+        help="双均线金叉策略 = Simple（带加速度/质量/筑底等，精选15好票池胜出）；"
+             "纯双均线金叉 = 上穿MA20买/下穿卖、无任何附加（84池普通票实证 +133%/Sharpe0.98 完胜 Simple +56.7%，2026-09-02）"
     )
 
     # 质量评分开关（2026-08-28 小二陈：深跌<-20%+放量>0.7，不满足降权×0.2，
@@ -307,6 +309,12 @@ def run_backtest():
                 if strategy_choice == "Alpha剥离策略":
                     from core.strategy import AlphaScoreStrategy
                     strategy = AlphaScoreStrategy(window=int(window), lookback=int(lookback))
+                elif strategy_choice == "纯双均线金叉（教科书版）":
+                    # 2026-09-02 老板：纯金叉上穿MA20买/下穿MA20卖，无任何附加（84池实证胜出）
+                    from core.strategy import PureMACrossStrategy
+                    strategy = PureMACrossStrategy(short=5, long=20)
+                    sl, batch, protect = stop_loss_pct / 100.0, use_batch, protect_days
+                    # 纯金叉是纯区间切换策略：模式档位（建仓/进攻的加仓节奏）对它无意义，忽略
                 elif strategy_choice == "双均线金叉策略":
                     from core.strategy import SimpleStrategy
                     # 模式档位参数（2026-08-28：建仓=铁律止损5%+分批+保护期；进攻=8%）
