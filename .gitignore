@@ -23,3 +23,8 @@ outputs/logs/
 # ===== 系统文件 =====
 .DS_Store
 Thumbs.db
+# 数据文件（2026-09-02 清理：数据走本地缓存，不进 git）
+data/info/fundamentals/
+data/tickers/
+outputs/*.csv
+outputs/*.html
