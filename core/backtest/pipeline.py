@@ -60,7 +60,10 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         # 标签分治（2026-09-02 老板：震荡票不该用趋势门——84只实证门效果-5.5%）
         #   trend_gate_split=True 时：加载振荡标签，震荡票跳过趋势过滤（只放行、不拦截）
         self.trend_gate_split = trend_gate_split
-        self._osc_codes = None  # 震荡票代码集合（从振荡标签 v1 加载）
+        # TagRouter（P1 后半：震荡票跳过趋势门，逻辑从 _load_osc_codes 抽出）
+        from core.backtest.gates.tag_router import TagRouter
+        self.tag_router = TagRouter()
+        self._osc_codes = None  # 兼容占位（实际集合在 router 内）
         # 大盘风控开关（2026-08-28 小二陈）：'crash'=单日暴跌不开仓；'ma200'=大盘MA200下方半仓；'both'
         self.market_gate = market_gate
         self.gate_crash = gate_crash
@@ -101,7 +104,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         if self.trend_gate:
             self._precompute_trend_state(market_data)
         if self.trend_gate_split:
-            self._osc_codes = self._load_osc_codes()
+            self.tag_router.prepare(market_data)
 
         # 王文五恶化监控预计算（2026-09-02 老板，P1 由 WangwenGate 负责）
         if self.ww_exit is not None or self.ww_min is not None:
@@ -306,28 +309,14 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 out[code] = None
         return out
 
-    def _load_osc_codes(self) -> set:
-        """加载振荡标签 v1 的震荡票代码集（data/info/tags/data/oscillation_v1.csv）
-        标签是静态分类（valid_from 2017 起全历史特性），取 value=震荡票 的全部代码"""
-        import os
-        import pandas as pd
-        from config.config import PROJECT_ROOT, TAGS_DATA_DIR
-        try:
-            p = os.path.join(PROJECT_ROOT, TAGS_DATA_DIR, 'oscillation_v1.csv')
-            df = pd.read_csv(p, dtype={'code': str})
-            df['code'] = df['code'].str.zfill(6)
-            return set(df[df['value'] == '震荡票']['code'])
-        except Exception:
-            return set()
-
     def _trend_allows(self, symbol, today) -> bool:
         """T 日该票是否通过趋势门。无状态/数据不足 → 放行（False 不拦截的保守策略会踏空，
         故用"没有足够数据就放行"，有状态才严格判）
         trend_gate_split=True 时：震荡票不拦（标签实证：震荡票用趋势门平均-5.5%）"""
         import pandas as pd
         ts = pd.Timestamp(today)
-        # 标签分治：震荡票跳过趋势过滤（直接放行）
-        if self.trend_gate_split and self._osc_codes is not None and symbol in self._osc_codes:
+        # 标签分治（TagRouter）：震荡票跳过趋势过滤（直接放行）
+        if self.trend_gate_split and self.tag_router.should_skip_gate(symbol, today, "trend_gate"):
             return True
         if self.trend_gate in ('week', 'month', 'boll'):
             s = self._trend_state.get(symbol)

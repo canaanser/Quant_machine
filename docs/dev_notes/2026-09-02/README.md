@@ -231,3 +231,9 @@
 - 海王000078 ww_min=2 → 0笔买入（无闸门50笔），一致
 - 万邦德002082 ww_exit=1 → 84笔，一致
 **待办**：Windows 跑回归（gen_baseline 对比）；P1 后半 TagRouter 最小版（trend_gate_split）；P2 铺开 MarketGate/TrendGate
+
+**P1 后半 TagRouter 最小版完成**：震荡票跳过趋势门逻辑从 pipeline(_load_osc_codes) 抽到 gates/tag_router.py。
+- TagRouter：prepare 加载震荡标签 + should_skip_gate(symbol,date,gate_name)（P1 只做 trend_gate；接口留扩展）
+- pipeline: _osc_codes→tag_router，_trend_allows 调 should_skip_gate
+- 验证：000063震荡→跳过True/000657趋势→False/非trend闸门不跳过/26只震荡集 全对
+- ⚠️ WSL 缓存数据更新过（300只+复权），旧对比数字全漂（月线门+132.8%→+190.9%）——绝对数以 Windows 为准；split 方向仍对（split后收益更低=震荡票多买）
