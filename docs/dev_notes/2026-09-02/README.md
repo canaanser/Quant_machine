@@ -219,3 +219,15 @@
 - **关键发现：-50%深套票买入时王文五早就是0-1项**——问题不只是持仓退出，是买入端没挡（技术面102只筛选没看基本面，把海王这种2024年就0项的票选进来了）
 - pipeline 加 ww_min（进场门槛：项数<阈值不让买）+ ww_exit（持仓退出，已有）；run_simple_pool --ww-min
 - 验证：海王000078 2025起 50笔买入(-11.1%) → ww_min=2 后 0笔买入(空仓避开) ✅
+
+## 十六、架构整理 P1：WangwenGate 切割（2026-09-02 老板+CPU+小二陈协作）
+
+**背景**：老板要 pipeline 横切逻辑外移；CPU 设计 Gate 接口（审校后定版）；P1 只切最独立 WangwenGate，等价替换不重构执行链。
+**产出**：
+- `core/backtest/gates/base.py`：Gate 基类（name/exit_priority/prepare/filter_buy_candidates/should_exit；买/卖分开，market_data 可选，默认空实现）
+- `core/backtest/gates/wangwen_gate.py`：WangwenGate（ww_min 进场门槛 + ww_exit 恶化退出，逻辑从 pipeline 原样搬入）
+- `pipeline.py`：ww 逻辑换成调 ww_gate（__init__ 建 gate；prepare/filter/should_exit 走 gate；**调用顺序不变**）
+**等价验证（WSL 双用例与 P1 前逐位一致）**：
+- 海王000078 ww_min=2 → 0笔买入（无闸门50笔），一致
+- 万邦德002082 ww_exit=1 → 84笔，一致
+**待办**：Windows 跑回归（gen_baseline 对比）；P1 后半 TagRouter 最小版（trend_gate_split）；P2 铺开 MarketGate/TrendGate
