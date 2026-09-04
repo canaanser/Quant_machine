@@ -81,8 +81,8 @@ def rolling_period_state(daily: pd.DataFrame, freq: str = 'W-FRI',
     """周期状态前向填充到日线（绘图/展示用；回测请用 period_state_map + 严格查询）"""
     s = period_state_map(daily, freq=freq, min_bars=min_bars)
     out = s.reindex(daily.index, method='ffill')
-    out = out.fillna(True).astype(bool)
-    return out
+    out = out.where(out.notna(), True)  # 避免 fillna 弃用警告（pandas 3.0）
+    return out.astype(bool)
 
 
 # ---------- 多级共振打分（做法三） ----------
@@ -142,4 +142,5 @@ def bollinger_gate_state(daily: pd.DataFrame, window: int = 20, ndev: float = 2.
     bw = (upper - lower) / mid.replace(0, float('nan'))
     th = bw.rolling(lookback, min_periods=60).quantile(q)
     gate = bw <= th
-    return gate.fillna(True).astype(bool)
+    gate = gate.where(gate.notna(), True)  # 避免 fillna 弃用警告（pandas 3.0）
+    return gate.astype(bool)

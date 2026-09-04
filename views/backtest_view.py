@@ -75,22 +75,32 @@ def run_backtest():
             "multi 共振阈值（几级向上放行）", min_value=1, max_value=3, value=2,
             help="月+周+日各自判'价在上升趋势线上方'，≥阈值级放行"
         )
-    # 🧯 底线止损（唯一止损入口，2026-09-02 老板：止损规范化）
-    # 分仓稀释逻辑：单票满仓 30% 时，票跌 X% ≈ 账户伤 0.3X%——底线止损是"单票保险丝"
-    # 实验结论（2026-09-02）：机械止损(5%/8%)是负资产（压不住回撤反放大），认错靠死叉信号；
-    # 底线止损只做"防灾难保险丝"（防黑天鹅/连续阴跌），不参与日常买卖判定
+    # 🧯 止损/止盈（2026-09-02 老板：各一个开关，默认关=最好测试口径）
+    # 实验：机械止损5%/8%是负资产（压不住回撤反放大）；宽松底线(10%+)防灾难不误杀。
+    # 封控层死叉判定(浮盈/底背离/低位驳回)是最好测试的胜负手，不设开关、永远全权。
     sl_choice = st.sidebar.radio(
-        "🧯 底线止损（单票）",
-        ["无止损", "自定义 %"],
+        "止损",
+        ["关（无止损）", "开（填 %）"],
         index=0,
-        help="单票保险丝：跌破成本 X% 强制全卖（最高优先级）。分仓稀释：满仓30%时票跌X%≈账户伤0.3X%。"
-             "实验：机械止损压不住回撤反放大（认错靠死叉），底线只防灾难，日常不触发。默认无止损=实验口径"
+        help="单票保险丝（分仓稀释：满仓30%时票跌X%≈账户伤0.3X%）。默认关=最好测试口径；开建议10%"
     )
     stop_loss_pct = 0.0
-    if sl_choice == "自定义 %":
+    if sl_choice == "开（填 %）":
         stop_loss_pct = st.sidebar.number_input(
-            "单票止损 %", min_value=0.5, max_value=30.0, value=10.0, step=0.5,
-            help="跌破成本 X% 强制全卖；建议 10% 档（满仓30%→账户最大伤3%）；5% 太紧会被洗盘误杀（实验证负收益）"
+            "止损 %", min_value=1.0, max_value=30.0, value=10.0, step=1.0,
+            help="跌破成本 X% 强制全卖；10%档在纯金叉84池 +201%（vs无止损+133%）"
+        )
+    tp_choice = st.sidebar.radio(
+        "止盈",
+        ["关（无止盈）", "开（填 %）"],
+        index=0,
+        help="盈利垫子锁利。默认关=最好测试口径（实验证止盈也在切利润）"
+    )
+    take_profit_pct = 0.0
+    if tp_choice == "开（填 %）":
+        take_profit_pct = st.sidebar.number_input(
+            "止盈 %", min_value=5.0, max_value=100.0, value=30.0, step=5.0,
+            help="盈利 X% 卖一半锁利"
         )
     # 模式档位（只管分仓仓位节奏，2026-09-02 老板：止损已收敛到上面单票底线，档位不再绑止损）
     mode_choice = st.sidebar.radio(
@@ -352,10 +362,11 @@ def run_backtest():
                 elif mode_choice == "进攻（单票30%+分批）":
                     rc.update({'MAX_SINGLE_POSITION_RATIO': 0.30, 'BASE_POSITION_RATIO': 0.50})
                     batch = True
-                # 底线止损（唯一止损来源；实验口径=无止损）
-                sl = (stop_loss_pct / 100.0) if sl_choice == "自定义 %" else None
+                # 止损/止盈（2026-09-02 老板：默认关=最好测试口径；开=填数值）
+                sl = (stop_loss_pct / 100.0) if sl_choice == "开（填 %）" else None
+                tp = (take_profit_pct / 100.0) if tp_choice == "开（填 %）" else None
                 if replicate_exp:
-                    sl = None  # 实验口径：无止损
+                    sl, tp = None, None  # 实验口径：止损止盈都关
 
                 # 趋势过滤器映射（2026-09-02 老板拍板固化，无未来函数）
                 trend_gate = None
@@ -368,7 +379,7 @@ def run_backtest():
 
                 engine = BacktestPipeline(strategy, top_n=int(top_n), verbose=DEBUG_MODE, commission=COMMISSION,
                                           risk_config=rc,
-                                          stop_loss_pct=sl,
+                                          stop_loss_pct=sl, take_profit_pct=tp,
                                           batch_exit=batch, protect_days=int(protect),
                                           trend_gate=trend_gate)
                 if trend_gate == 'multi':

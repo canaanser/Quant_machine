@@ -75,13 +75,20 @@ def main():
     print("🔍 探测在线接口（不消耗限额）...")
     probe_interfaces()
 
+    # --codes 指定代码拉取（2026-09-02 老板扩池：默认只拉 84+15 池，新票需显式指定）
+    custom_codes = []
+    if '--codes' in sys.argv:
+        custom_codes = [c.strip().zfill(6) for c in sys.argv[sys.argv.index('--codes') + 1].split(',') if c.strip()]
     pool = []
     seen = set()
-    for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
-        c = str(c).zfill(6)
-        if c not in seen:
-            seen.add(c)
-            pool.append(c)
+    if custom_codes:
+        pool = custom_codes
+    else:
+        for c in list(SCAN_TICKERS) + list(SCAN_TICKERS_CURATED):
+            c = str(c).zfill(6)
+            if c not in seen:
+                seen.add(c)
+                pool.append(c)
     if test_n:
         pool = pool[:test_n]
     print(f"\n📦 拉取 {len(pool)} 只财报（{'测试' if test_n else '全量'}）→ {OUT_DIR}")

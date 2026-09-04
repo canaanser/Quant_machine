@@ -47,6 +47,42 @@ def market_suffix(code: str) -> str:
     return code + '.XSHE'
 
 
+def fetch_stock_all_tables(suffix: str, quarters: list) -> dict:
+    """逐票拉全部期 5 表（2026-09-02 老板：一只拿完再下一只，防批量限流全废）
+    返回 {table: [rows...]}；任一期失败即整票作废（返回 None 由调用方跳过）
+    表间 sleep 2s 限速——单票 5表×N期 请求稀疏，不触发批量限流"""
+    import stock_sdk
+    tables = ('valuation', 'indicator', 'income', 'cash_flow', 'balance')
+    out = {}
+    for tname in tables:
+        tbl = getattr(stock_sdk, tname, None)
+        if tbl is None:
+            return None
+        rows_all = []
+        for p in quarters:
+            got = False
+            for attempt in range(3):
+                try:
+                    q = stock_sdk.query(tbl).filter(getattr(tbl, 'code') == suffix)
+                    r = stock_sdk.get_fundamentals(q, statDate=p)
+                    if isinstance(r, list):
+                        rows_all.extend([dict(x) for x in r])
+                        got = True
+                        break
+                    elif isinstance(r, str) and 'later' in str(r).lower():
+                        time.sleep(5)  # 限流提示：等5s重试
+                    else:
+                        break
+                except Exception:
+                    time.sleep(2)
+            if not got:
+                return None  # 该期失败 → 整票不完整，放弃（宁缺毋滥）
+        if rows_all:
+            out[tname] = rows_all
+        time.sleep(2)  # 表间限速
+    return out if len(out) == len(tables) else None
+
+
 def fetch_all_tables_batch(all_suffixes: list, quarters: list):
     """批量拉全池财务（2026-08-30 v4 按老板方案：表外层循环，表之间间隔 5 秒）
     每表：分批 in_(10只) × 4期；表间 sleep 5s；限流重试3次——全量 ~40 次查询不超限额"""
@@ -99,7 +135,13 @@ def main():
     test_n = 0
     if '--test' in sys.argv:
         test_n = int(sys.argv[sys.argv.index('--test') + 1])
-    quarters = ['2024q4', '2024q3', '2024q2', '2024q1']  # 4期够算同比（限流降负）
+    # --quarters 自定义期数（2026-09-02 老板样本外实验：需拉 2022-2023 历史期判训练期）
+    # 默认 4 期（够算同比，限流降负）；样本外实验建议 2023q3,2023q2,2023q1,2022q4,2022q3,2022q2,2022q1
+    quarters = ['2024q4', '2024q3', '2024q2', '2024q1']
+    if '--quarters' in sys.argv:
+        quarters = [q.strip() for q in sys.argv[sys.argv.index('--quarters') + 1].split(',') if q.strip()]
+        if not quarters:
+            quarters = ['2023q3', '2023q2', '2023q1', '2022q4', '2022q3', '2022q2', '2022q1']
     # --codes 指定代码（2026-09-02 老板扩池：新票不在 84+15 池，需显式指定）
     custom_codes = []
     if '--codes' in sys.argv:
@@ -122,6 +164,26 @@ def main():
     # 批量：filter(code.in_(全池)) 每表每期 1 次查询（~40 次调用，不超限额）
     all_suffixes = [market_suffix(c) for c in pool]
     per_code = fetch_all_tables_batch(all_suffixes, quarters)
+    # --per-stock 逐票完整拉（2026-09-02 老板：一只拿完再下一只，中途限流前面的也完整落盘）
+    if '--per-stock' in sys.argv:
+        ok = fail = 0
+        for code in pool:
+            cache = OUT_DIR / f"{code}.csv"
+            if cache_ok(cache):
+                ok += 1
+                print(f"  ⏭️ {code}: 已有完整缓存")
+                continue
+            data = fetch_stock_all_tables(market_suffix(code), quarters)
+            if not data:
+                fail += 1
+                print(f"  ❌ {code}: 拉取失败（可能限流，跳过继续下一只）")
+                continue
+            flat = {tname: json.dumps(rows, ensure_ascii=False, default=str) for tname, rows in data.items()}
+            pd.DataFrame([{'code': code, 'suffix': market_suffix(code), **flat}]).to_csv(cache, index=False, encoding='utf-8')
+            ok += 1
+            print(f"  ✅ {code}: {len(quarters)}期×{len(data)}表 完整落盘")
+        print(f"\n完成: 成功 {ok}，失败 {fail}")
+        return
     for code in pool:
         cache = OUT_DIR / f"{code}.csv"
         if cache_ok(cache):  # 5表完整才命中；部分缓存作废重拉

@@ -53,9 +53,6 @@ class RiskManager:
         self.verbose = verbose
         self.max_pos_ratio = config.get('MAX_SINGLE_POSITION_RATIO', 0.80)
         self.max_total_ratio = config.get('MAX_TOTAL_POSITION_RATIO', 0.70)  # 总仓位上限（2026-08-30）
-        self.stop_loss_aggressive = config.get('STOP_LOSS_AGGRESSIVE', 0.07)
-        self.stop_loss_gentle = config.get('STOP_LOSS_GENTLE', 0.10)
-        self.profit_take = config.get('PROFIT_TAKE_THRESHOLD', 0.30)
         self.base_position_ratio = config.get('BASE_POSITION_RATIO', 0.10)
         self.min_position_ratio = config.get('MIN_POSITION_RATIO', 0.01)
         self.min_order_amount = config.get('MIN_ORDER_AMOUNT', 100)
@@ -144,22 +141,9 @@ class RiskManager:
         symbol = signal['symbol']
         pos = account.positions.get(symbol, Position())
         
-        # ---------- Step 1: 强制止盈止损（最高优先级） ----------
-        if pos.shares > 0:
-            pnl = (current_price - pos.avg_cost) / pos.avg_cost
-            
-            if signal.get('tag') == 'high_volatility' and pnl <= -self.stop_loss_aggressive:
-                if self.verbose:
-                    logger.debug(f"   🔴 触发妖股硬止损: {symbol}, 盈亏={pnl:.2%}")
-                return self._gen_order(symbol, 'SELL', pos.shares, priority=9, reason='妖股硬止损')
-            if signal.get('tag') == 'blue_chip' and pnl <= -self.stop_loss_gentle:
-                if self.verbose:
-                    logger.debug(f"   🔴 触发蓝筹软止损: {symbol}, 盈亏={pnl:.2%}")
-                return self._gen_order(symbol, 'SELL', pos.shares, priority=4, reason='蓝筹软止损')
-            if pnl >= self.profit_take:
-                if self.verbose:
-                    logger.debug(f"   🟢 触发止盈: {symbol}, 盈亏={pnl:.2%}")
-                return self._gen_order(symbol, 'SELL', pos.shares, priority=3, reason='止盈')
+        # ---------- Step 1: 止损止盈在 evaluate_exits 统一评估（2026-09-02 老板：只留 stop_loss_pct/take_profit_pct 两开关）
+        # 妖股/蓝筹 tag 硬止损（STOP_LOSS_AGGRESSIVE/GENTLE）与 approve_order 内止盈为死代码
+        # （signal tag 从未被打 high_volatility/blue_chip，全库无来源）——已删除，防误导
         
         # ---------- Step 2: 买入审批 ----------
         if signal['action'] == 'BUY':
