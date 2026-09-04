@@ -1,0 +1,24 @@
+# 纯双均线金叉（教科书版）+ 止盈30% —— 标准模板
+# 用 run_with_config(config, tickers=池子代码) 注入股票池（YAML 不写死 tickers，模板可复用）
+name: "纯金叉_止盈30%"
+description: "PureMACross 上穿MA20买/下穿卖 + 止盈30%锁利（2026-09-02 技术面27只最优控制）"
+
+strategy:
+  type: "PureMACrossStrategy"
+  params:
+    short: 5
+    long: 20
+
+gates: []
+
+risk:
+  top_n: 10
+  stop_loss:
+  take_profit: 0.30
+
+data:
+  source: "freestockdb"
+  start: "2021-01-01"
+  end: "2026-08-27"
+  frequency: "1d"
+  fq: "qfq"

@@ -102,10 +102,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             gates=gates,
         )
 
-    def run_with_config(self, config) -> "BacktestPipeline":
-        """按配置加载数据 + 运行（一步到位）"""
+    def run_with_config(self, config, **data_overrides) -> "BacktestPipeline":
+        """按配置加载数据 + 运行（一步到位）。
+        data_overrides: 运行时覆盖 data 字段（如 tickers=[...] 注入池子，供模板复用）。"""
         from core.data_loader import load_data
-        md = load_data(**config.data)
+        data_cfg = dict(config.data)
+        data_cfg.update(data_overrides)
+        md = load_data(**data_cfg)
         return self.run(md)
 
     def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True,

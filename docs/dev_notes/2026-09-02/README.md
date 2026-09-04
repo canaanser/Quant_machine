@@ -245,3 +245,12 @@
 - 验收（同数据两种装配逐位一致）：无闸门 -0.0156/26笔 ✅；带WangwenGate(ww_min2/ww_exit1) ✅
 - config/pipelines/：regression_000063.yaml + ww_gate_000063.yaml 示例
 - ⚠️ 修 bug：from_config 传残 risk dict 覆盖默认风控 → merged_risk 合并
+
+**Windows 回归验证（老板跑）：P2-1 后 7 passed 全绿**（--cache-clear 与普通各一次）——配置驱动装配台改动零破坏，旧脚本路径确认不变。
+**P2-2 registry 完善**：StrategyRegistry 已含 SimpleStrategy/PureMACross/AlphaScore。
+**P2-3 模板库（进行中）**：pure_ma_tp30.yaml（纯金叉+止盈30%，tickers 由 run_with_config 注入复用）。
+**P2-3 标准配置模板库（完成核心）**：
+- config/pipelines/: pure_ma_tp30.yaml（纯金叉+止盈30%）+ simple_ww_gate.yaml（金叉+王文五双闸门）+ regression_000063.yaml + ww_gate_000063.yaml
+- 模板不写死 tickers——run_with_config(config, **data_overrides) 运行时注入池子（YAML 可复用）
+- scripts/run_config_pool.py：配置驱动入口（--config + --pool 84/curated/custom）
+- 趋势门模板标注待 P2-4（TrendGate 类未切）

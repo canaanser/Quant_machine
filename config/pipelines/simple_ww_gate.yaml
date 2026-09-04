@@ -1,0 +1,28 @@
+# 金叉 + 王文五双闸门（进场门槛 ww_min + 恶化退出 ww_exit）—— 标准模板
+# 用法：run_with_config(config, tickers=池子) —— YAML 不写死 tickers
+name: "金叉_王文五双闸门"
+description: "Simple 金叉 + 基本面闸门：项数≥ww_min 才买，持仓恶化≤ww_exit 全卖（基本面认错）"
+
+strategy:
+  type: "SimpleStrategy"
+  params:
+    short: 5
+    long: 20
+
+gates:
+  - type: "WangwenGate"
+    params:
+      ww_min: 2        # 进场：王文五项数 < 2 不让买
+      ww_exit: 1       # 退出：持仓项数 ≤ 1 全卖（恶化认错）
+
+risk:
+  top_n: 10
+  stop_loss:
+  take_profit: 0.30
+
+data:
+  source: "freestockdb"
+  start: "2021-01-01"
+  end: "2026-08-27"
+  frequency: "1d"
+  fq: "qfq"

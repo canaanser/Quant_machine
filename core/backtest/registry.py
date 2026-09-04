@@ -12,7 +12,7 @@ from_config 通过字符串 type 实例化策略/闸门——需要注册表把�
 """
 from typing import Dict, Type
 
-from core.strategy import SimpleStrategy
+from core.strategy import SimpleStrategy, PureMACrossStrategy, AlphaScoreStrategy
 from core.backtest.gates import WangwenGate
 
 
@@ -20,6 +20,8 @@ class StrategyRegistry:
     """策略注册表：type 字符串 → 策略类"""
     _registry: Dict[str, Type] = {
         "SimpleStrategy": SimpleStrategy,
+        "PureMACrossStrategy": PureMACrossStrategy,
+        "AlphaScoreStrategy": AlphaScoreStrategy,
     }
 
     @classmethod
