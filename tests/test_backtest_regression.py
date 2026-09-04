@@ -19,12 +19,14 @@ pytestmark = pytest.mark.cache
 # ===== 基线指标（000063, 2025-01-01 ~ 2026-07-31, SimpleStrategy 5/20, top10, 50万）=====
 # 2026-08-28 更新4：MAX_SINGLE_POSITION_RATIO 0.80→0.20（老板拍板，防单票超配爆炸），
 # 单票上限 20% 后仓位更分散：收益 10.88%→2.96%（单票池无分散效应，仓位被砍）、回撤 -15.5%→-6.8%。
+# 2026-09-02 更新5：Windows 权威重跑（scripts/gen_baseline.py 生成，outputs/regression_baseline.json）
+# 差异来源：仓位 0.20→0.30（老板拍板）+ 止损/止盈规范化 + 卖出链调整——行为已变，基线同步
 BASELINE = {
-    "total_return": 0.02957199999999993,
-    "annual_return": 0.019462783139226225,
-    "sharpe": 0.3009234401452481,
-    "max_drawdown": -0.06814568105158347,
-    "trades": 148,
+    "total_return": -0.005997999999999948,
+    "annual_return": -0.003971220234361694,
+    "sharpe": 0.05332980037260013,
+    "max_drawdown": -0.17330954268649823,
+    "trades": 27,
 }
 
 TICKER = "000063"
