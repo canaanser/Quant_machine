@@ -238,19 +238,11 @@
 - 验证：000063震荡→跳过True/000657趋势→False/非trend闸门不跳过/26只震荡集 全对
 - ⚠️ WSL 缓存数据更新过（300只+复权），旧对比数字全漂（月线门+132.8%→+190.9%）——绝对数以 Windows 为准；split 方向仍对（split后收益更低=震荡票多买）
 
-**P2-1 配置驱动装配台完成（CPU设计+审校，已提交）**：
-- core/backtest/registry.py：StrategyRegistry/GateRegistry（type字符串→类，参考tags/registry）
-- core/backtest/config.py：PipelineConfig（from_dict/from_yaml/validate/merged_risk——默认风控+配置覆盖，不全覆盖）
-- pipeline：__init__ 加可选 gates=None（默认走旧逻辑零破坏）；from_config 类方法（build_strategy/build_gates装配）；run_with_config 一步到位
-- 验收（同数据两种装配逐位一致）：无闸门 -0.0156/26笔 ✅；带WangwenGate(ww_min2/ww_exit1) ✅
-- config/pipelines/：regression_000063.yaml + ww_gate_000063.yaml 示例
-- ⚠️ 修 bug：from_config 传残 risk dict 覆盖默认风控 → merged_risk 合并
+## 十七、架构整理回退决策（2026-09-02 老板给最大权限：回退到最合适状态，不盲从 CPU）
 
-**Windows 回归验证（老板跑）：P2-1 后 7 passed 全绿**（--cache-clear 与普通各一次）——配置驱动装配台改动零破坏，旧脚本路径确认不变。
-**P2-2 registry 完善**：StrategyRegistry 已含 SimpleStrategy/PureMACross/AlphaScore。
-**P2-3 模板库（进行中）**：pure_ma_tp30.yaml（纯金叉+止盈30%，tickers 由 run_with_config 注入复用）。
-**P2-3 标准配置模板库（完成核心）**：
-- config/pipelines/: pure_ma_tp30.yaml（纯金叉+止盈30%）+ simple_ww_gate.yaml（金叉+王文五双闸门）+ regression_000063.yaml + ww_gate_000063.yaml
-- 模板不写死 tickers——run_with_config(config, **data_overrides) 运行时注入池子（YAML 可复用）
-- scripts/run_config_pool.py：配置驱动入口（--config + --pool 84/curated/custom）
-- 趋势门模板标注待 P2-4（TrendGate 类未切）
+**老板判断**：CPU 远离一线，P2 配置驱动装配台是过度设计（实盘零增量；趋势门接不进配置=覆盖不到主力场景；旧脚本组装已够用）。
+**回退**（git revert 876b107+3646db0，保留 P0/P1）：
+- 保留：P0 回归基线（d4310ec，7 passed）+ P1 WangwenGate/TagRouter 切割（2bce2b1/e63c571，等价验证过）
+- 回退：P2 配置层（registry/config/from_config/run_with_config/YAML模板/run_config_pool）全删
+- 原则：**为实盘服务优先于架构优雅**；脚本=main 组装是够用的常态，不为此上框架
+**待办 ⏳**：Windows 回归确认回退后仍 7 passed；精力转回实盘方向（选股逻辑/资金流主线/王文五数据覆盖）

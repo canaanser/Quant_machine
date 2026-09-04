@@ -35,8 +35,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                  market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True,
                  old_sell: bool = False, trend_gate: str = None,
                  trend_gate_split: bool = False,
-                 ww_exit: int = None, ww_min: int = None,
-                 gates: list = None):
+                 ww_exit: int = None, ww_min: int = None):
         super().__init__(strategy, top_n=top_n, commission=commission,
                          risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct,
                          take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days,
@@ -47,16 +46,8 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         self.ww_exit = ww_exit
         self.ww_min = ww_min
         # WangwenGate 实例（P1：等价替换，只搬逻辑不改行为）
-        # P2-1：gates 传入时接管（from_config 用）；否则按 ww_min/ww_exit 自建
         from core.backtest.gates import WangwenGate
-        self.gates = gates if gates is not None else []
-        if gates is not None:
-            self.ww_gate = next((g for g in gates if isinstance(g, WangwenGate)), WangwenGate(ww_min=None, ww_exit=None))
-            # 从传入 gate 同步回参数（保持 self.ww_min/ww_exit 语义一致）
-            self.ww_min = self.ww_gate.ww_min
-            self.ww_exit = self.ww_gate.ww_exit
-        else:
-            self.ww_gate = WangwenGate(ww_min=ww_min, ww_exit=ww_exit)
+        self.ww_gate = WangwenGate(ww_min=ww_min, ww_exit=ww_exit)
         self._ww_state = None  # 兼容占位（实际状态在 gate 内部）
         # 趋势线买入过滤器（2026-08-30 老板：做法二/三，先关止损测）
         #   None   = 不过滤（原行为）
@@ -80,36 +71,6 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         # verbose=True 时，本包 logger 提升到 DEBUG 级（调试细节可见，保持原有行为）
         if verbose:
             logging.getLogger("core.backtest").setLevel(logging.DEBUG)
-
-    # ---------- 配置驱动装配（2026-09-02 架构整理 P2） ----------
-    @classmethod
-    def from_config(cls, config) -> "BacktestPipeline":
-        """从 PipelineConfig 装配 pipeline（P2-1：SimpleStrategy + WangwenGate）。
-        config: PipelineConfig 实例（from_yaml/from_dict 加载）。"""
-        from .config import build_strategy, build_gates
-        errs = config.validate()
-        if errs:
-            raise ValueError(f"配置非法: {'; '.join(errs)}")
-        strategy = build_strategy(config.strategy)
-        gates = build_gates(config.gates)
-        risk = config.merged_risk()   # 默认风控 + 配置覆盖（不全覆盖）
-        return cls(
-            strategy=strategy,
-            top_n=risk.get("top_n", 10),
-            stop_loss_pct=risk.get("stop_loss"),
-            take_profit_pct=risk.get("take_profit"),
-            risk_config=risk,
-            gates=gates,
-        )
-
-    def run_with_config(self, config, **data_overrides) -> "BacktestPipeline":
-        """按配置加载数据 + 运行（一步到位）。
-        data_overrides: 运行时覆盖 data 字段（如 tickers=[...] 注入池子，供模板复用）。"""
-        from core.data_loader import load_data
-        data_cfg = dict(config.data)
-        data_cfg.update(data_overrides)
-        md = load_data(**data_cfg)
-        return self.run(md)
 
     def run(self, market_data: metadata, initial_cash: float = None, auto_save: bool = True,
             initial_positions: dict = None, trade_start=None):
