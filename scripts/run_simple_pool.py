@@ -63,7 +63,15 @@ def main():
                         help="multi 模式共振阈值（默认2=至少2级趋势向上才放行）")
     parser.add_argument("--pure-ma", action="store_true",
                         help="纯双均线金叉（教科书版，2026-09-02）：上穿MA20买/下穿卖，无质量/筑底/加速度附加")
+    parser.add_argument("--ww-exit", type=int, default=None,
+                        help="王文五恶化退出阈值（2026-09-02 老板）：持仓票最新财报王文五项数≤此值→全卖。如 --ww-exit 1")
+    parser.add_argument("--quiet", action="store_true",
+                        help="静默模式（默认关）：吞掉 INFO 日志刷屏，只留回测结果与关键行（2026-09-02 老板看不清）")
     args = parser.parse_args()
+
+    if args.quiet:
+        import logging
+        logging.disable(logging.CRITICAL)  # 吞掉 core 的 INFO 刷屏
 
     if args.ext:
         tickers = list(config_mod.SCAN_TICKERS) + list(config_mod.SCAN_TICKERS_EXT)
@@ -113,13 +121,23 @@ def main():
                               stop_loss_pct=stop_loss, take_profit_pct=args.take_profit,
                               batch_exit=batch, protect_days=protect,
                               old_sell=args.old_sell,
-                              trend_gate=args.trend_gate)
+                              trend_gate=args.trend_gate,
+                              ww_exit=args.ww_exit)
     if args.old_sell:
         print("🔧 旧版直接卖已启用（跳过封控层：浮盈/底背离/低位驳回）")
     if args.trend_gate:
         engine.trend_gate_threshold = args.multi_threshold
         print(f"📈 趋势线过滤器已启用: {args.trend_gate}（multi 阈值={args.multi_threshold}）")
-    engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
+    if args.ww_exit is not None:
+        print(f"🧯 王文五恶化退出已启用（项数≤{args.ww_exit} 全卖）")
+    if args.quiet:
+        # 静默：吞掉引擎的交易明细打印（2026-09-02 老板：刷屏看不清关键行）
+        import io
+        import contextlib
+        with contextlib.redirect_stdout(io.StringIO()):
+            engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
+    else:
+        engine.run(market_data, initial_cash=INITIAL_CASH, auto_save=False)
     t_run = time.time() - t0
 
     print("\n" + "=" * 60)

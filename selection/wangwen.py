@@ -109,6 +109,26 @@ class WangwenSelector(BaseSelector):
         return float(row['pe_ttm']), float(row['pb'])
 
     # ---------- 标准判定 ----------
+    def score_items(self, code: str, date) -> dict:
+        """单票在 date 日的王文五逐项判定（2026-09-02 老板：恶化监控需要项数而非全有/全无）
+        返回 {'count': 符合几项(0-4,③分红无接口), 'items': {①低估值/②现金流/④毛利净利/⑤双增长: bool}}
+        ① 用实时估值，②④⑤ 用 pubDate≤date 的最新财报（无前视）。缺数据项记 False。"""
+        pe, pb = self.realtime_pe_pb(code, date)
+        items = {'①低估值': pe is not None and pb is not None and 0 < pe < TH_PE_MAX and pb < TH_PB_MAX}
+        ind = self.latest_indicator(code, date)
+        if ind is not None:
+            ocf = ind.get('ocf_to_operating_profit')
+            items['②现金流'] = ocf is not None and ocf > TH_OCF
+            gross, net = ind.get('gross_profit_margin'), ind.get('net_profit_margin')
+            items['④毛利净利'] = (gross is not None and net is not None
+                                   and gross > TH_GROSS and net > TH_NET)
+            rev_yoy, np_yoy = ind.get('inc_revenue_year_on_year'), ind.get('inc_net_profit_year_on_year')
+            items['⑤双增长'] = (rev_yoy is not None and np_yoy is not None
+                                 and rev_yoy > TH_REV_YOY and np_yoy > TH_NP_YOY)
+        else:
+            items['②现金流'] = items['④毛利净利'] = items['⑤双增长'] = False
+        return {'count': sum(items.values()), 'items': items}
+
     def is_eligible(self, code: str, date) -> bool:
         """单票在 date 日是否符合王文五绝对阈值（①估值用实时，②④⑤用最新披露财报）"""
         # ① 低估值（实时）
