@@ -65,6 +65,8 @@ def main():
                         help="纯双均线金叉（教科书版，2026-09-02）：上穿MA20买/下穿卖，无质量/筑底/加速度附加")
     parser.add_argument("--ww-exit", type=int, default=None,
                         help="王文五恶化退出阈值（2026-09-02 老板）：持仓票最新财报王文五项数≤此值→全卖。如 --ww-exit 1")
+    parser.add_argument("--ww-min", type=int, default=None,
+                        help="王文五进场门槛（2026-09-02 老板）：买入票王文五项数<此值→不让买（基本面闸门，防买进已烂票）。如 --ww-min 2")
     parser.add_argument("--quiet", action="store_true",
                         help="静默模式（默认关）：吞掉 INFO 日志刷屏，只留回测结果与关键行（2026-09-02 老板看不清）")
     args = parser.parse_args()
@@ -122,7 +124,7 @@ def main():
                               batch_exit=batch, protect_days=protect,
                               old_sell=args.old_sell,
                               trend_gate=args.trend_gate,
-                              ww_exit=args.ww_exit)
+                              ww_exit=args.ww_exit, ww_min=args.ww_min)
     if args.old_sell:
         print("🔧 旧版直接卖已启用（跳过封控层：浮盈/底背离/低位驳回）")
     if args.trend_gate:
@@ -130,6 +132,8 @@ def main():
         print(f"📈 趋势线过滤器已启用: {args.trend_gate}（multi 阈值={args.multi_threshold}）")
     if args.ww_exit is not None:
         print(f"🧯 王文五恶化退出已启用（项数≤{args.ww_exit} 全卖）")
+    if args.ww_min is not None:
+        print(f"🧯 王文五进场门槛已启用（项数≥{args.ww_min} 才买）")
     if args.quiet:
         # 静默：吞掉引擎的交易明细打印（2026-09-02 老板：刷屏看不清关键行）
         import io

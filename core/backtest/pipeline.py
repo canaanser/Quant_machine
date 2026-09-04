@@ -35,7 +35,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                  market_gate: str = None, gate_crash: float = -0.03, gate_ma200_half: bool = True,
                  old_sell: bool = False, trend_gate: str = None,
                  trend_gate_split: bool = False,
-                 ww_exit: int = None):
+                 ww_exit: int = None, ww_min: int = None):
         super().__init__(strategy, top_n=top_n, commission=commission,
                          risk_config=risk_config, verbose=verbose, stop_loss_pct=stop_loss_pct,
                          take_profit_pct=take_profit_pct, batch_exit=batch_exit, protect_days=protect_days,
@@ -43,8 +43,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         # 王文五恶化退出（2026-09-02 老板：基本面变化先于深跌，-50%深套前财报早恶化）
         #   ww_exit = 阈值（如 1）：持仓票最新披露财报 王文五项数 ≤ 阈值 → 全卖（基本面认错）
         #   None=关。财报季度披露触发（慢通道），与技术面死叉（快通道）互补。
+        # 王文五进场门槛（2026-09-02 老板：海王等 -50% 深套票买入时早就 0-1 项）
+        #   ww_min = 阈值（如 2）：买入票当日王文五项数 < 阈值 → 不让买（基本面闸门）
+        #   无王文五数据（reports 没拉）→ 放行（不误杀，等数据齐再严格）
         self.ww_exit = ww_exit
+        self.ww_min = ww_min
         self._ww_state = None  # {code: [(披露日, 项数)...]} 按披露日升序
+        self._ww_sel = None
         # 趋势线买入过滤器（2026-08-30 老板：做法二/三，先关止损测）
         #   None   = 不过滤（原行为）
         #   'week' = 周线趋势门：价站在周线上升趋势线上方才允许买（做法二）
@@ -100,7 +105,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
             self._osc_codes = self._load_osc_codes()
 
         # 王文五恶化监控预计算（2026-09-02 老板）：每票 {披露日: 项数} 变化表
-        if self.ww_exit is not None:
+        if self.ww_exit is not None or self.ww_min is not None:
             self._precompute_ww_state(market_data)
 
         if hasattr(self.strategy, 'window') and hasattr(self.strategy, 'lookback'):
@@ -220,6 +225,13 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 final_scores = final_scores[final_scores.index.isin(allowed)]
                 if self.verbose and len(allowed) < len(final_scores):
                     logger.debug(f"   📉 趋势线过滤器: {today.date()} 拦截 {len(final_scores) - len(allowed)} 只")
+
+            # 王文五进场门槛（2026-09-02 老板）：基本面已烂的票（项数<ww_min）不让买
+            if self.ww_min is not None and not final_scores.empty:
+                allowed = [sym for sym in final_scores.index if self._ww_allows(sym, today)]
+                final_scores = final_scores[final_scores.index.isin(allowed)]
+                if self.verbose and len(allowed) < len(final_scores):
+                    logger.debug(f"   🧯 王文五门槛: {today.date()} 拦截 {len(final_scores) - len(allowed)} 只（基本面差）")
 
             buy_list = final_scores.head(self.top_n).index.tolist() if len(final_scores) > 0 else []
             self.daily_scores[today] = final_scores.head(self.top_n).to_dict()
@@ -358,31 +370,40 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
                 pts.sort()
                 self._ww_state[code] = pts
 
+    def _ww_items_at(self, symbol, today):
+        """该票 today 时点"最近披露财报"的王文五项数；无数据→None（放行）"""
+        import pandas as pd
+        ts = pd.Timestamp(today)
+        pts = self._ww_state.get(symbol)
+        if not pts:
+            return None
+        past = [n for p, n in pts if p < ts]
+        return past[-1] if past else None
+
+    def _ww_allows(self, symbol, today) -> bool:
+        """进场门槛：王文五项数 ≥ ww_min 才允许买；无数据放行"""
+        n = self._ww_items_at(symbol, today)
+        if n is None:
+            return True  # 无财报数据 → 放行（不误杀）
+        return n >= self.ww_min
+
     def _execute_ww_exit(self, holdings_dict, current_prices, today):
         """王文五恶化退出（2026-09-02 老板：基本面变化先于深跌）：
         持仓票最新披露财报 项数 ≤ ww_exit 阈值 → 全卖（基本面认错，最高优先级之一）
         财报季度披露才触发（慢通道），不会天天抖"""
         if not self.ww_exit or not self._ww_state:
             return
-        import pandas as pd
-        ts = pd.Timestamp(today)
         for symbol in list(holdings_dict.keys()):
-            pts = self._ww_state.get(symbol)
-            if not pts:
+            n = self._ww_items_at(symbol, today)
+            if n is None or n > self.ww_exit:
                 continue
-            # 找 pubDate < today 的最近一期
-            past = [p for p, _ in pts if p < ts]
-            if not past:
+            price = current_prices.get(symbol, 0)
+            if not price or holdings_dict[symbol]['shares'] <= 0:
                 continue
-            n = dict(pts)[max(past)]
-            if n <= self.ww_exit:
-                price = current_prices.get(symbol, 0)
-                if not price or holdings_dict[symbol]['shares'] <= 0:
-                    continue
-                if self.verbose:
-                    logger.debug(f"🧯 王文五恶化(项数{n}≤{self.ww_exit}): {symbol} 全卖 @ {price:.2f}")
-                self._sell(symbol, holdings_dict[symbol]['shares'], price, today,
-                           f'王文五恶化({n}项)')
+            if self.verbose:
+                logger.debug(f"🧯 王文五恶化(项数{n}≤{self.ww_exit}): {symbol} 全卖 @ {price:.2f}")
+            self._sell(symbol, holdings_dict[symbol]['shares'], price, today,
+                       f'王文五恶化({n}项)')
 
     def _market_risk_gate(self, market_ret, market_data, today, i):
         """大盘风控开关（2026-08-28 小二陈）：
