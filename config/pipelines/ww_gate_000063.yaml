@@ -1,0 +1,27 @@
+# 带王文五闸门的配置示例（P2-1 验证：from_config 传 gates）
+name: "带ww闸门_000063"
+description: "验证 from_config 装配 WangwenGate"
+
+strategy:
+  type: "SimpleStrategy"
+  params:
+    short: 5
+    long: 20
+
+gates:
+  - type: "WangwenGate"
+    params:
+      ww_min: 2
+      ww_exit: 1
+
+risk:
+  top_n: 10
+
+data:
+  source: "freestockdb"
+  tickers:
+    - "000063"
+  start: "2025-01-01"
+  end: "2026-07-31"
+  frequency: "1d"
+  fq: "qfq"

@@ -237,3 +237,11 @@
 - pipeline: _osc_codes→tag_router，_trend_allows 调 should_skip_gate
 - 验证：000063震荡→跳过True/000657趋势→False/非trend闸门不跳过/26只震荡集 全对
 - ⚠️ WSL 缓存数据更新过（300只+复权），旧对比数字全漂（月线门+132.8%→+190.9%）——绝对数以 Windows 为准；split 方向仍对（split后收益更低=震荡票多买）
+
+**P2-1 配置驱动装配台完成（CPU设计+审校，已提交）**：
+- core/backtest/registry.py：StrategyRegistry/GateRegistry（type字符串→类，参考tags/registry）
+- core/backtest/config.py：PipelineConfig（from_dict/from_yaml/validate/merged_risk——默认风控+配置覆盖，不全覆盖）
+- pipeline：__init__ 加可选 gates=None（默认走旧逻辑零破坏）；from_config 类方法（build_strategy/build_gates装配）；run_with_config 一步到位
+- 验收（同数据两种装配逐位一致）：无闸门 -0.0156/26笔 ✅；带WangwenGate(ww_min2/ww_exit1) ✅
+- config/pipelines/：regression_000063.yaml + ww_gate_000063.yaml 示例
+- ⚠️ 修 bug：from_config 传残 risk dict 覆盖默认风控 → merged_risk 合并

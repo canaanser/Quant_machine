@@ -2,5 +2,7 @@
 """回测引擎流水线包（2026-08-26 小二陈：core/backtest.py 拆分为包结构）"""
 
 from .pipeline import BacktestPipeline
+from .config import PipelineConfig
+from .registry import StrategyRegistry, GateRegistry
 
-__all__ = ['BacktestPipeline']
+__all__ = ['BacktestPipeline', 'PipelineConfig', 'StrategyRegistry', 'GateRegistry']
