@@ -250,3 +250,16 @@ python -B scripts/run_simple_pool.py [--tickers <15只>] [--bottom] [--mode 建�
 - **以老板 Windows 数据为唯一事实源**，与我（WSL）对不上是正常（缓存旧/复权差异），不纠结两边差异
 - **要提醒的 = 数据本身不自洽**：同场景两次跑数字大变 / 财报日期前后矛盾 / pubDate 前视 / 样本对不上 / 收益突变无原因
 - 数字好得离谱或差得离谱 → 先怀疑数据自洽性，再谈策略
+
+### 3.8 复现对账纪律：Windows cmd 是唯一执行台（2026-09-05 老板拍板，09-06 打通自跑）
+
+- **凡是要与 Windows 数字对账的回测复现，一律走 Windows cmd**——WSL 跑的数字不作数、不背书
+- **2026-09-06 打通：小二陈可在 WSL 直调 Windows python，数字与老板逐位一致**（不再需要老板手动跑）：
+  `cmd.exe /d /c "cd /d E:\stockgate\Quant_Alpha_System && set PYTHONIOENCODING=utf-8 && python -B scripts\run_simple_pool.py <参数> > E:\stockgate\Quant_Alpha_System\outputs\xxx.txt 2>&1 & echo DONE"`
+  - Windows python = `E:\python\python.exe`（py3.13.4 / pandas 2.3.3 / numpy 2.2.6）；不加 PYTHONIOENCODING 会 GBK 崩
+  - 输出文件经 /mnt/e 可直接读；已验证与老板 ledger_full.txt **diff 0 差异**
+- **原因（2026-09-05 实测定案）**：同一仓库、同一 stockdb 服务、同一命令，WSL 与 Windows 结果仍不同（如精选15 = WSL 2204笔/492.86% vs Windows 2051笔/483.74%）；000063 单票裸策略两边逐位一致，但 15 只多票组合分叉 → 差异在组合层（趋势门/排序竞争对评分尾差敏感，代码注释："0.1% 评分差经 _buy_count 放大成 4 倍收益差"）
+- 环境差异已排除项：代码同源（E盘共享）、复权因子同表、成交价全量一致（2051 笔 0 差异）、数据范围同（1031 交易日）；残留差异源：SDK vs HTTP 数据细节、pandas 3.0.5(WSL) vs 2.3.3(Windows) 数值行为
+- **WSL 定位**：开发/写码/看代码/生成口令；**Windows cmd 定位**：一切"出数字"的活
+- 小二陈已备独立 venv `.venv-winlike`（pandas 2.3.3+numpy 2.2.6，同 Windows 版）——仅作开发自检参考，不替代 cmd 通道
+- **2026-09-06 验账定案**：精选15 流水 2051 笔全量核对通过（价=qfq收盘/一手/卖超/资产链 0 差异）——流水为真、无假账

@@ -2,11 +2,14 @@
 
 > 用法：先在此表按关键词定位日期与文件，再进 `YYYY-MM-DD/` 看详情；或 `grep -rn "关键词" docs/dev_notes/`
 > ⚠️ 2026-09-05 拆档：原 `2026-09-02/README.md` 曾被跨日追加（09-02→09-05），现按 git 提交日期拆为 09-03/09-04/09-05 三日，节号沿用原编号，见各文件头注。
+> ⭐ 2026-09-06 起：复现对账用 **cmd 通道**（WSL 直调 Windows python），数字与老板逐位一致；见 2026-09-06/README.md §三。
 
 ## 模块 / 系统
 
 | 关键词 | 涉及日期 | 文件 | 关键数字 / 状态 |
 |--------|---------|------|----------|
+| **cmd 通道（WSL 直调 Windows python）** | 2026-09-06 | 2026-09-06/README.md | cmd.exe /d /c "cd /d E:\... && set PYTHONIOENCODING=utf-8 && python -B ..."；E:\python\python.exe = py3.13.4/pandas2.3.3 |
+| **流水账验收（精选15）** | 2026-09-06 | 2026-09-06/README.md | 2051 笔全量 0 差异：价=qfq收盘/数量/卖超/资产链全过 ✅ 流水为真无假账 |
 | 标签系统（tag/震荡票/市值/王文五） | 2026-08-31 | 2026-08-31/README.md | 提交 7dd1135/a1518b0；震荡26/趋势57；震荡∩王文五4项=6只 |
 | 档案系统（股票=人/虚拟组装/reader） | 2026-08-31 | 2026-08-31/README.md | 提交 ce1f6af；4 reader（kline/fundamentals/tags/meta） |
 | 趋势线检测（fractal/摆动点/三点确认） | 2026-09-02 | 2026-09-02/README.md | v3 定版；core/trendline/detector.py；touch2%/span15~250 |
