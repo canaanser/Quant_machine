@@ -1,6 +1,0 @@
-keys -> ['date', 'code', 'name', 'open', 'high', 'low', 'close', 'pre_close', 'volume', 'amount', 'turnover', 'pct_chg', 'amplitude', 'is_st', 'vol_ratio', 'total_share', 'float_share', 'total_mv', 'float_mv', 'pe_ttm', 'pb']
-vals -> [20260909, '603256', '宏和科技', 128.79, 131.54, 126.76, 128.25, 126.78, 13781400, 1771890000, 1.52, 1.16, 3.77, False, 0.71, 904586445, 904586445, 116013000000, 116013000000, 234.83, 39.34]
-val err TypeError("QueryResult.val() missing 1 required positional argument: 'value'")
-all -> [20260909, '603256', '宏和科技', 128.79, 131.54, 126.76, 128.25, 126.78, 13781400, 1771890000, 1.52, 1.16, 3.77, False, 0.71, 904586445, 904586445, 116013000000, 116013000000, 234.83, 39.34]
-tobytes -> b'4\nexec\n53\ncmd=get&t=\xe6\x97\xa5k&k1=key:603256&k2=fwz:20260909,20260909\n\n'
-get date -> 20260909

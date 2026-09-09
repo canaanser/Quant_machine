@@ -38,3 +38,20 @@ outputs/*.txt
 tools/_*.py
 *.log
 *.lock
+
+# ===== 基线清理 (2026-09-10, review/baseline-cleanup) =====
+# 探针/临时 (tools/_* 探针输出, 不物理删)
+tools/_*
+tools/nul
+8min
+# 不在用内嵌 Python310 运行时 (zip 保留可复现)
+tools/3rdpart_py310/
+# outputs: 敏感凭据/台账/运行产物/缓存 (本地保留, 不进版本库)
+outputs/emt_creds.json
+outputs/ledger.json
+outputs/duty_state.json
+outputs/snap_*.json
+outputs/tray_lamp*.png
+outputs/demo/
+outputs/visualization/
+outputs/*_cache.json

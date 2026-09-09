@@ -1,5 +1,0 @@
-pool83 Ö»Êý: 83
-Traceback (most recent call last):
-  File "E:\stockgate\Quant_Alpha_System\tools\_p83.py", line 10, in <module>
-    from core.lib import rdx
-ModuleNotFoundError: No module named 'core'

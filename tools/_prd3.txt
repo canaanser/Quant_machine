@@ -1,2 +1,0 @@
-day_rows len= 0 []
-close_px= {}

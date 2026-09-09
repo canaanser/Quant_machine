@@ -1,5 +1,0 @@
-len= 21
-dir= ['all', 'do', 'get', 'keys', 'len', 'mget', 'set', 'tobytes', 'url', 'val', 'vals']
-raw[ 0 ] = QueryResult []
-raw[ 1 ] = QueryResult []
-raw[ 2 ] = QueryResult []
