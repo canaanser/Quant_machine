@@ -55,3 +55,8 @@ outputs/tray_lamp*.png
 outputs/demo/
 outputs/visualization/
 outputs/*_cache.json
+# 第二波 (2026-09-10, review/outputs-cleanup2): 无引用的遗留探针与研究自生成缓存
+outputs/ace_task.xml
+outputs/emt_app.js
+outputs/bigcap_ladder.json
+outputs/bigcap_ww_local.json
