@@ -3,7 +3,7 @@
 数据加载公共工具（缓存等）
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 

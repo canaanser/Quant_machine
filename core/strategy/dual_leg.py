@@ -17,7 +17,7 @@
   保证与暴力路径逐位一致。
 """
 from .simple import SimpleStrategy
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 import numpy as np
 

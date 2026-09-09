@@ -9,7 +9,7 @@
   预计算全历史矩阵，回测主循环每天 O(1) 查表——语义不变（停牌日 NaN 按 fillna(0)
   即"价格不变"处理，与原逐股 dropna 语义近似）。
 """
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -19,7 +19,7 @@ class TagsReader(BaseProfileReader):
         self.tag_names = tag_names
 
     def read(self, code: str, date=None, **kw) -> dict:
-        from core.tags import list_tags, tag_at
+        from core.stocktags import list_tags, tag_at
         names = self.tag_names or [t['name'] for t in list_tags()]
         out = {}
         for t in names:

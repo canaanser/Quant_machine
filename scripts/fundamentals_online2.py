@@ -19,7 +19,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
+sys.path.insert(0, str(PROJECT_ROOT / '3rdpart_pybao'))
 from config.config import SCAN_TICKERS, SCAN_TICKERS_CURATED, FUNDAMENTALS_REPORTS_DIR
 import stock_sdk
 import pandas as pd

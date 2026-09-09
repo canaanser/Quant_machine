@@ -1,0 +1,13 @@
+# 本地数据/缓存/输出 —— 不进镜像(体积大且是机器私有)
+data/index_store/*.db
+data/cache/
+data/info/fundamentals/reports/
+outputs/
+logs/
+__pycache__/
+*.pyc
+.venv*/
+.git/
+*.md.bak
+.DS_Store
+参考/

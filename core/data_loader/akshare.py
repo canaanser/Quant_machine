@@ -3,13 +3,13 @@
 akshare 数据源
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
 import pandas as pd
 from config import START_DATE, END_DATE
-from ..data_structures import metadata
+from ..struct.data_structures import metadata
 
 def fetch_data_akshare(stock_list, benchmark_code="sh000300", start=START_DATE, end=END_DATE) -> metadata:
     import akshare as ak

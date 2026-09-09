@@ -1,0 +1,10 @@
+# Windows 权威执行台依赖锁 (E:\python, py3.13.4, 2026-09-07 实测)
+# 出数字/对账以本环境为准 (DECISIONS.md §3.8)
+pandas==2.3.3
+numpy==2.2.6
+statsmodels==0.14.6
+matplotlib==3.10.8
+streamlit==1.61.1
+yfinance==1.2.0
+akshare==1.18.51
+openpyxl==3.1.5

@@ -5,7 +5,7 @@
   base.py（缓存工具）/ yfinance / akshare / baostock / freestockdb（含 HTTP 适配）
 """
 
-from ..data_structures import metadata
+from ..struct.data_structures import metadata
 from config import START_DATE, END_DATE
 from .base import (_STOCKDB_CACHE_DIR, _cache_path, _load_stockdb_cache, _save_stockdb_cache)
 from .yfinance import fetch_data_yfinance

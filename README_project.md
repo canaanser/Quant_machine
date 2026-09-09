@@ -21,7 +21,7 @@
 - `logs/`: 运行日志
 - `orders/`: 订单流水记录
 
-### `pybao/` - free-stockdb SDK
+### `3rdpart_pybao/` - free-stockdb SDK
 本地数据引擎的Python绑定，请勿修改。
 
 ## 📌 使用建议

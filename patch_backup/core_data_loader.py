@@ -97,12 +97,12 @@ def fetch_data_freestockdb(
 ) -> metadata:
     """
     从 free-stockdb 本地数据引擎获取数据（使用 Python SDK）
-    需要先运行 pybao/安装.py 安装依赖
+    需要先运行 3rdpart_pybao/安装.py 安装依赖
     """
     import sys as _sys
     import os as _os
     project_root = _os.path.dirname(_os.path.dirname(__file__))
-    pybao_path = _os.path.join(project_root, 'pybao')
+    pybao_path = _os.path.join(project_root, '3rdpart_pybao')
     if pybao_path not in _sys.path:
         _sys.path.insert(0, pybao_path)
     
@@ -111,8 +111,8 @@ def fetch_data_freestockdb(
     except ImportError:
         print("❌ 无法导入 free-stockdb SDK")
         print("   请确保:")
-        print("   1. 将 free-stockdb 发行包中的 pybao 文件夹复制到项目根目录")
-        print("   2. 运行 python pybao/安装.py 安装依赖")
+        print("   1. 将 free-stockdb 发行包中的 3rdpart_pybao 文件夹复制到项目根目录")
+        print("   2. 运行 python 3rdpart_pybao/安装.py 安装依赖")
         raise
     
     # 初始化 SDK 连接

@@ -1,0 +1,575 @@
+# -*- coding: utf-8 -*-
+"""tray_guard — 量化看守·系统托盘壳 (2026-09-09)
+给值守引擎一个状态栏图标 + 右键菜单操控, 为以后可视化操作打底。
+只做"看护/操控", 不放真单: 菜单动作 = 查看状态/启动/重启/打开日志与目录/退出壳;
+真实买卖仍只由 duty_engine 在 14:44 执行段自动做(单实例锁兜底, 本壳绝不代下单)。
+
+图标颜色:  绿=引擎在岗(心跳<20s)  黄=心跳过期(引擎可能挂)  红=引擎不在
+依赖:      pystray + pillow (E:\\python 已装)
+启动(生产): E:\\python\\量化看守.exe -B duty\\tray_guard.py   (登录计划任务 QuantTrayOnLogon)
+"""
+import io, os, subprocess, sys, threading, time
+from pathlib import Path
+ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+try:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+import pystray
+from PIL import Image, ImageDraw
+
+HEART = ROOT / "outputs" / "watch_heartbeat.txt"
+TRAY_LOG = ROOT / "outputs" / "tray_guard_log.txt"
+ENGINE = ROOT / "duty" / "duty_engine.py"
+EXE = sys.executable or r"E:\python\量化看守.exe"
+
+_stop = threading.Event()
+
+import ctypes
+from ctypes import wintypes
+
+
+def tlog(msg):
+    try:
+        with open(TRAY_LOG, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
+
+def now_s():
+    return time.time()
+
+
+def heart_age():
+    """心跳文件年龄秒; 无文件/异常返回很大"""
+    try:
+        return now_s() - HEART.stat().st_mtime
+    except Exception:
+        return 10 ** 6
+
+
+def heart_state():
+    """解析心跳内容 state=duty|盘后|tasks=4 -> (ts, session)"""
+    try:
+        line = HEART.read_text(encoding="utf-8").strip()
+        ts = line[:19]
+        sess = line.split("state=")[1].split("|")[1] if "state=" in line else "?"
+        return ts, sess
+    except Exception:
+        return "", "?"
+
+
+def engine_alive():
+    return heart_age() < 20
+
+
+def engine_pids():
+    """找正在跑 duty_engine.py 的进程PID (按命令行匹配, 避免误杀托盘自身)
+    GUI进程内调控制台程序必须带 CREATE_NO_WINDOW, 否则闪cmd框"""
+    pids = []
+    try:
+        script = (
+            "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe' OR Name='python.exe'"
+            " OR Name='量化看守.exe'\" | Where-Object { $_.CommandLine -like '*duty_engine.py*' }"
+            " | ForEach-Object { $_.ProcessId }"
+        )
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                             capture_output=True, text=True, timeout=20,
+                             creationflags=0x08000000).stdout
+        for ln in out.splitlines():
+            ln = ln.strip()
+            if ln.isdigit():
+                pids.append(int(ln))
+    except Exception as e:
+        tlog(f"engine_pids err: {repr(e)[:80]}")
+    return pids
+
+
+def _spawn_engine():
+    """无条件拉起引擎进程(单实例锁由引擎自己挡双跑); 返回 bool
+    stderr/stdout 捕获到文件: 定位'Popen返回但进程没起来'类问题"""
+    try:
+        errf = open(ROOT / "outputs" / "engine_spawn_stderr.log", "ab")
+        subprocess.Popen([EXE, "-B", str(ENGINE)], cwd=str(ROOT),
+                         creationflags=0x08000000,
+                         stdout=errf, stderr=errf)
+        return True
+    except Exception as e:
+        tlog(f"_spawn err: {repr(e)[:80]}")
+        return False
+
+
+def start_engine():
+    """启动引擎: 进程检测为准(心跳判断会误判刚kill的实例还'在岗')"""
+    pids = engine_pids()
+    if pids:
+        return f"引擎已在跑 PID={pids}"
+    ok = _spawn_engine()
+    tlog(f"拉起 duty_engine -> {'OK' if ok else 'FAIL'}")
+    return "已拉起" if ok else "拉起失败, 看日志"
+
+
+def restart_engine():
+    dead = []
+    for pid in engine_pids():
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True,
+                           timeout=10, creationflags=0x08000000)
+            dead.append(pid)
+        except Exception:
+            pass
+    if dead:
+        time.sleep(2.0)          # 等旧进程彻底退出(OS释放 resident.lock)
+    ok = _spawn_engine()          # 无条件起新的, 锁会挡掉任何漏网旧实例
+    msg = "已重启" if ok else "重启失败"
+    tlog(f"重启引擎 旧PID={dead} -> {msg}")
+    return msg
+
+
+def make_icon(color):
+    """64x64 纯色状态灯: 整块实色圆角方块(无高光/渐变, 托盘缩放下颜色才准)"""
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([2, 2, 62, 62], radius=12, fill=color)
+    return img
+
+
+GREEN = (46, 160, 67, 255)
+YELLOW = (240, 180, 41, 255)
+RED = (214, 69, 65, 255)
+
+
+def status_lines():
+    ts, sess = heart_state()
+    age = heart_age()
+    if engine_alive():
+        st = "运行中"
+        color = GREEN
+    elif age < 90:
+        st = "心跳过期(可能挂)"
+        color = YELLOW
+    else:
+        st = "未运行"
+        color = RED
+    return color, [
+        f"量化看守 · {st}",
+        f"时段: {sess}   心跳: {ts or '--'}",
+    ]
+
+
+def snapshot():
+    """状态快照 -> (color, head, line)
+    head/line 为纯文本(Windows菜单单色, 彩灯在左键面板里画); color 同时驱动托盘图标色"""
+    ts, sess = heart_state()
+    age = heart_age()
+    if engine_alive():
+        st, color = "运行中", GREEN
+    elif age < 90:
+        st, color = "心跳过期", YELLOW
+    else:
+        st, color = "未运行", RED
+    head = f"量化看守 · {st}"
+    line = f"时段: {sess}    心跳: {ts or '--'}"
+    return color, head, line
+
+
+# ---------------- 自绘右键菜单(紧凑倒角面板 + 渐隐分隔 + 文字不动的平滑高亮) ----------------
+_MENU_W = 222
+_MENU_H = 27          # 行高(贴近系统菜单的紧凑度)
+_MENU_SEP = 10        # 分隔区高
+_CHAM = 7             # 四角倒角(斜切)尺寸 —— 老板要的"倒角", 不是圆弧
+_M = 1                # 外衬边距(canvas底色形成1px衬边)
+_TC = "#010203"       # 透明色(把窗口四角切成倒角用; 与界面色不相撞)
+_BG = "#f7f8fa"       # 面板底
+_OUT = "#e7eaef"      # 面板外衬(倒角露出的颜色)
+_FG = "#1b1f24"       # 主文字
+_FG2 = "#5a6472"      # 次要文字(信息行)
+_HOV = "#dfe6f2"      # hover 高亮
+_SEP_C = "#b8bfc9"    # 分隔线中心色
+_FONT = ("Microsoft YaHei UI", 9)
+_FONT2 = ("Microsoft YaHei UI", 8)
+_CURRENT_ICON = [None]
+
+
+def _sep_image(w):
+    """分隔渐变图: 中间实->两端融进面板底(不缓存: PhotoImage 不能跨Tk解释器线程用)"""
+    from PIL import Image as _I, ImageDraw as _ID
+    from PIL import ImageTk
+    h = 1
+    img = _I.new("RGB", (w, h), _BG)
+    d = _ID.Draw(img)
+    for x in range(w):
+        k = 1 - abs(x - w / 2) / (w / 2)
+        a = int(255 * (0.10 + 0.90 * (k ** 1.6)))
+        r = int(int(_SEP_C[1:3], 16) * a / 255 + int(_BG[1:3], 16) * (1 - a / 255))
+        g = int(int(_SEP_C[3:5], 16) * a / 255 + int(_BG[3:5], 16) * (1 - a / 255))
+        b = int(int(_SEP_C[5:7], 16) * a / 255 + int(_BG[5:7], 16) * (1 - a / 255))
+        d.line([(x, 0), (x, 0)], fill=(r, g, b))
+    return ImageTk.PhotoImage(img)
+
+
+def show_popup():
+    """托盘右键: 在鼠标处弹自绘圆角菜单(独立线程, 系统菜单无法圆角/渐变)"""
+    threading.Thread(target=_popup_run, daemon=True).start()
+
+
+def _popup_run():
+    global _CURRENT_ICON
+    try:
+        import tkinter as tk
+        from PIL import ImageTk
+    except Exception as e:
+        tlog(f"popup无tk: {repr(e)[:60]}")
+        return
+    color, head, line = snapshot()
+    rows = [
+        dict(t=head, dot=color, small=False),
+        dict(t=line, dot=None, small=True),
+        dict(sep=True),
+        dict(t="打开状态面板", act=lambda: show_panel()),
+        dict(t="启动值守引擎", act=lambda: _act(_start_or_tip)),
+        dict(t="重启值守引擎", act=lambda: _act(restart_engine)),
+        dict(sep=True),
+        dict(t="打开值守日志", act=lambda: _open(ROOT / "outputs" / "duty_log.txt")),
+        dict(t="打开 outputs 目录", act=lambda: _open(ROOT / "outputs")),
+        dict(sep=True),
+        dict(t="退出量化看守", act=lambda: _quit(_CURRENT_ICON[0])),
+    ]
+    root = tk.Tk()
+    root.withdraw()
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+    tc_ok = False
+    try:
+        # Windows Tk: 指定色像素全透明 -> 用于把窗口四角切成斜切倒角(窗框外形倒角)
+        root.attributes("-transparentcolor", _TC)
+        tc_ok = True
+    except Exception:
+        pass
+
+    # 行几何(内容从面板内边距起)
+    IN = 6            # 内容上/左右内边距
+    geo = []
+    y = IN
+    for r in rows:
+        hh = _MENU_SEP if r.get("sep") else _MENU_H
+        r["y0"], r["y1"] = y, y + hh
+        geo.append((r, y, y + hh))
+        y += hh
+    y += IN
+    W = _MENU_W
+    H = y
+
+    cv = tk.Canvas(root, width=W, height=H, bg=_TC if tc_ok else _BG,
+                   highlightthickness=0, bd=0)
+    cv.pack()
+
+    sep_img = _sep_image(W - 2 * IN)
+    hover_row = [None]
+
+    def draw(h):
+        cv.delete("all")
+        # 整窗面板底(先矩形, 四角透明三角切成倒角)
+        cv.create_rectangle(0, 0, W, H, fill=_BG, outline="")
+        if tc_ok:
+            ch = _CHAM
+            for x0, y0, dx, dy in ((0, 0, 1, 1), (W, 0, -1, 1),
+                                   (0, H, 1, -1), (W, H, -1, -1)):
+                tri = [(x0, y0), (x0 + dx * ch, y0), (x0, y0 + dy * ch)]
+                cv.create_polygon(tri, fill=_TC, outline=_TC)
+        for r, y0, y1 in geo:
+            if r.get("sep"):
+                sx, sy = IN, (y0 + y1) // 2
+                cv.create_image(sx, sy, image=sep_img, anchor="nw")
+                continue
+            is_hover = (h == id(r))
+            if is_hover:
+                cv.create_rectangle(3, y0 + 1, W - 3, y1 - 1, fill=_HOV, outline="")
+            dotx = IN + 10
+            tx = IN + 24
+            if r.get("dot"):
+                cy = y0 + (y1 - y0) / 2
+                cv.create_oval(dotx - 4, cy - 4, dotx + 4, cy + 4,
+                               fill=_hex(r["dot"]), outline="")
+            col = _FG2 if r.get("small") else _FG
+            font = _FONT2 if r.get("small") else _FONT
+            # 文字位置/颜色与 hover 无关: 高亮只是底, 文字永不动
+            cv.create_text(tx, y0 + (y1 - y0) / 2, text=r["t"], anchor="w",
+                           fill=col, font=font)
+
+    def hit(e):
+        for r, y0, y1 in geo:
+            if y0 <= e.y <= y1 and not r.get("sep"):
+                return r
+        return None
+
+    opened = [time.time()]
+
+    def on_motion(e):
+        r = hit(e)
+        nid = id(r) if r else None
+        if nid != hover_row[0]:
+            hover_row[0] = r if r else None
+            draw(id(r) if r else None)
+
+    def on_leave(_):
+        root.destroy()
+
+    def on_click(e):
+        r = hit(e)
+        root.destroy()
+        if r and r.get("act"):
+            try:
+                r["act"]()
+            except Exception as ex:
+                tlog(f"popup act err: {repr(ex)[:80]}")
+
+    def poll_outside():
+        # 点击窗口外(Esc/外部左键)关闭
+        if not root.winfo_exists():
+            return
+        if time.time() - opened[0] > 0.4:
+            try:
+                if ctypes.windll.user32.GetAsyncKeyState(1) & 1:
+                    px = root.winfo_pointerx() - root.winfo_rootx()
+                    py = root.winfo_pointery() - root.winfo_rooty()
+                    if px < 0 or py < 0 or px > W or py > H:
+                        root.destroy()
+                        return
+            except Exception:
+                pass
+        root.after(120, poll_outside)
+
+    cv.bind("<Motion>", on_motion)
+    cv.bind("<Leave>", on_leave)
+    cv.bind("<Button-1>", on_click)
+    # 弹在鼠标位置(防出屏)
+    mx, my = root.winfo_pointerx(), root.winfo_pointery()
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    if mx + W > sw:
+        mx = sw - W - 4
+    if my + H > sh:
+        my = sh - H - 4
+    root.geometry(f"+{mx}+{my}")
+    draw(None)
+    root.deiconify()
+    root.focus_force()
+    root.after(200, poll_outside)
+    root.mainloop()
+
+
+def _start_or_tip():
+    if engine_alive():
+        return "引擎已在岗(心跳正常), 无需启动"
+    return start_engine()
+
+
+def _act(fn):
+    msg = fn()
+    try:
+        pystray.notify(msg, "量化看守")
+    except Exception:
+        pass
+
+
+def _open(path):
+    try:
+        os.startfile(str(path))
+    except Exception as e:
+        tlog(f"open err {path}: {repr(e)[:60]}")
+
+
+def _quit(icon):
+    _stop.set()
+    icon.stop()
+
+
+# ---------------- 状态面板(托盘左键单击弹出; 菜单是单色文本带不了彩灯, 灯画在这里) ----------------
+_panel_lock = threading.Lock()
+_panel_root = None
+
+
+def _hex(c):
+    return "#%02x%02x%02x" % c[:3]
+
+
+def _panel_run():
+    """在独立线程建 Tk 面板: 大彩灯(Canvas 真色圆) + 状态 + 操作按钮, 每1秒刷新"""
+    global _panel_root
+    try:
+        import tkinter as tk
+    except Exception as e:
+        tlog(f"面板不可用(无tkinter): {repr(e)[:60]}")
+        return
+    root = tk.Tk()
+    root.title("量化看守")
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"360x240+{sw - 400}+{sh - 330}")
+    bg = "#f2f2f2"
+    root.configure(bg=bg)
+
+    # 顶栏(按住可拖动; ✕关闭面板)
+    bar = tk.Frame(root, bg="#1f6f43", height=34)
+    bar.pack(fill="x")
+    bar.pack_propagate(False)
+    tk.Label(bar, text="量化看守", bg="#1f6f43", fg="white",
+             font=("Microsoft YaHei UI", 11, "bold")).pack(side="left", padx=10)
+    close_lab = tk.Label(bar, text="✕", bg="#1f6f43", fg="white",
+                         font=("Microsoft YaHei UI", 12), cursor="hand2")
+    close_lab.pack(side="right", padx=10, pady=2)
+    close_lab.bind("<Button-1>", lambda e: root.destroy())
+
+    def start_move(e):
+        root._dx, root._dy = e.x_root - root.winfo_x(), e.y_root - root.winfo_y()
+    def do_move(e):
+        root.geometry(f"+{e.x_root - root._dx}+{e.y_root - root._dy}")
+    bar.bind("<Button-1>", start_move)
+    bar.bind("<B1-Motion>", do_move)
+
+    body = tk.Frame(root, bg=bg)
+    body.pack(fill="both", expand=True, padx=14, pady=10)
+    # 左: 大灯 Canvas
+    lamp = tk.Canvas(body, width=110, height=110, bg=bg, highlightthickness=0)
+    lamp.pack(side="left")
+    circ = lamp.create_oval(5, 5, 105, 105, fill=_hex(GREEN), outline="")
+    # 右: 状态文字
+    info = tk.Frame(body, bg=bg)
+    info.pack(side="left", fill="both", expand=True, padx=(12, 0))
+    st_lab = tk.Label(info, text="运行中", bg=bg, fg="#1a1a1a",
+                      font=("Microsoft YaHei UI", 16, "bold"), anchor="w")
+    st_lab.pack(fill="x")
+    dt_lab = tk.Label(info, text="时段: --", bg=bg, fg="#444",
+                      font=("Microsoft YaHei UI", 10), anchor="w")
+    dt_lab.pack(fill="x", pady=(2, 0))
+    hb_lab = tk.Label(info, text="心跳: --", bg=bg, fg="#444",
+                      font=("Microsoft YaHei UI", 10), anchor="w")
+    hb_lab.pack(fill="x")
+
+    btns = tk.Frame(root, bg=bg)
+    btns.pack(fill="x", padx=14, pady=(0, 10))
+
+    def _btn(txt, fn):
+        tk.Button(btns, text=txt, command=fn, bg="#ffffff", fg="#1a1a1a",
+                  relief="flat", bd=1, highlightthickness=1,
+                  font=("Microsoft YaHei UI", 9)).pack(side="left", expand=True, fill="x", padx=3)
+
+    _btn("重启引擎", lambda: _act(restart_engine))
+    _btn("值守日志", lambda: _open(ROOT / "outputs" / "duty_log.txt"))
+    _btn("outputs", lambda: _open(ROOT / "outputs"))
+    _btn("隐藏", root.destroy)
+
+    def tick():
+        if not root.winfo_exists():
+            return
+        color, head, line = snapshot()
+        try:
+            lamp.itemconfig(circ, fill=_hex(color))
+            st = head.split("· ")[-1] if "· " in head else head
+            st_lab.config(text=st, fg=_hex(color))
+            dt_lab.config(text=line.split("心跳")[0].strip())
+            hb_lab.config(text="心跳" + line.split("心跳")[1] if "心跳" in line else line)
+        except Exception:
+            pass
+        root.after(1000, tick)
+
+    with _panel_lock:
+        _panel_root = root
+    root.after(300, tick)
+    root.deiconify()
+    root.mainloop()
+    with _panel_lock:
+        _panel_root = None
+
+
+def show_panel():
+    """托盘左键单击: 打开状态面板(已开则置顶)"""
+    with _panel_lock:
+        if _panel_root is not None:
+            try:
+                _panel_root.lift()
+                _panel_root.attributes("-topmost", True)
+                return
+            except Exception:
+                pass
+    threading.Thread(target=_panel_run, daemon=True).start()
+
+
+def updater(icon):
+    """每2秒: 强制重绘图标(顶掉旧渲染/缓存, 透明度100%), 刷新菜单文本; 引擎死透自动拉起"""
+    last_sig = None
+    last_pull = 0.0
+    while not _stop.is_set():
+        try:
+            color, head, line = snapshot()
+            # 每2秒无条件重设图标 —— 保证状态灯永远在最上层、不被旧图标/缓存盖住
+            icon.icon = make_icon(color)
+            if (color, head, line) != last_sig:
+                icon.title = f"{head} | {line}"
+                last_sig = (color, head, line)
+            # 看护: 心跳停>75s 视为引擎死(进程不在才拉, 防误拉还在跑的实例)
+            age = heart_age()
+            if age > 75 and not engine_pids() and now_s() - last_pull > 90:
+                tlog(f"看护: 心跳停{age:.0f}s且无引擎进程 -> 自动拉起")
+                start_engine()
+                last_pull = now_s()
+        except Exception as e:
+            tlog(f"updater err: {repr(e)[:80]}")
+        _stop.wait(2)
+
+
+def _patch_rightclick_popup():
+    """把 pystray 的右键弹系统菜单 换成 自绘圆角菜单(系统菜单无法圆角/渐变)"""
+    try:
+        from pystray import _win32 as _pw
+        _orig = _pw.Icon._on_notify
+
+        def wrap(self, wparam, lparam):
+            if lparam == 0x0205:  # WM_RBUTTONUP
+                try:
+                    show_popup()
+                except Exception as e:
+                    tlog(f"popup err: {repr(e)[:80]}")
+                return None
+            return _orig(self, wparam, lparam)
+
+        _pw.Icon._on_notify = wrap
+        return True
+    except Exception as e:
+        tlog(f"patch_rightclick err: {repr(e)[:80]}")
+        return False
+
+
+_PATCH_RC = _patch_rightclick_popup()
+
+
+def main():
+    tlog(f"tray_guard 启动 exe={EXE}")
+    # 图标预览导出(核对渲染: 灯=满不透明色块, 无被盖/半透明)
+    try:
+        for nm, c in (("green", GREEN), ("yellow", YELLOW), ("red", RED)):
+            make_icon(c).save(ROOT / "outputs" / f"tray_lamp_{nm}.png")
+    except Exception as e:
+        tlog(f"preview save err: {repr(e)[:60]}")
+    icon = pystray.Icon("量化看守", make_icon(GREEN), "量化看守")
+    _CURRENT_ICON[0] = icon
+    # 不再挂系统菜单(右键已 patch 到自绘圆角菜单)
+    # 冷启动看护: 引擎没在岗就拉起
+    if not engine_alive():
+        tlog("引擎不在岗, 冷启动拉起")
+        start_engine()
+    th = threading.Thread(target=updater, args=(icon,), daemon=True)
+    th.start()
+    try:
+        icon.run()
+    finally:
+        _stop.set()
+        tlog("tray_guard 退出")
+
+
+if __name__ == "__main__":
+    main()

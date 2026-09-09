@@ -3,7 +3,7 @@
 Alpha 剥离策略（滚动OLS残差动量）
 （2026-08-26 小二陈：从 core/strategy.py 拆出，接口不变）
 """
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 

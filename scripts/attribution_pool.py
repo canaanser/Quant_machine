@@ -19,8 +19,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(PROJECT_ROOT / 'pybao') not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT / 'pybao'))
+if str(PROJECT_ROOT / '3rdpart_pybao') not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / '3rdpart_pybao'))
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')

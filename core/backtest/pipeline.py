@@ -11,9 +11,9 @@ import logging
 import pandas as pd
 
 from config import COMMISSION, INITIAL_CASH
-from core.logger import get_logger
-from ..data_structures import metadata
-from ..simulated_adapter import SimulatedBrokerAdapter
+from core.lib.logger import get_logger
+from ..struct.data_structures import metadata
+from .simulated_adapter import SimulatedBrokerAdapter
 from .base import _BacktestBase
 from .pattern_mixin import _PatternScanMixin
 from .execution_mixin import _ExecutionMixin
@@ -268,7 +268,7 @@ class BacktestPipeline(_BacktestBase, _PatternScanMixin, _ExecutionMixin):
         week/month: 单级别趋势门。multi: 月+周+日 三级打分。boll: 布林带 Squeeze 闸。
         数据用 market_data 的 OHLCV（与回测同源，无未来数据）。
         """
-        from core.trendline.state import period_state_map, multi_level_score, bollinger_gate_state
+        from core.features.trendline.state import period_state_map, multi_level_score, bollinger_gate_state
         self._trend_state = {}
         self._trend_score = {}
         freq = 'W-FRI' if self.trend_gate == 'week' else ('ME' if self.trend_gate == 'month' else None)

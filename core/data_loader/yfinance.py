@@ -5,7 +5,7 @@ yfinance 数据源
 """
 import pandas as pd
 from config import START_DATE, END_DATE
-from ..data_structures import metadata
+from ..struct.data_structures import metadata
 
 def fetch_data_yfinance(tickers, start=START_DATE, end=END_DATE) -> metadata:
     # 延迟导入：避免在未安装 yfinance 的环境（如 WSL/Linux）import 本模块失败

@@ -1,0 +1,43 @@
+# duty schedule (editable; restart engine to apply)
+market:
+  trading_weekdays: [0, 1, 2, 3, 4]
+  off_days: []
+  retire: "15:45"   # 仅 --retire 一次性模式的收盘退岗时刻(常驻模式忽略)
+session:
+  pre: "09:15"
+  open: "09:30"
+  lunch: "11:30"
+  afternoon: "13:00"
+  tail: "14:40"
+  exec: "14:44"
+  close: "15:00"
+  post: "15:05"
+tasks:
+  heartbeat:
+    enabled: true
+    freq_sec: 20
+    window: "09:15-15:30"
+  monitor:
+    enabled: true
+    freq_sec: 60
+    window: "09:30-11:30,13:00-14:40"
+    near_fangbeng: 1.03
+  tail_exec:
+    enabled: true
+    at_time: "14:44"
+    once: true
+  close_sync:
+    enabled: true
+    at_time: "15:05"
+    once: true
+  evening_plan:
+    enabled: false
+    at_time: "18:30"
+    once: true
+paths:
+  heartbeat: outputs/watch_heartbeat.txt
+  state: outputs/duty_state.json
+  decisions: outputs/duty_decisions.log
+  log: outputs/duty_log.txt
+  next_plan: outputs/next_plan.csv
+  orders_sent: outputs/orders_sent.json

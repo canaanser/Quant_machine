@@ -3,13 +3,22 @@
 freestockdb 数据源（SDK + HTTP 适配 + 缓存）
 （2026-08-26 小二陈：从 core/data_loader.py 拆出，接口不变）
 """
-from core.logger import get_logger
+import os
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
+
+def _db_host():
+    """stockdb 服务地址: 优先环境变量 STOCKDB_HOST(容器里指 host.docker.internal), 默认本机"""
+    return os.environ.get("STOCKDB_HOST", "127.0.0.1")
+
+def _db_port():
+    return int(os.environ.get("STOCKDB_PORT", "7899"))
+
 import pandas as pd
 from config import START_DATE, END_DATE
-from ..data_structures import metadata
+from ..struct.data_structures import metadata
 from .base import _STOCKDB_CACHE_DIR, _cache_path, _load_stockdb_cache, _save_stockdb_cache
 
 def fetch_data_stockdb_http(
@@ -174,12 +183,12 @@ def fetch_data_freestockdb(
 ) -> metadata:
     """
     从 free-stockdb 本地数据引擎获取数据（使用 Python SDK）
-    需要先运行 pybao/安装.py 安装依赖
+    需要先运行 3rdpart_pybao/安装.py 安装依赖
     """
     import sys as _sys
     import os as _os
     project_root = _os.path.dirname(_os.path.dirname(__file__))
-    pybao_path = _os.path.join(project_root, 'pybao')
+    pybao_path = _os.path.join(project_root, '3rdpart_pybao')
     if pybao_path not in _sys.path:
         _sys.path.insert(0, pybao_path)
 
@@ -210,7 +219,7 @@ def fetch_data_freestockdb(
             end=end_clean,
             frequency=frequency,
             fq=fq,
-            fields="date,code,open,high,low,close,volume,name",
+            fields="date,code,open,high,low,close,volume,name,pe_ttm,pb",
             as_df=True
         )
 
@@ -286,3 +295,133 @@ def fetch_data_freestockdb(
         import traceback
         traceback.print_exc()
         return metadata(price=pd.DataFrame(), benchmark=pd.Series())
+
+
+def fetch_daily_qfq_single(
+    code,
+    start="2020-01-01",
+    end="2026-12-31",
+    frequency="1d",
+) -> pd.DataFrame:
+    """
+    统一日线取数（全系统唯一入口，2026-09-06 老板拍板：模拟/回测/实盘统一口径）。
+
+    - Windows: 走 SDK rd.get_data(fq='qfq') → 前复权由 SDK 统一折算，返回含 turnover 的日线
+    - WSL/无SDK: 回退 HTTP + 本地复权折算（仅开发自检；与 SDK 结果 diff=0 已验）
+
+    返回: DataFrame(index=date(datetime), columns=[open,high,low,close,volume,turnover])
+    """
+    import sys as _sys
+    import os as _os
+    code = str(code).zfill(6)
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
+    pybao_path = _os.path.join(project_root, '3rdpart_pybao')
+    if pybao_path not in _sys.path:
+        _sys.path.insert(0, pybao_path)
+
+    start_c = str(start).replace('-', '')[:8]
+    end_c = str(end).replace('-', '')[:8]
+
+    try:
+        from stock_sdk import rd, init
+        if not getattr(fetch_daily_qfq_single, '_sdk_init', False):
+            init(host="127.0.0.1", port=7899, warm=False)
+            fetch_daily_qfq_single._sdk_init = True
+    except Exception:
+        rd = None
+
+    if rd is not None:
+        # —— 权威通道: SDK 前复权 ——
+        try:
+            rows = rd.get_data(
+                code, start=start_c, end=end_c,
+                frequency=frequency, fq='qfq',
+            )
+            recs = []
+            for r in rows:
+                if not isinstance(r, dict) or r.get('date') is None:
+                    continue
+                recs.append({
+                    'date': pd.to_datetime(str(r['date'])[:8], format='%Y%m%d'),
+                    'open': float(r.get('open') or 0),
+                    'high': float(r.get('high') or 0),
+                    'low': float(r.get('low') or 0),
+                    'close': float(r.get('close') or 0),
+                    'volume': float(r.get('volume') or 0),
+                    'turnover': float(r.get('turnover') or 0),
+                    'is_st': bool(r.get('is_st')) if r.get('is_st') is not None else False,
+                    'name': str(r.get('name') or ''),
+                    'pe_ttm': float(r.get('pe_ttm')) if r.get('pe_ttm') is not None else None,
+                    'pb': float(r.get('pb')) if r.get('pb') is not None else None,
+                })
+            if recs:
+                df = pd.DataFrame(recs).set_index('date').sort_index()
+                df = df[~df.index.duplicated(keep='last')]
+                logger.info(f"✅ SDK qfq 统一取数 {code} {len(df)} 行 "
+                            f"{df.index.min().date()}~{df.index.max().date()}")
+                return df
+            logger.warning(f"⚠️ SDK 返回空 {code}")
+        except Exception as e:
+            logger.error(f"❌ SDK 取数失败 {code}: {e}，回退 HTTP")
+            rd = None
+
+    # —— 开发通道: HTTP + 复权因子折算（仅自检，非权威） ——
+    import json as _json
+    import bisect as _bisect
+    import urllib.request as _ur
+    import urllib.parse as _up
+    _opener = _ur.build_opener(_ur.ProxyHandler({}))
+
+    def _get(t):
+        url = f"http://{_db_host()}:{_db_port()}/?cmd=get&t={_up.quote(t)}"
+        with _opener.open(url, timeout=60) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+
+    daily = {}
+    for year in range(int(start_c[:4]) - 1, int(end_c[:4]) + 2):
+        try:
+            rows = _get(f"日k:{code}:{year}*")
+        except Exception:
+            continue
+        for item in rows:
+            rec = item[1]
+            if rec is None or rec.get('date') is None:
+                continue
+            daily[str(rec['date'])[:8]] = rec
+    fac = {}
+    try:
+        for item in _get(f"复权:{code}*"):
+            fac[str(item[0].split(':')[-1])[:8]] = float(item[1]['cum'])
+    except Exception:
+        pass
+    fdates = sorted(fac)
+    f_latest = fac[fdates[-1]] if fdates else 1.0
+    recs = []
+    for d in sorted(daily):
+        if not (start_c <= d <= end_c):
+            continue
+        r = daily[d]
+        idx = _bisect.bisect_right(fdates, d) - 1
+        f_cur = fac[fdates[idx]] if idx >= 0 else 1.0
+        ratio = f_latest / f_cur
+        decimals = 3 if code.startswith(('1', '5')) else 2  # 与 SDK _apply_fq_in_memory 一致
+        recs.append({
+            'date': pd.to_datetime(d, format='%Y%m%d'),
+            'open': round(float(r['open']) / ratio, decimals),
+            'high': round(float(r['high']) / ratio, decimals),
+            'low': round(float(r['low']) / ratio, decimals),
+            'close': round(float(r['close']) / ratio, decimals),
+            'volume': float(r.get('volume') or 0),
+            'turnover': float(r.get('turnover') or 0),
+            'is_st': bool(r.get('is_st')) if r.get('is_st') is not None else False,
+            'name': str(r.get('name') or ''),
+            'pe_ttm': float(r.get('pe_ttm')) if r.get('pe_ttm') is not None else None,
+            'pb': float(r.get('pb')) if r.get('pb') is not None else None,
+        })
+    if not recs:
+        logger.warning(f"⚠️ HTTP 取数空 {code}")
+        return pd.DataFrame()
+    df = pd.DataFrame(recs).set_index('date').sort_index()
+    df = df[~df.index.duplicated(keep='last')]
+    logger.info(f"🔄 HTTP+qfq自检取数 {code} {len(df)} 行")
+    return df

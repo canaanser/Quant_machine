@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.tags import (produce, backfill, tag_at, filter,
+from core.stocktags import (produce, backfill, tag_at, filter,
                        assemble, hierarchy, list_tags, get)
 
 

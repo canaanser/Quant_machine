@@ -10,9 +10,9 @@ sys.path.append(os.path.dirname(__file__))
 
 import streamlit as st
 
-from views.backtest_view import run_backtest
-from views.data_viewer import run_data_viewer
-from views.pattern_diagnosis import run_pattern_diagnosis
+from core.lib.views.backtest_view import run_backtest
+from core.lib.views.data_viewer import run_data_viewer
+from core.lib.views.pattern_diagnosis import run_pattern_diagnosis
 
 st.set_page_config(page_title="量化回测系统", layout="wide")
 

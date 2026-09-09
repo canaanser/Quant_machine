@@ -4,7 +4,7 @@
 职责：回测主循环中的形态扫描融合、每日投票权重更新。
 """
 
-from core.logger import get_logger
+from core.lib.logger import get_logger
 
 logger = get_logger(__name__)
 

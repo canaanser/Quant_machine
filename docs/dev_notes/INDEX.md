@@ -10,6 +10,11 @@
 |--------|---------|------|----------|
 | **cmd 通道（WSL 直调 Windows python）** | 2026-09-06 | 2026-09-06/README.md | cmd.exe /d /c "cd /d E:\... && set PYTHONIOENCODING=utf-8 && python -B ..."；E:\python\python.exe = py3.13.4/pandas2.3.3 |
 | **流水账验收（精选15）** | 2026-09-06 | 2026-09-06/README.md | 2051 笔全量 0 差异：价=qfq收盘/数量/卖超/资产链全过 ✅ 流水为真无假账 |
+| **主力操盘四阶段模型（砸盘/吸筹/拉升/出货）** | 2026-09-06 | 2026-09-06/README.md §六 | 老板定义 v1；外部消息=主力素材；恐吓vs真跌看换手率 |
+| **换手率分位定标（按股自适应）** | 2026-09-06 | 2026-09-06/README.md §六 | <p20低/中/>p80高；紫金p10=0.62% vs 烽火1.51%（勿一刀切） |
+| **量能验真 v0.1（A/B/C信号）** | 2026-09-06 | 2026-09-06/README.md §七 | ⚠️ 粗糙未固化：单日单维分不开真假；core/volume_truth.py |
+| **研究方向池（24只）** | 2026-09-06 | 2026-09-06/README.md §八 | data/tickers/research_direction.txt；王文五 3项8只/0项3只 |
+| 主力资金流本地数据 | 2026-09-06 | 2026-09-06/README.md §六 | stockdb 资金流:{code} 键，main_net/jumbo/big 等，1700+天 |
 | 标签系统（tag/震荡票/市值/王文五） | 2026-08-31 | 2026-08-31/README.md | 提交 7dd1135/a1518b0；震荡26/趋势57；震荡∩王文五4项=6只 |
 | 档案系统（股票=人/虚拟组装/reader） | 2026-08-31 | 2026-08-31/README.md | 提交 ce1f6af；4 reader（kline/fundamentals/tags/meta） |
 | 趋势线检测（fractal/摆动点/三点确认） | 2026-09-02 | 2026-09-02/README.md | v3 定版；core/trendline/detector.py；touch2%/span15~250 |
@@ -68,3 +73,7 @@
 | 月线门于精选15 | 2026-09-02 | 2026-09-02/README.md | 实盘全趋势票时可再验 |
 | kaleido PNG | 2026-09-02 | 2026-09-02/README.md | Windows 或有 Chrome 环境 |
 | P2 配置驱动层 | 2026-09-05 | 2026-09-05/README.md §十七 | 老板：实盘零增量；脚本组装够用（不恢复） |
+
+| 值守/量化看守引擎 | 2026-09-09 | 2026-09-09/README.md 一、duty/README.md | 定稿常驻: duty_engine+托盘+看门狗+20:00数据同步+20:05/20:40自动计划 |
+| 模拟盘自主运营 | 2026-09-09 | 2026-09-09/README.md 三、docs/auto_run_notes.md | 老板授权一周(9/10起): 保本>降回撤>求利润; 9/10再平衡卖3买2→6只等权 |
+| compose_daily_plan | 2026-09-09 | scripts/compose_daily_plan.py | 每日6只等权再平衡计划器; 归档现金公共模块 core/lib/emq_arch.py |

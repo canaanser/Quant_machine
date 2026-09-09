@@ -23,8 +23,8 @@ if str(PROJECT_ROOT) not in sys.path:
 import pandas as pd
 
 from core.data_loader import load_data
-from core.trendline import detect_trendlines
-from utils.kline_plotter import plot_kline_with_trades
+from core.features.trendline import detect_trendlines
+from core.lib.utils.kline_plotter import plot_kline_with_trades
 
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'outputs')
 

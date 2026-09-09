@@ -8,11 +8,11 @@ import pandas as pd
 import numpy as np
 
 from config import COMMISSION, INITIAL_CASH
-from ..risk_manager import RiskManager
-from ..order_executor import OrderExecutor
-from ..performance_analyzer import PerformanceAnalyzer
-from ..factor_modulator import FactorModulator
-from ..signal_modulator import SignalModulator
+from .risk_manager import RiskManager
+from .order_executor import OrderExecutor
+from .performance_analyzer import PerformanceAnalyzer
+from ..strategy.factor_modulator import FactorModulator
+from ..strategy.signal_modulator import SignalModulator
 from config.risk_config import DEFAULT_RISK_CONFIG
 
 

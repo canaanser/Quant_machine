@@ -1,0 +1,3 @@
+pool83: 83 «∞6: ['000001', '000027', '000066', '000166', '000338', '000425']
+min 000001 type QueryResult
+keys head: [['∑÷÷”k:000001:20260908093000', ['code', 'date', 'open', 'close', 'high', 'low', 'volume', 'amount']], ['∑÷÷”k:000001:20260908093100', ['code', 'date', 'open', 'close', 'high', 'low', 'volume', 'amount']]]

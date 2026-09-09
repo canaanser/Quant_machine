@@ -1,0 +1,732 @@
+<html>
+  <head>
+	  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <title>i5ting_ztree_toc:东方财富证券极速行情系统北交所极速行情API开发手册</title>
+		<link href="toc/style/github-bf51422f4bb36427d391e4b75a1daa083c2d840e.css" media="all" rel="stylesheet" type="text/css"/>
+		<link href="toc/style/github2-d731afd4f624c99a4b19ad69f3083cd6d02b81d5.css" media="all" rel="stylesheet" type="text/css"/>
+		<link href="toc/css/zTreeStyle/zTreeStyle.css" media="all" rel="stylesheet" type="text/css"/>
+	  <style>
+		pre {
+		    counter-reset: line-numbering;
+		    border: solid 1px #d9d9d9;
+		    border-radius: 0;
+		    background: #fff;
+		    padding: 0;
+		    line-height: 23px;
+		    margin-bottom: 30px;
+		    white-space: pre;
+		    overflow-x: auto;
+		    word-break: inherit;
+		    word-wrap: inherit;
+		}
+
+		pre a::before {
+		  content: counter(line-numbering);
+		  counter-increment: line-numbering;
+		  padding-right: 1em; /* space after numbers */
+		  width: 25px;
+		  text-align: right;
+		  opacity: 0.7;
+		  display: inline-block;
+		  color: #aaa;
+		  background: #eee;
+		  margin-right: 16px;
+		  padding: 2px 10px;
+		  font-size: 13px;
+		  -webkit-touch-callout: none;
+		  -webkit-user-select: none;
+		  -khtml-user-select: none;
+		  -moz-user-select: none;
+		  -ms-user-select: none;
+		  user-select: none;
+		}
+
+		pre a:first-of-type::before {
+		  padding-top: 10px;
+		}
+
+		pre a:last-of-type::before {
+		  padding-bottom: 10px;
+		}
+
+		pre a:only-of-type::before {
+		  padding: 10px;
+		}
+
+		.highlight { background-color: #ffffcc } /* RIGHT */
+		</style>
+  </head>
+  <body>
+	  <div>
+				<div style='width:25%;'>
+						<ul id="tree" class="ztree" style='width:100%'>
+
+						</ul>
+				</div>
+        <div id='readme' style='width:70%;margin-left:20%;'>
+          	<article class='markdown-body'>
+            	<font size="6"><strong>东方财富证券极速行情系统北交所极速行情API开发手册(Ver2.23.0)</strong></font><br>
+
+
+
+<font size="6">文档说明</font>
+
+<table><tbody>
+    <tr>
+        <th>日期</th><th>api 版本</th><th>修订摘要</th>
+    </tr>
+    <tr>
+        <td>2025.12.12</td><td>2.23.0</td><td>API初版</td>
+    </tr>
+</table>
+
+<font size="6">前言</font>
+
+<p>本接口规范用以指导开发通过QuoteApiBse对接的方式访问东财北交所快速行情系统，获取快照的相关数据。</p>
+<p>本接口规范描述内容包括可开展的业务、必要的运行指导以及详细的数据交换格式。</p>
+
+<h1 id="quoteapibse-">1.QuoteApiBse介绍</h1>
+<p>本部分主要介绍极速行情系统的接口，包括：</p>
+<ul>
+<li>QuoteApiBse简介</li>
+<li>QuoteApiBse运行模式</li>
+<li>QuoteApiBse编程接口</li>
+</ul>
+<h2 id="quoteapibse-">1.1.QuoteApiBse简介</h2>
+<h3 id="-">1.1.1. 背景</h3>
+<p>为帮助客户实现快速交易并获取实时行情，东方财富证券推出了极速行情系统。客户端系统只需调用QuoteApiBse，即可与北交所极速行情系统进行对接。在接收到极速行情系统的行情数据后，QuoteApiBse 将主动回调客户端系统。</p>
+<h3 id="-">1.1.2. 简介</h3>
+<p>&emsp;&emsp;QuoteApiBse 是一个基于C++的类库，通过使用和扩展类库提供的接口来实现全部的行情功能，支持北交所快照相关数据。</p>
+<p>&emsp;&emsp;该类库包含以下文件：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">文件路径</th>
+<th style="text-align:left">文件名</th>
+<th style="text-align:left">文件描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">demo</td>
+<td style="text-align:left">CMakeLists.txt</td>
+<td style="text-align:left">示例编译文件</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">src/main.cpp</td>
+<td style="text-align:left">示例主函数</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">src/quote_demo_bse.cpp</td>
+<td style="text-align:left">示例接口方法封装</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">src/quote_demo_bse.h</td>
+<td style="text-align:left">示例接口方法头文件</td>
+</tr>
+<tr>
+<td style="text-align:left">doc</td>
+<td style="text-align:left">东方财富证券极速行情系统行情API bse开发手册</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">include</td>
+<td style="text-align:left">quote_api_bse.h</td>
+<td style="text-align:left">定义行情相关接口</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">quote_struct_bse.h</td>
+<td style="text-align:left">定义北交所极速行情相关数据结构</td>
+</tr>
+<tr>
+<td style="text-align:left"></td>
+<td style="text-align:left">quote_bse_define.h</td>
+<td style="text-align:left">定义北交所极速NQHQ相关数据结构</td>
+</tr>
+<tr>
+<td style="text-align:left">lib</td>
+<td style="text-align:left">libemt_quote_api_bse.so</td>
+<td style="text-align:left">Linux行情接口动态链接库</td>
+</tr>
+</tbody>
+</table>
+<h3 id="-">1.1.3. 发行的平台</h3>
+<p>目前发布了以下操作系统平台的版本：</p>
+<ul>
+<li>Intel Linux：包括.h文件和.so文件。</li>
+</ul>
+<p>如果需要其他操作系统版本，请联系行情专线。</p>
+<h2 id="-">1.2. 运行模式</h2>
+<h3 id="-">1.2.1. 工作线程</h3>
+<p>QuoteApiBse 使用 UDP 模式接收行情。客户系统应用程序根据配置的行情类别创建多个线程，即应用程序主线程与 n 个数据处理线程（负责接收上游服务的行情数据并处理相应的回调）。</p>
+<p>QuoteApiBse 提供的接口回调由数据处理线程驱动。通过实现 SPI 中的接口方法，客户系统能够从极速行情系统接收所需数据。</p>
+<h3 id="-">1.2.2. 运行流程</h3>
+<p>客户系统和极速行情系统的交互过程分为2个阶段：</p>
+<ul>
+<li>初始化阶段。</li>
+<li>功能调用阶段。</li>
+</ul>
+<h4 id="-">1.2.2.1. 初始化阶段</h4>
+<p>&emsp;&emsp;在初始化阶段，客户系统的程序必须完成如下步骤（具体代码请参考开发实例）：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">顺序</th>
+<th style="text-align:left">客户系统</th>
+<th style="text-align:left">调用方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">创建一个QuoteApi实例</td>
+<td style="text-align:left">QuoteApiBse::CreateQuoteApiBse</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">产生一个事件处理的实例；（步骤1返回）</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left">注册一个事件处理的实例；</td>
+<td style="text-align:left">QuoteApiBse::RegisterSpi</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">设置登录参数（组播接收时可跳过该步骤）、配置需要接收的行情流</td>
+<td style="text-align:left">QuoteApiBse::SetChannelConfig</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:left">启动工作线程</td>
+<td style="text-align:left">QuoteApiBse::Start</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:left">设置开发代码</td>
+<td style="text-align:left">相关业务回调函数实现</td>
+</tr>
+</tbody>
+</table>
+<p>&emsp;&emsp;<font color=red><em>开发代码由我司人员提供，需客户申请。</em></font></p>
+<h3 id="-">1.2.3. 时序示例</h3>
+<p>&emsp;&emsp;QuoteApiBse 提供了两个接口，分别为QuoteApiBse和QuoteSpiBse。</p>
+<p>&emsp;&emsp;客户系统可以通过QuoteApiBse发出操作请求，通过继承QuoteSpiBse并重载回调函数来处理极速行情系统的回复或响应。</p>
+<h3 id="-">1.2.4. 接收方式</h3>
+<h4 id="-">1.2.4.1. 单播接收模式</h4>
+<p>&emsp;&emsp;单播接收模式需要用户先登录行情网关，鉴权通过后可通过行情绑定的端口接收单播数据</p>
+<h4 id="-">1.2.4.1. 组播接收模式</h4>
+<p>&emsp;&emsp;组播接收模式无需登录可直接接收行情数据</p>
+
+<h1 id="api-">2. API公共接口</h1>
+<h2 id="-">2.1. 业务支持索引</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">方法</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a href="#createQuoteApiBse">CreateQuoteApiBse</a></td>
+<td style="text-align:left">创建一个Quote API接口类实例</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#registerspi">RegisterSpi</a></td>
+<td style="text-align:left">注册回调接口</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#SetChannelConfig">SetChannelConfig</a></td>
+<td style="text-align:left">设置通道接收配置</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#Start">Start</a></td>
+<td style="text-align:left">行情接收启动接口</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#Stop">Stop</a></td>
+<td style="text-align:left">行情接收停止接口</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#Release">Release</a></td>
+<td style="text-align:left">关闭接口，释放资源</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#GetApiVersion">GetApiVersion</a></td>
+<td style="text-align:left">获取版本信息</td>
+</tr>
+</tbody>
+</table>
+<h2 id="api-">2.2. API接口描述</h2>
+<h3 id="createQuoteApiBse">2.2.1. CreateQuoteApiBse</h3>
+<pre><code>/**
+ * @brief  创建API接口类实例
+ * @param  save_file_path             API日志保存路径
+ * @param  log_level                  API日志输出级别
+ *
+ * @return                            EMQ API类的实例
+ */
+static QuoteApiBse *CreateQuoteApiBse(const char *save_file_path, EMQ_LOG_LEVEL log_level = EMQ_LOG_LEVEL_DEBUG);
+</code></pre>
+<h3 id="registerspi">2.2.2. RegisterSpi</h3>
+<pre><code>/**
+* @brief  注册回调接口类spi实例
+* 
+* @param  spi                        派生自回调接口类的实例
+*/
+virtual void RegisterSpi(QuoteSpiBse* spi) = 0;
+</code></pre>
+<h3 id="SetChannelConfig">2.2.3. SetChannelConfig</h3>
+<pre><code>/**
+* @brief 设置通道接收配置, 同时进行内置系统配置最优检查
+* 
+* @param  login_config					行情登录配置
+* @param  config						行情接收通道配置
+* @param  num							配置数量
+* @return                               配置是否成功，"0" 表示配置成功，非"0"表示配置失败
+*/
+virtual int32_t SetChannelConfig(EMQLoginConfigBse login_config, EMQUdpConfigBse *config, uint32_t num) = 0;
+</code></pre>
+<h3 id="Start">2.2.4. Start</h3>
+<pre><code>/**
+ * @brief  								行情接收启动接口
+ * 
+ * @return 								启动是否成功，"0" 表示启动成功，非"0"表示启动失败
+ */ 
+virtual int32_t Start() = 0;
+</code></pre>
+<h3 id="Stop">2.2.5. Stop</h3>
+<pre><code>/**
+ * @brief  								行情接收停止接口
+ * 
+ * @return 								停止是否成功，"0" 表示停止成功，非"0"表示停止失败
+ */ 
+virtual int32_t Stop() = 0;
+</code></pre>
+<h3 id="Release">2.2.6. Release</h3>
+<pre><code>/**
+ * @brief  								关闭接口，释放资源
+ */ 
+virtual void Release() = 0;
+</code></pre>
+<h3 id="GetApiVersion">2.2.7. GetApiVersion</h3>
+<pre><code>/**
+ * @brief  								获取版本信息
+ * 
+ * @return 								API版本号
+ */ 
+virtual const char *GetApiVersion() = 0;
+</code></pre>
+
+<h1 id="api-">3. API业务接口</h1>
+<h2 id="-">3.1. 业务支持索引</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">方法API</th>
+<th style="text-align:left">回调SPI</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a href="#GetPacketHardwareRXTs">GetPacketHardwareRXTs</a></td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">获取网卡收到行情包的硬件时间戳；仅可在对应的行情SPI回调内调用</td>
+</tr>
+</tbody>
+</table>
+<h2 id="api-">3.2. API接口描述</h2>
+<h3 id="GetPacketHardwareRXTs">3.2.1. GetPacketHardwareRXTs</h3>
+<pre><code>/**
+ * @brief  								获取网卡收到行情包的硬件时间戳；仅可在对应的行情SPI回调内调用
+ * 
+ * @return 								网卡收到行情包的硬件时间戳，单位ns
+ */ 
+virtual uint64_t GetPacketHardwareRXTs(void *packet) = 0;
+</code></pre>
+
+<h1 id="spi-">4. SPI接口</h1>
+<h2 id="-">4.1. 业务支持索引</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">方法</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a href="#OnSnapBse">OnSnapBse</a></td>
+<td style="text-align:left">北交所快照行情</td>
+</tr>
+</tbody>
+</table>
+<h2 id="spi-">4.2. SPI接口描述</h2>
+<h3 id="OnSnapBse">4.2.1. OnSnapBse</h3>
+<pre><code>/**
+ *   北交所极速快照行情
+ *   @param snap   北交所快照行情数据
+ */
+virtual void OnSnapBse(EMQBseSnap *snap) {}
+</code></pre>
+
+<h1 id="-">5. 参数结构体</h1>
+<h2 id="-">5.1. 参数结构体索引</h2>
+<h4 id="-">5.1.1. 公共结构体</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">结构体</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a href="#EMQLoginConfigBse">EMQLoginConfigBse</a></td>
+<td style="text-align:left">北交所行情登录配置</td>
+</tr>
+<tr>
+<td style="text-align:left"><a href="#EMQUdpConfigBse">EMQUdpConfigBse</a></td>
+<td style="text-align:left">北交所行情接收配置</td>
+</tr>
+</tbody>
+</table>
+<h4 id="-">5.1.1.1. 北交所相关结构体</h4>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">结构体</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a href="#EMQBseSnap">EMQBseSnap</a></td>
+<td style="text-align:left">北交所快照消息</td>
+</tr>
+</tbody>
+</table>
+<h2 id="-">5.2. 参数结构体描述</h2>
+<h3 id="EMQLoginConfigBse">5.2.1. EMQLoginConfigBse</h3>
+<pre><code>// bse行情接收配置
+struct EMQLoginConfigBse {
+    char login_ip[IP_LEN];        // 登录服务器IP地址
+    uint16_t login_port;          // 登录服务器端口
+    char user_name[32];           // 用户名
+    char user_pwd[32];            // 用户密码
+};
+</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">标识</th>
+<th style="text-align:left">类型及长度</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">login_ip</td>
+<td style="text-align:left">char[<a href="#IP_LEN">IP_LEN</a>]</td>
+<td style="text-align:left">登录地址</td>
+</tr>
+<tr>
+<td style="text-align:left">login_port</td>
+<td style="text-align:left">uint16_t</td>
+<td style="text-align:left">登录端口</td>
+</tr>
+<tr>
+<td style="text-align:left">user_name</td>
+<td style="text-align:left">char[32]</td>
+<td style="text-align:left">用户名</td>
+</tr>
+<tr>
+<td style="text-align:left">user_pwd</td>
+<td style="text-align:left">char[32]</td>
+<td style="text-align:left">密码</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQUdpConfigBse">5.2.2. EMQUdpConfigBse</h3>
+<pre><code>// bse行情接收配置
+struct EMQUdpConfigBse {
+  bool enable;                 // 是否启用
+  EMQBseUdpRecvMode mode;      // 接收模式
+  EMQType quote_type;          // 行情类型
+  char eth_name[ETH_NAME_LEN]; // 网卡名
+  char bind_ip[IP_LEN];        // 行情接收绑定地址
+  uint16_t bind_port;          // 行情接收绑定端口
+  int32_t rx_cpu_id;           // 用于接收的cpu id，-1表示不绑定
+  int32_t handle_cpu_id;       // 用于处理的cpu id，-1表示不绑定
+  int32_t rx_pkt_num;          // 接收内存大小 单位为4MB
+  int32_t spsc_size;           // 缓存队列长度，单位K
+};
+</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">标识</th>
+<th style="text-align:left">类型及长度</th>
+<th style="text-align:left">描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">enable</td>
+<td style="text-align:left">bool</td>
+<td style="text-align:left">是否启用</td>
+</tr>
+<tr>
+<td style="text-align:left">mode</td>
+<td style="text-align:left"><a href="#EMQBseUdpRecvMode">EMQBseUdpRecvMode</a></td>
+<td style="text-align:left">接收模式</td>
+</tr>
+<tr>
+<td style="text-align:left">quote_type</td>
+<td style="text-align:left">EMQType</td>
+<td style="text-align:left">行情类型</td>
+</tr>
+<tr>
+<td style="text-align:left">eth_name</td>
+<td style="text-align:left">char[<a href="#ETH_NAME_LEN">ETH_NAME_LEN</a>]</td>
+<td style="text-align:left">网卡名</td>
+</tr>
+<tr>
+<td style="text-align:left">bind_ip</td>
+<td style="text-align:left">char[<a href="#IP_LEN">IP_LEN</a>]</td>
+<td style="text-align:left">行情接收绑定地址</td>
+</tr>
+<tr>
+<td style="text-align:left">bind_port</td>
+<td style="text-align:left">uint16_t</td>
+<td style="text-align:left">行情接收绑定端口</td>
+</tr>
+<tr>
+<td style="text-align:left">rx_cpu_id</td>
+<td style="text-align:left">int32_t</td>
+<td style="text-align:left">用于接收的CPU ID，-1表示不绑定</td>
+</tr>
+<tr>
+<td style="text-align:left">handle_cpu_id</td>
+<td style="text-align:left">int32_t</td>
+<td style="text-align:left">用于处理的CPU ID，-1表示不绑定</td>
+</tr>
+<tr>
+<td style="text-align:left">rx_pkt_num</td>
+<td style="text-align:left">int32_t</td>
+<td style="text-align:left">接收内存大小 单位为4MB</td>
+</tr>
+<tr>
+<td style="text-align:left">spsc_size</td>
+<td style="text-align:left">int32_t</td>
+<td style="text-align:left">缓存队列长度，单位K</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQBseSnap">5.2.11. EMQBseSnap</h3>
+<pre><code>// 北交所快照消息
+// NQHQ.DBF广播行情数据体定义
+typedef struct
+{
+	char DBFTIME[6];		// DBF文件当前时间,格式:HHMMSS
+	char DBFSTATUS[4];		// DBF文件当前状态:0000 - 非收市行情(正式);0001 - 收市行情(正式);0002 - 盘后行情(正式);0010 - 非收市行情(测试);0011 - 收市行情(测试);0012 - 盘后行情(测试);
+	char HQZQDM[6];			// 证券代码
+	char  HQZQJC[8];		// 证券简称
+	double HQZRSP;			// 昨日收盘价
+	double  HQJRKP;			// 今日开盘价
+	double  HQZJCJ;			// 最近成交价
+	uint64_t HQCJSL;		// 成交数量
+	double HQCJJE;			// 成交金额
+	uint64_t HQCJBS;		// 成交笔数
+	double HQZGCJ;			// 最高成交价
+	double HQZDCJ;			// 最低成交价
+	double HQSYL1;			// 市盈率1
+	double HQSYL2;			// 市盈率2
+	double HQJSD1;			// 价格升跌1
+	double HQJSD2;			// 价格升跌2
+	uint64_t  HQHYCC;		// 合约持仓量
+	double HQSJW5;			// 卖价位五
+	uint64_t HQSSL5;		// 卖数量五
+	double HQSJW4;			// 卖价位四
+	uint64_t HQSSL4;		// 卖数量四
+	double HQSJW3;			// 卖价位三
+	uint64_t HQSSL3;		// 卖数量三
+	double HQSJW2;			// 卖价位二
+	uint64_t HQSSL2;		// 卖数量二
+	double HQSJW1;			// 卖价位一/叫卖揭示价
+	uint64_t HQSSL1;		// 卖数量一
+	double  HQBJW1;			// 买价位一/叫买揭示价
+	uint64_t HQBSL1;		// 买数量一
+	double  HQBJW2;			// 买价位二
+	uint64_t HQBSL2;		// 买数量二
+	double  HQBJW3;			// 买价位三
+	uint64_t HQBSL3;		// 买数量三
+	double  HQBJW4;			// 买价位四
+	uint64_t HQBSL4;		// 买数量四
+	double  HQBJW5;			// 买价位五
+	uint64_t HQBSL5;		// 买数量五
+}EMQBseSnap;
+</code></pre>
+
+<h1 id="-">6. 附录</h1>
+<h2 id="-">6.1. 字典定义</h2>
+<h3 id="CommonDefine">6.1.1. 通用常量定义</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">定义说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><a id="IP_LEN">IP_LEN</a></td>
+<td style="text-align:left">64</td>
+<td style="text-align:left">IP字符串地址长度定义</td>
+</tr>
+<tr>
+<td style="text-align:left"><a id="ETH_NAME_LEN">ETH_NAME_LEN</a></td>
+<td style="text-align:left">64</td>
+<td style="text-align:left">Eth字符串长度定义</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQBseType">6.1.2. 北交所行情类别-EMQBseType</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">定义说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">kBseSnap</td>
+<td style="text-align:left">12</td>
+<td style="text-align:left">北交所快照</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQBseUdpRecvMode">6.1.3. 接收模式-EMQBseUdpRecvMode</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">定义说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">kNormal</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">kEFVI</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">solarflare efvi接收</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQExchangeType">6.1.4. 交易所类型-EMQExchangeType</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">定义说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EMQ_EXCHANGE_SH</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">上交所</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_EXCHANGE_SZ</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">深交所</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_EXCHANGE_BJ</td>
+<td style="text-align:left">3</td>
+<td style="text-align:left">北交所</td>
+</tr>
+</tbody>
+</table>
+<h3 id="EMQLogLevel">6.1.5. 日志级别-EMQLogLevel</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">定义说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_FATAL</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">严重错误级别</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_ERROR</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">错误级别</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_WARNING</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">警告级别</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_INFO</td>
+<td style="text-align:left">3</td>
+<td style="text-align:left">通知级别</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_DEBUG</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">调试级别</td>
+</tr>
+<tr>
+<td style="text-align:left">EMQ_LOG_LEVEL_TRACE</td>
+<td style="text-align:left">5</td>
+<td style="text-align:left">跟踪级别</td>
+</tr>
+</tbody>
+</table>
+
+          	</article>
+        </div>
+		</div>
+  </body>
+</html>
+<script type="text/javascript" src="toc/js/jquery-1.4.4.min.js"></script>
+<script type="text/javascript" src="toc/js/jquery.ztree.all-3.5.min.js"></script>
+<script type="text/javascript" src="toc/js/ztree_toc.js"></script>
+<script type="text/javascript" src="toc_conf.js"></script>
+
+<SCRIPT type="text/javascript" >
+<!--
+$(document).ready(function(){
+    var css_conf = eval(markdown_panel_style);
+    $('#readme').css(css_conf)
+    
+    var conf = eval(jquery_ztree_toc_opts);
+		$('#tree').ztree_toc(conf);
+});
+//-->
+</SCRIPT>
+

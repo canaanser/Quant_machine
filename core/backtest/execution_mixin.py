@@ -6,8 +6,8 @@
 
 import pandas as pd
 
-from core.logger import get_logger
-from ..risk_manager import create_default_account, Position
+from core.lib.logger import get_logger
+from .risk_manager import create_default_account, Position
 
 logger = get_logger(__name__)
 

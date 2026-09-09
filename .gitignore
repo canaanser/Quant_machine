@@ -28,3 +28,13 @@ data/info/fundamentals/
 data/tickers/
 outputs/*.csv
 outputs/*.html
+
+# ===== 运行缓存/临时/大件 (2026-09-10 主分支基线前补) =====
+.venv/
+Stream/
+outputs/min_samples/
+outputs/*.txt
+3rdpart_nssm/
+tools/_*.py
+*.log
+*.lock
