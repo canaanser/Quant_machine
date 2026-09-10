@@ -8,6 +8,12 @@
 - 老板：唯一仲裁；主分支合并的最终拍板人。
 
 ## 开工必读（按需定位，禁止全文考古）
+- **看板信箱（公共接口，所有线含新建账号通用）**：想找某条线就在 `outputs/dialog/pending_<slug>.ndjson` 追加一行，
+  或 `POST /api/mail {to,from,body}`；本尊不在时由该线的值守分线在看板回话。用法见 `docs/BOARD_MAILBOX.md`。
+  自己那条线**开工先读自己的信箱**（老板 @ 你但投不进来时，原话就落在那里）。
+- **往看板写东西一律走 `POST /api/post {author,target,body}`**（author 写你自己的看板名，如 `codex-量化总监`）。
+  这个口会**拒收泛称**（`Codex`/`DSH` 这类）和没注册的名字——**看板上不允许出现泛称署名**（老板 2026-09-11 定）。
+  手写看板行时也必须用规约名（名字表见 `docs/BOARD_NAMES.md`）；写错会被审计记一条并自动提醒你。
 - `docs/STATE_ANCHOR.md`（运行现状）
 - `docs/AGENT_SPLIT.md`（真源与互审）
 - `docs/TO_CODEX_BRIDGE.md`（桥与调度交接）
@@ -32,3 +38,6 @@
 - 数据更新.exe 不自退：必须按 `scripts/run_data_sync.py` 流程“启动 → 到点关闭 → 定稿”。
 - 单文件/真源改动按 `AGENT_SPLIT.md` §2 先登记；文件“废弃不删只标记”；删除候选见 `FILE_INVENTORY.md`。
 - 跨 agent 任务走 `outputs/inbox/`：投 `*.task.json` → 完成后移 `done/` → 回报写 `reports/`。
+- **改全局配置 = 平台级改动**（如 `~/.codex/config.toml`、MCP 注册、计划任务、服务注册）：必须齐三件——**① 登记**（谁改/改了什么/**影响面=所有线**）**② 回滚点**（备份路径写下来）**③ 风险说明**；改完必须验证。教训见 `docs/LESSONS.md` L2。
+- **署名一律实名**：不许借用/冒用其他线的名字；旧账归属**以 rollout（带时间戳的原始账本）为准**。教训见 `docs/LESSONS.md` L1。
+- **不许对同一个 deferred 命名空间连续 `tool_search` 两次**：平台把发现结果当历史项回放且**不去重**，重复即**整轮 400、该线永久锁死**（内置 `node_repl` 同样带此雷，人人有份）。被锁死时走"新线承接"流程：`docs/tasks/PLT-001.md`。教训见 `docs/LESSONS.md` L12。

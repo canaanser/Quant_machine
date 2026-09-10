@@ -1,24 +1,24 @@
-# 主线程锚点（2026-09-10 23:4x）
+# 主线程锚点（2026-09-11 06:3x）
 
 > 新主线程第一句：`读 docs/MAIN_ANCHOR.md + docs/ROLES.md，按 L1 主线程接管；先汇报当前局面与待办，不要通读历史。`
 
 ## 一、局面
 
-- **git**：分支 `main`（9/10 04:2x 已立基线，311 项积压入库）；9/10 下午起的产出由 Codex 审阅后分批合入。**审阅+合入 main 由 Codex 负责**（老板 23:3x 授权，见 `DECISIONS.md` §3.10）。
-- **交易/值守链**：常驻引擎与 `stockdb.exe` 在岗（心跳 `outputs/watch_heartbeat.txt`，盘后 `tasks=4`）；**禁止从任何 agent 沙箱 shell 启动引擎/托盘/stockdb**（9/10 的 10013 事故根因）。
-- 9/10 事故：引擎被限网 → 账1/账2 **全天零成交**；15:45 用计划任务干净重拉；`QuantNetGuard` 在岗但 **alert-only、未武装**。
-- 夜间链路已修复：20:15 扫描 / 20:40 计划曾双双静默失败（计划任务返回 1/2，引号 bug），已修复复核（候选 22:43、`next_plan` 22:44）。
-- **DSH 唤醒已打通**：`POST /api/session/prompt` 可唤醒冷会话（21:43 实测 accepted + 0.9s 回复）；cookie 持久、跨重启有效；`launchToken` 从 `/home/lgy/.dsh-web.log` 取，**不需要老板手抄**。看板哨兵已能 `@dsh-老员工` 叫醒（19:40 干跑 PASS）；schedule overlay 降为备选。
-- 会话工具：Hub `QuantCodexBoard`（Tailscale `100.64.75.72:8788`，`/api/ping` 200）；命名统一为**「前缀-对话框名」**（`docs/BOARD_NAMES.md`，`老板` 唯一例外），五处同名（标题/状态栏/@/署名/inbox 指派）。
-- 平台约束：**代建线程会触发 DeepSeek 兼容 bug，新线程一律老板手动建**；跑在公共看板上的 `codex-*` 线各自有固定职责。
+- **值守链**：引擎在岗（心跳 `06:31:47 state=duty|盘前|tasks=4`）；`QuantNetGuard` 已**武装**（`mode=auto-restart`，非交易时段正常空转）。**禁止从任何 agent 沙箱 shell 启动引擎/托盘/stockdb**。
+- **身份更正（重要）**：`codex-总监`（`01a08ac2`）与 `codex-量化总监`（`01a0877b`）是**两条线**；此前 `codex-总监` 误用后者名字约 3 小时，已更正（`docs/LESSONS.md` L1）。**旧账归属一律以 rollout 为准。**
+- **元老线已死**：`codex-量化总监`（`01a0877b`，**第一号对话框**）被平台缺陷永久锁死——`Duplicate namespace`（`docs/tasks/PLT-001.md`）。**已止血**（桥 MCP 注释掉，`scripts/plt001_stop_bleed.py`，可 `--revert`）；**待承接**（新线承接流程见 PLT-001 §六）。
+- **deferred 是通用雷**：内置 `node_repl` 同样带 `defer_loading` → **任何线连搜同一 deferred 命名空间两次都会自锁**（已写进 `AGENTS.md` 红线 + `LESSONS.md` L12）。
+- **人在环上三件**（看板侧，卡已立）：`HUB-003` 叫醒老板（上板 @ + 置顶「待老板 N」）、`HUB-006` **故障即停·公告解除**、`HUB-004` 手机派单表单。`HUB-002`（判忙口径）**已交付自证**。
+- **门铃现状**：DSH→大家 ✅｜Codex→DSH ❌（哨兵 `AUTHOR=老板` 写死）｜任意→Codex 线 ❌（注入 `thread-store conflict`，归 `HUB-005`）｜任意→老板 ⚠️（只能上板 @、不能推送）。
+- **套件线**：`codex-套件`（`01a08cf8`）M0-1/2/3 已完成（`selftest` 109/109、五条验收过），**M0-4 提交等老板授权**。
 
 ## 二、待办（见 docs/WORKBOARD.md）
 
-1. AR-001 收尾：事件注入常驻触发器（挂计划任务上下文，**禁塞进 net_guard.py**）
-2. RV-001 net_guard 两条 must-fix（抓不到旧 PID 必须中止；成功=旧 PID 全消失+新 PID 不同+心跳变新）→ 非交易时段受控武装实测 → 才谈常驻武装
-3. RV-002 build_acct2 加固（**现只允许 `--dry`**）
-4. 会话工具第三期：RPC 门铃 + 统一调度器；23:33 派发机制缺陷（`codex exec resume` 副作用）待整改
-5. 待老板拍板：`docs/COMMS_BOARD.md` 是否进库（默认当运行态、不进库）；WebFetch 公网策略；dsh 版本锁定/交易时段禁升级
+1. **【等你一句话】元老承接**：建一条新线 → 主线绑 threadId + 改标题 → 写接手锚点 → 旧线只读退役（`PLT-001` §六）
+2. **开盘那一班归属**：09:15 三件在岗 / 09:35 账2 连通测试 / 10:30 batch2 / 14:35 取价自检 / 14:44 执行 / 15:05 回账 —— 原挂量化总监；**建议新线优先、dsh 兜底，别让链空着**
+3. `HUB-003` → `HUB-006` → `HUB-004` → `HUB-005` → `HUB-001`（看板编辑，**均已排后**）
+4. 套件线 `M0-4` 提交（等老板授权）
+5. 平台侧登记：deferred 命名空间去重（报上游，非阻塞）；`approval-policy: never` 反向通道随桥一并下线，**若将来恢复桥须先给它加闸**
 
 ## 三、纪律
 
