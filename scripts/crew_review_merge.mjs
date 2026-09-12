@@ -137,14 +137,58 @@ function applyMerge() {
     process.exitCode = 1;
     return;
   }
-  git(r.repo, "switch", r.base || "main");
+  // ── ★ 不碰工作树的合入（2026-09-13 07:4x；`codex-看板编辑` 报的死结 + L28 正解）──
+  //   死结：**共享工作树里"工作树已含待合内容、而 HEAD 还没有"** → `git switch` + `git merge` 一律被判成
+  //   "本地改动会被覆盖" → 抛异常、main 不前进（今晚连败十几拍就是这么来的）。
+  //   改用纯对象操作：`merge-tree --write-tree` 算合并树 → `commit-tree` 造合并提交 →
+  //   `update-ref`（带旧值 = CAS，防并发）→ `push`。**全程不切分支、不碰索引**。
+  const base = r.base || "main";
+  const baseBefore = git(r.repo, "rev-parse", base);
+  const whoName = process.env.CREW_MERGE_NAME || "codex-总监";
+  const whoMail = process.env.CREW_MERGE_EMAIL || "codex-director@agents.canaanser.local";
+  let tree;
+  try {
+    tree = String(execFileSync("git", ["-C", r.repo, "merge-tree", "--write-tree", baseBefore, r.head], { encoding: "utf8" }))
+      .split("\n")[0].trim();
+  } catch (e) {
+    console.log("✗ merge-tree 失败（多半有冲突），**不合**：\n" + String(e.stdout || e.message).split("\n").slice(-10).join("\n"));
+    process.exitCode = 1;
+    return;
+  }
   const msg = `merge(${r.branch.split("/").pop()}): 合入 ${r.task}（自动门禁通过）`;
-  const body = `自动合入：门禁 ${r.gates.filter((g) => g.ok).length}/${r.gates.length} 全绿，审阅人 ${r.by}，申请时间 ${r.ts}。`;
-  execFileSync("git", ["-C", r.repo, "merge", "--no-ff", r.branch, "-m", msg, "-m", body], { encoding: "utf8" });
-  execFileSync("git", ["-C", r.repo, "push", "origin", r.base || "main"], { encoding: "utf8" });
-  const after = git(r.repo, "rev-parse", r.base || "main");
+  const body = `自动合入（不碰工作树）：tree=${tree}；门禁 ${r.gates.filter((g) => g.ok).length}/${r.gates.length} 全绿，审阅人 ${r.by}，申请时间 ${r.ts}。`;
+  const commit = String(execFileSync("git", ["-C", r.repo, "-c", `user.name=${whoName}`, "-c", `user.email=${whoMail}`,
+    "commit-tree", tree, "-p", baseBefore, "-p", r.head, "-m", msg, "-m", body], { encoding: "utf8" })).trim();
+  execFileSync("git", ["-C", r.repo, "update-ref", `refs/heads/${base}`, commit, baseBefore], { encoding: "utf8" }); // CAS：base 没被别人推动才生效
+  execFileSync("git", ["-C", r.repo, "push", "origin", base], { encoding: "utf8" });
+
+  // ② 只同步"本来干净"的文件：工作树里对该路径**没有本地改动**才覆盖；有本地改动的一律跳过（绝不覆盖别人）。
+  const changed = git(r.repo, "diff", "--name-only", baseBefore, commit).split("\n").filter(Boolean);
+  const skipped = [];
+  for (const p of changed) {
+    const cleanVsOld = isClean(r.repo, baseBefore, p);      // 工作树 == 合入前的 base
+    const cleanVsNew = isClean(r.repo, commit, p);          // 工作树 == 合入后
+    try {
+      if (cleanVsOld) execFileSync("git", ["-C", r.repo, "restore", "--source=" + commit, "--staged", "--worktree", "--", p], { encoding: "utf8" });
+      else if (cleanVsNew) execFileSync("git", ["-C", r.repo, "restore", "--source=" + commit, "--staged", "--", p], { encoding: "utf8" });
+      else skipped.push(p);
+    } catch (e) {
+      skipped.push(p + "(同步失败)");
+    }
+  }
+  const after = git(r.repo, "rev-parse", base);
   fs.renameSync(REQ, REQ.replace(/\.json$/, `.done-${Date.now()}.json`));
-  console.log(JSON.stringify({ merged: r.branch, main: after }, null, 2));
+  console.log(JSON.stringify({ merged: r.branch, base: after, tree, commit, synced: changed.length - skipped.length, skipped }, null, 2));
+}
+
+/** 工作树里该路径是否与 <rev> 一致（= 没有本地改动）。 */
+function isClean(repo, rev, p) {
+  try {
+    execFileSync("git", ["-C", repo, "diff", "--quiet", rev, "--", p], { encoding: "utf8", stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 if (has("--apply")) applyMerge();

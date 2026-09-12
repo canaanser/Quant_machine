@@ -304,3 +304,17 @@
   **两条规矩**：
   · **在共享工作树里，一律用 `git commit -- <路径>…`**（只提交指定路径），**不要用裸 `git commit`**（它会提交整个索引）；
   · **不要往共享索引里留暂存**：`git add` 之后尽快提交；发现索引里有不是自己的东西 → **先报总监**，别把它带走。
+
+## L30 · 自动合入**不许 `switch` + `merge`**：共享工作树下必死（连败十几拍）
+
+- **事件（2026-09-13 07:27–07:40，`codex-看板编辑` 报）**：`--apply` 每拍都"回归通过后抛未捕获异常、main 不前进"。
+  **死结**：待合分支的内容**已经在工作树里**、而 `HEAD`（main）还没有 → `git switch main` + `git merge --no-ff` 一律判
+  "**本地改动会被覆盖**" → 抛异常。`--apply` 里那句 `git switch` 是罪魁。
+- **判据**：`main` 不前进 + stderr 只有 Node 栈尾（`} / Node.js v26.6.0`）→ 失败发生在**提交之前**的合并步骤。
+- **变成什么规矩（已落进 `scripts/crew_review_merge.mjs --apply`）**：
+  `merge-tree --write-tree`（算合并树）→ `commit-tree -p <base> -p <branch>`（造合并提交）→
+  `update-ref refs/heads/<base> <new> <old>`（**带旧值 = CAS**，防并发）→ `push`。**全程不切分支、不碰索引**。
+  之后再**只同步"本来干净"的文件**（`git restore --source=<new> --staged --worktree -- <path>`），
+  **有本地改动的一律跳过**（绝不覆盖别人的未提交工作）。
+- **实测**：改完当场把 `feature/hub-018-ackfix` 合掉 → 回归 **245/245**、`main` 前进到 `5b323a6`、`synced=2 skipped=0`；
+  **共享工作树下这一类死结从此不靠"谁手快"**。
