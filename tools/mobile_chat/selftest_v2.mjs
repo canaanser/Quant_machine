@@ -1547,6 +1547,23 @@ async function main() {
   check("入职：by 不是注册看板名被拒（400，署名实名）", obBadBy.status === 400, "status=" + obBadBy.status);
   const obTidTaken = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-测新线6", slug: "codex-newline6", threadId: "01a02222-0000-7000-8000-000000000007" });
   check("入职：会话已被别的线占用被拒（409，一个会话只属于一条线）", obTidTaken.status === 409, "status=" + obTidTaken.status);
+  // ⑪之三 slug 跨系统契约对齐（唯一规范：套件仓 docs/slug.md）
+  const metaSlug = await (await fetch(base + "/api/meta")).json();
+  const anchors = (metaSlug.slugContract || {}).anchors || {};
+  check(
+    "slug 契约：锚点与套件仓 docs/slug.md 一致（codex-套件=9bb7a0 / dsh-老员工=e18b10 / codex-甲=d0e43b / codex-乙=a3162a）",
+    anchors["codex-套件"] === "codex-9bb7a0" && anchors["dsh-老员工"] === "dsh-e18b10" &&
+      anchors["codex-甲"] === "codex-d0e43b" && anchors["codex-乙"] === "codex-a3162a",
+    JSON.stringify(anchors)
+  );
+  check("slug 契约：唯一特例 老板 → boss", anchors["老板"] === "boss", String(anchors["老板"]));
+  const obDerived = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-甲" });
+  const obDerivedBody = await obDerived.json().catch(() => ({}));
+  check(
+    "入职：不给工号时按契约派生（codex-甲 → codex-d0e43b）",
+    obDerived.status === 200 && obDerivedBody.slug === "codex-d0e43b",
+    JSON.stringify(obDerivedBody).slice(0, 120)
+  );
 
   // ⑫ HUB-006 暂停闸：置闸 → 非老板解除无效 → 老板公告解除
   const haltSet = await fetch(base + "/api/halt", {

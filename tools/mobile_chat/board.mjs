@@ -1374,6 +1374,19 @@ function capabilities() {
     taskPrefixes: TASK_PREFIXES,
     taskKinds: TASK_KINDS,
     taskPrios: TASK_PRIOS,
+    // slug 跨系统契约（唯一规范：套件仓 docs/slug.md）。把锚点**算出来**给对面，
+    // 谁改了算法都能一眼看出来（总监 2026-09-13：对不上就给他两边样例）。
+    slugContract: {
+      spec: "agent_crew_kits/docs/slug.md",
+      rule: "显式优先 → 兜底 side + '-' + sha1(看板名,UTF-8)[0:6]（side=名'-'前那段，只认 dsh/codex，其余 x） → 老板=boss",
+      anchors: {
+        "codex-套件": makeSlug("codex-套件"),
+        "dsh-老员工": makeSlug("dsh-老员工"),
+        "codex-甲": makeSlug("codex-甲"),
+        "codex-乙": makeSlug("codex-乙"),
+        "老板": makeSlug("老板"),
+      },
+    },
     limits: { dialogDefaultLimit: 200, dialogMaxLimit: 500, sseHeartbeatSec: 20 },
   };
 }
@@ -2562,12 +2575,20 @@ function isBoardName(name) {
 // 名字里带中文时给个稳定 ASCII slug（inbox 文件名要用）。
 // 注意：不能简单“去掉非 ASCII 字符”——`codex-回测` 会退化成 `codex-`，
 // 多个中文名还会撞成同一个。纯 ASCII 名直接用，否则用 侧别-哈希6。
+// slug 兜底算法 —— **跨系统契约**，唯一规范：套件仓 `docs/slug.md`
+//   ① 显式优先：员工卡/名册里已有的 slug 原样用、永不重算（见 slugFor；slug 是路由键与文件名，改 slug = 换人）
+//   ② 兜底：side = 看板名 '-' 前那段，只认 dsh / codex，其余一律 x；slug = side + '-' + sha1(看板名,UTF-8)[0:6]
+//   ③ 唯一特例：`老板` → `boss`
+// 锚点（两边对齐用）：deriveSlug('codex-套件') === 'codex-9bb7a0'、'dsh-老员工' === 'dsh-e18b10'
+// ⚠️ 2026-09-13 对齐：旧实现有两个偏离——① 纯 ASCII 名字"直用名字当 slug"（契约没有这条，
+//    `codex-kit` 兜底应为 `codex-456032`）；② side 用"前缀匹配"而不是"'-' 前那段"。
+//    照契约改齐（现役线的 slug 都是显式写在名册里的，故本次改动不影响任何现役信箱文件名）。
 function makeSlug(name) {
   const s = String(name || "");
-  const base = s.replace(/[^A-Za-z0-9_-]/g, "").replace(/[-_]+$/, "");
-  if (base && base.length === s.length && base.replace(/[^A-Za-z0-9]/g, "").length >= 3) return base;
-  const side = /^dsh/i.test(s) ? "dsh" : /^codex/i.test(s) ? "codex" : "x";
-  return side + "-" + crypto.createHash("sha1").update(s).digest("hex").slice(0, 6);
+  if (s === "老板") return "boss";
+  const seg = s.split("-")[0].toLowerCase();
+  const side = seg === "dsh" || seg === "codex" ? seg : "x";
+  return side + "-" + crypto.createHash("sha1").update(s, "utf8").digest("hex").slice(0, 6);
 }
 
 function registerMembers(records) {
@@ -5056,11 +5077,13 @@ async function main() {
       if (name.length < 3 || name.length > 40) return sendJson(res, 400, { error: "名字长度要在 3–40 之间" });
       if (GENERIC_BOARD_NAMES.includes(name.toLowerCase())) return sendJson(res, 400, { error: "名字不能是泛称：" + name });
       if (names.some((n) => n.toLowerCase() === name.toLowerCase())) return sendJson(res, 409, { error: "这个名字已注册：" + name, hint: "换绑请用 POST /api/bind" });
-      if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(slug)) return sendJson(res, 400, { error: "工号 slug 格式不对（小写字母/数字/连字符，2–31 位）" });
-      const holder = Object.entries(cfg0.agents || {}).find(([, m]) => String((m || {}).slug || "").toLowerCase() === slug);
-      if (holder) return sendJson(res, 409, { error: "工号已被占用：" + slug, hint: "现役：" + holder[0] });
-      const aliased = Object.keys(cfg0.slugAliases || {}).find((k) => String(k).toLowerCase() === slug);
-      if (aliased) return sendJson(res, 409, { error: "工号已退役、永不复用：" + slug, hint: "历史岗位：" + cfg0.slugAliases[aliased] });
+      // 没给工号 → 按跨系统契约兜底派生（套件仓 docs/slug.md；显式给的仍然优先）
+      const finalSlug = slug || makeSlug(name);
+      if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(finalSlug)) return sendJson(res, 400, { error: "工号 slug 格式不对（小写字母/数字/连字符，2–31 位）", hint: "没给就按契约派生，派生出的是：" + finalSlug });
+      const holder = Object.entries(cfg0.agents || {}).find(([, m]) => String((m || {}).slug || "").toLowerCase() === finalSlug);
+      if (holder) return sendJson(res, 409, { error: "工号已被占用：" + finalSlug, hint: "现役：" + holder[0] });
+      const aliased = Object.keys(cfg0.slugAliases || {}).find((k) => String(k).toLowerCase() === finalSlug);
+      if (aliased) return sendJson(res, 409, { error: "工号已退役、永不复用：" + finalSlug, hint: "历史岗位：" + cfg0.slugAliases[aliased] });
       if (tid) {
         if (!/^[0-9a-fA-F-]{36}$/.test(tid)) return sendJson(res, 400, { error: "threadId 格式不对（要 UUID）" });
         const used = Object.entries(cfg0.agents || {}).find(([, m]) => String((m || {}).threadId || "") === tid);
@@ -5073,7 +5096,7 @@ async function main() {
           agents[name] = {
             label: name,
             title: String(payload.title || "").trim().slice(0, 40) || "新入职",
-            slug: slug,
+            slug: finalSlug,
             workspace: String(payload.workspace || "").trim() || WORKSPACE,
             status: tid ? "active" : "unknown",
             ...(tid ? { threadId: tid } : {}),
@@ -5091,11 +5114,11 @@ async function main() {
       appendBoardLine(
         "老板",
         CODEX_SERVICE,
-        "（系统：@" + by + " 给 **" + name + "** 办了入职（批准：" + approval + "）：工号 " + slug +
+        "（系统：@" + by + " 给 **" + name + "** 办了入职（批准：" + approval + "）：工号 " + finalSlug +
           (tid ? "，会话 " + tid.slice(0, 8) + "…" : "，未绑会话") + "）"
       );
-      log("ONBOARD:", name, "slug=" + slug, "by=" + by, tid ? "thread=" + tid.slice(0, 8) : "no-thread");
-      sendJson(res, 200, { ok: true, name: name, slug: slug, threadId: tid || null, by: by });
+      log("ONBOARD:", name, "slug=" + finalSlug, "by=" + by, tid ? "thread=" + tid.slice(0, 8) : "no-thread");
+      sendJson(res, 200, { ok: true, name: name, slug: finalSlug, threadId: tid || null, by: by, slugDerived: !slug });
       return;
     }
 
