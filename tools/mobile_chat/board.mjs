@@ -1242,10 +1242,7 @@ function buildEmployees() {
     const alias = bySlug[slug] || (card.name && byName[card.name]) || String(card.name || slug);
     const meta = cfg[alias] || {};
     const st = states[slug] || {};
-    const lastAuthored = readDialog(0).filter(
-      (r) => String(r.from || "") === alias && !/^〔代答〕/.test(String(r.body || ""))
-    );
-    const last = lastAuthored[lastAuthored.length - 1];
+    const lastSeenTs = lastOwnStatementTs(alias, readDialog(0));
     out.push({
       alias: alias,
       slug: slug,
@@ -1264,8 +1261,8 @@ function buildEmployees() {
       blockers: st.blockers || [],
       workspace: card.workspace || meta.workspace || "",
       threadId: meta.threadId || null,
-      pendingMail: mailboxPendingFor(alias, last ? String(last.ts) : null),
-      lastSeen: last ? String(last.ts) : null,
+      pendingMail: pendingMailFor(alias, lastSeenTs),
+      lastSeen: lastSeenTs,
       avatar: avatarOf(alias),
       source: "kit-card" + (st.status ? "+state" : ""),
     });
@@ -2173,6 +2170,35 @@ function mailboxPendingFor(alias, lastSeen) {
   let n = 0;
   for (const m of rows) if (mailTsMs(m && m.ts) > since) n++;
   return n;
+}
+// ★ 未读口径（codex-总监 2026-09-12 22:24 正式请求，与宿主 `crew_host.py` 对齐）：
+//   **未读 = 该线信箱里 ts 比它"本人上一次发言"更新的行**。
+//   以前按"信箱原始行数"算，而信箱是 append-only 流水、没有已读概念 —— 几天前早回过几百遍的
+//   旧信也被算成未读，数字一路虚高（总监实测：清空后仍显示 10+，门铃也照着这个数反复叫）。
+//   两个必须排除的东西：
+//     ① 〔代答〕：**程序顶着本线的名发的**，不算它说过话；否则代答一出，压在它信箱里的
+//        留言就会被误判成"已处理"，这是"投递≠唤醒"从一个新口子漏回来；
+//     ② 退役档案条目（`<看板名>·退役`）：**不是活人**，不叫、也不该显示未读。
+//   三个接口（/api/dialog、/api/contacts、/api/employees）与页面芯片必须都走这两个函数，
+//   免得哪天又各自漂移（以前就是三处各写一遍）。
+function lastOwnStatementTs(alias, records) {
+  const want = String(alias || "").toLowerCase();
+  if (!want) return null;
+  const rows = Array.isArray(records) ? records : [];
+  let best = null;
+  let bestMs = -1;
+  for (const r of rows) {
+    if (String(r.from || "").toLowerCase() !== want) continue;
+    if (/^〔代答〕/.test(String(r.body || ""))) continue;
+    const ms = parseCst(r.ts);
+    if (ms > bestMs) { bestMs = ms; best = String(r.ts); }
+  }
+  return best;
+}
+function pendingMailFor(alias, lastSeen) {
+  // 退役档案条目：不叫、不计（它不接活，也没有"未读"这回事）
+  if (String((agentFor(alias) || {}).status || "").toLowerCase() === "retired") return 0;
+  return mailboxPendingFor(alias, lastSeen);
 }
 function annotateNotWoken(alias, why) {
   appendBoardLine(
@@ -5044,7 +5070,8 @@ async function main() {
           if (r.kind === "progress") return false;
           return r.state !== "done" && r.state !== "failed";
         }).length;
-        const lastSeen = last ? String(last.ts) : null;
+        // 未读口径统一走 lastOwnStatementTs（与 /api/dialog、/api/employees 同一个函数）
+        const lastSeen = lastOwnStatementTs(alias, all2);
         const ageMs = lastSeen ? Date.now() - parseCst(lastSeen) : null;
         return {
           alias: alias,
@@ -5054,7 +5081,7 @@ async function main() {
           status: String(meta.status || "").toLowerCase() === "retired" ? "retired" : ageMs == null ? "none" : ageMs < 3 * 3600e3 ? "active" : ageMs < 24 * 3600e3 ? "idle" : "stale",
           retired: String(meta.status || "").toLowerCase() === "retired",
           duty: dutyEnabled(alias),
-          pendingMail: mailboxPendingFor(alias, lastSeen),
+          pendingMail: pendingMailFor(alias, lastSeen),
           open: open,
           avatar: avatarOf(alias),
           lastMsg: last ? { ts: String(last.ts), body: String(last.body || "").slice(0, 60) } : null,
@@ -5376,12 +5403,9 @@ async function main() {
       const addedMembers = registerMembers(all); // 新成员自己长出来
       const cfg = readAgents();
       const agents = Object.entries(cfg.agents || {}).map(([alias, meta]) => {
-        // "本尊上次发言"要**排除代答**：代答是程序顶着本线名发的，不该算它说过话
-        // （否则代答一出，压在它信箱里的留言就被误判成"已处理"）
-        const authored = all.filter(
-          (r) => String(r.from || "").toLowerCase() === alias && !/^〔代答〕/.test(String(r.body || ""))
-        );
-        const lastSeen = authored.length ? String(authored[authored.length - 1].ts) : null;
+        // "本尊上次发言"要**排除代答**（代答是程序顶着本线名发的）→ 统一走 lastOwnStatementTs，
+        // 与 /api/contacts、/api/employees、页面芯片同一个口径，不再各写一遍。
+        const lastSeen = lastOwnStatementTs(alias, all);
         const open = all.filter((r) => {
           if (String(r.to || "").toLowerCase() !== alias) return false;
           if (String(r.from || "").toLowerCase() === alias) return false;
@@ -5404,7 +5428,7 @@ async function main() {
           lastSeen,
           idleMin: ageMs == null ? null : Math.round(ageMs / 60000),
           open,
-          pendingMail: mailboxPendingFor(alias, lastSeen), // 信箱里还没被它处理的留言数（拉模式可见化）
+          pendingMail: pendingMailFor(alias, lastSeen),    // 真未读（比本人上次发言新）；退役条目不叫不计
           duty: dutyEnabled(alias),                        // 这条线有没有值守（老板要求"开关状态可见"）
           avatar: avatarOf(alias),                          // 头像（稳定派生：首字 + 色相）
         };

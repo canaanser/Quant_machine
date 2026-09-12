@@ -163,6 +163,8 @@ function setup() {
           // 没有绑定会话、但状态在岗：用来验证"服务不冒充那条线说话"
           // 没有会话的"真·空席位"：代答只给它（有本尊的线默认不代答，见 dutyEnabled）
           "codex-测无会话": { label: "codex-测无会话", title: "自测", slug: "codex-nosession", status: "active" },
+          // "未读口径"专用线（总监 2026-09-12 22:24 正式请求的回归）
+          "codex-测未读": { label: "codex-测未读", title: "自测", slug: "codex-unread", status: "active" },
           // 显式关掉值守：用来验证"无值守时只发服务自己署名的系统事实"
           "codex-测无值守": { label: "codex-测无值守", title: "自测", slug: "codex-noduty", status: "active", duty: false },
         },
@@ -1174,6 +1176,64 @@ async function main() {
     mailBare === mailNew + 1,
     "pendingMail=" + mailBare
   );
+
+  // ★ 未读口径（codex-总监 2026-09-12 22:24 正式请求 · 与宿主 crew_host.py 对齐）
+  //   **未读 = 该线信箱里 ts 比它"本人上一次发言"更新的行**。以前按信箱原始行数算，
+  //   append-only 流水没有已读概念 → 几天前早回过几百遍的旧信也被算未读，芯片/门铃一路虚高。
+  const unreadFile = path.join(dirs.mailbox, "pending_codex-unread.ndjson");
+  const mailOf = agentMail;
+  fs.writeFileSync(
+    unreadFile,
+    JSON.stringify({ ts: mailTs(new Date(Date.now() - 60 * MIN)), from: "老板", to: "codex-测未读", body: "自测：这条在它发言之前，一发言就不该再算未读" }) + "\n",
+    "utf8"
+  );
+  const nBeforeSpeak = (await mailOf("codex-测未读")).pendingMail;
+  check("未读口径①：它还没发言时，那条旧留言算未读", nBeforeSpeak === 1, "pendingMail=" + nBeforeSpeak);
+  // 本人在板上真的发言一行 → 那条旧留言随即不再计入
+  const rSpeak = await fetch(base + "/api/post", {
+    method: "POST",
+    headers: { ...hdr, "Content-Type": "application/json" },
+    body: JSON.stringify({ author: "codex-测未读", target: "老板", body: "[自测] 本人发言：我说话了" }),
+  });
+  check("未读口径②：本人能发言（板上一行）", rSpeak.ok, "status=" + rSpeak.status);
+  await new Promise((r) => setTimeout(r, 1200));
+  const nAfterSpeak = (await mailOf("codex-测未读")).pendingMail;
+  check("未读口径②：本人发言后，之前的留言自动不计入（清空后 N=0）", nAfterSpeak === 0, "pendingMail=" + nAfterSpeak);
+  // 真新留言（ts 比本人发言新）→ 必须 +1
+  fs.appendFileSync(
+    unreadFile,
+    JSON.stringify({ ts: mailTs(new Date(Date.now() + 2 * MIN)), from: "老板", to: "codex-测未读", body: "自测：这条比本人发言新 → 算未读" }) + "\n",
+    "utf8"
+  );
+  const nNew = (await mailOf("codex-测未读")).pendingMail;
+  check("未读口径③：真新留言让 N 回到 1（不是 0，也不是原始行数 2）", nNew === 1, "pendingMail=" + nNew);
+  // 〔代答〕**不算**本人发言：给它自己写一条**比新留言更晚**的〔代答〕（直接进记录真源）。
+  // 若被误算成"本人发言"，上面那条新留言就会被吞掉（N 会变 0）——这条用例就是钉这个。
+  fs.appendFileSync(
+    DIALOG_FILE,
+    JSON.stringify({
+      id: "selftest-duty-" + Date.now(),
+      ts: cst(new Date(Date.now() + 3 * MIN)).slice(0, 16).replace("T", " "),
+      from: "codex-测未读",
+      to: "老板",
+      channel: "board",
+      kind: "message",
+      body: "〔代答〕您好，我现在不在，请稍后再试。",
+      state: "done",
+    }) + "\n",
+    "utf8"
+  );
+  await new Promise((r) => setTimeout(r, 1200));
+  const nDuty = (await mailOf("codex-测未读")).pendingMail;
+  check("未读口径④：代答不算本人发言（新留言仍算未读）", nDuty === 1, "pendingMail=" + nDuty);
+  // 退役档案条目：不是活人 → 不叫、也不该显示未读
+  fs.writeFileSync(
+    path.join(dirs.mailbox, "pending_codex-retired.ndjson"),
+    JSON.stringify({ ts: mailTs(new Date()), from: "老板", to: "codex-测退役", body: "自测：退役档案条目的信箱不该被算未读" }) + "\n",
+    "utf8"
+  );
+  const nRetired = (await mailOf("codex-测退役")).pendingMail;
+  check("未读口径⑤：退役档案条目不计未读（不叫也不虚高）", nRetired === 0, "pendingMail=" + nRetired);
 
   // ③ 抢锁失败 + 久无产出 => 「已投递未唤醒」，**停止**无限退避
   check("窗口占用：投递前 Hub 已空闲", await waitIdle(15000), "idle");
