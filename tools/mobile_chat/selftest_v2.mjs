@@ -2018,6 +2018,35 @@ async function main() {
     Array.isArray(n2.refs.pendingAck) && !n2.refs.pendingAck.includes("codex-测无会话"),
     "pending=" + JSON.stringify(n2.refs.pendingAck || [])
   );
+  // ★ 工具前缀不能挡回执（`codex-修复` 2026-09-13 07:21 实证：N-A5EB 的 5 条回执里 **4 条被
+  //   `say.mjs` 的 `【卡号 · 时间戳】` 前缀挡掉**——判据是"行首锚定"，前缀一挡整条不算，
+  //   公告卡片"已收到 X/Y"假性偏低 → 线以为没回成功 → 再回一次 → 正是老板在治的重复噪声）。
+  fs.appendFileSync(
+    BOARD_FILE,
+    "- @老板 " + boardStamp(new Date()) + " codex-测在岗：【无卡 · 2026-09-13 07:2x】 收到 " + ncode + "\n",
+    "utf8"
+  );
+  await new Promise((r) => setTimeout(r, 2500));
+  const d3 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const n3 = (d3.records || []).filter((r) => r.kind === "notice").pop();
+  check(
+    "公告回执：**带工具前缀**（【卡号 · 时间戳】）的精确回执照样认（前缀不是正文）",
+    !!((n3.refs.acks || {})["codex-测在岗"] || {}).mode,
+    JSON.stringify(((n3.refs.acks || {})["codex-测在岗"] || {}))
+  );
+  fs.appendFileSync(
+    BOARD_FILE,
+    "- @老板 " + boardStamp(new Date()) + " codex-测备用：【无卡 · 2026-09-13 07:2x】 收到\n",
+    "utf8"
+  );
+  await new Promise((r) => setTimeout(r, 2500));
+  const d4 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const n4 = (d4.records || []).filter((r) => r.kind === "notice").pop();
+  check(
+    "公告回执：**带工具前缀**的裸「收到」也认（前缀里的时间不许被当成「点名时间」）",
+    !!((n4.refs.acks || {})["codex-测备用"] || {}).mode,
+    JSON.stringify(((n4.refs.acks || {})["codex-测备用"] || {}))
+  );
 
   // ㉑ HUB-015 公告"送到"补全（`codex-修复` 2026-09-13 01:54 反馈；总监派单）
   //   ① 入职时补投**生效公告正文**；② 回执窗口从**投递时刻**起算（入职晚于发布也要回执）；
