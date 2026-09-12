@@ -2175,12 +2175,85 @@ async function main() {
     JSON.stringify(pushNoLedger)
   );
 
+  // ★ PLT-006（codex-总监 2026-09-13 06:23）：**补投队列要看账本**
+  //   病因：两条通道只共享"账本"这一条回路，而**补投队列完全不看它**——
+  //   小工已经投过了，补投队列不知道，到点照投 → **同一封信第二次触达**（06:22:34 实测）。
+  //   夹具线用 `codex-测窗口`：它是唯一"queue 能推通（桩返回 0）"的线，才验得到"补投真的推出去"。
+  const wkAlias = "codex-测窗口";
+  const wkMail = path.join(dirs.mailbox, "pending_codex-awake2.ndjson");
+  // 账本 `to` **两套键都有**（历史行 slug / 新行看板名）→ 计数时也两边都算，
+  // 否则"归一后才命中"的用例会数错（这正是 06:25 那条硬约束的由来）。
+  const rowsFor = (mts) =>
+    readLedger().filter((r) => r && r.mailbox_ts === mts && (r.to === wkAlias || r.to === "codex-awake2"));
+  const armBackfill = (mts, body) => {
+    fs.appendFileSync(wkMail, JSON.stringify({ ts: mts, from: "老板", to: wkAlias, body }) + "\n", "utf8");
+    const st = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    st.wakes = st.wakes || {};
+    st.wakes[wkAlias] = { ...(st.wakes[wkAlias] || {}), done: true, nextAt: Date.now() - 1000 };
+    fs.writeFileSync(stateFile, JSON.stringify(st, null, 2), "utf8");
+  };
+  const waitWakeLog = async (mark, re, tries) => {
+    for (let i = 0; i < tries; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (re.test(childLog.slice(mark))) return true;
+    }
+    return false;
+  };
+  const retryLineOf = (mark) =>
+    (childLog.slice(mark).split("\n").find((l) => /WAKE RETRY/.test(l)) || "").trim().slice(0, 150);
+
+  // 用例①（**键归一**，PLT-006 硬约束）：账本里那行写的是 **slug**（`codex-awake2`，历史形状），
+  //   查询用的是**看板名**（`codex-测窗口`）→ 归一后必须命中 → 到点补投**取消**（且留日志，不静默）。
+  const tsA = cst(new Date()).slice(0, 16).replace("T", " ");
+  fs.appendFileSync(
+    pushedPath,
+    JSON.stringify({ ts: cst(new Date()).slice(0, 19).replace("T", " "), ts_ms: Date.now(), by: "crew_host", to: "codex-awake2", mailbox_ts: tsA }) + "\n",
+    "utf8"
+  );
+  armBackfill(tsA, "[自测] PLT-006①：账本说已经送过，补投必须取消");
+  const markWa = childLog.length;
+  const sawCancel = await waitWakeLog(markWa, /WAKE RETRY CANCEL/, 6);
+  check(
+    "PLT-006①（键归一）：账本写的是 **slug**、查询用**看板名** → 归一后仍命中 → 补投**取消**且留日志",
+    sawCancel,
+    retryLineOf(markWa)
+  );
+  check("PLT-006①：取消后账本里该键仍是 1 行（没因为补投再多一行）", rowsFor(tsA).length === 1, "rows=" + rowsFor(tsA).length);
+
+  // 用例②③：账本里**没有** → 到点补投**照发**；成功时**新增一行且 mailbox_ts 非空**
+  //   （故意换一个分钟：账本键是 `(线, mailbox_ts)`，而它只有**分钟精度**——
+  //    ①已经在"这一分钟"写了行，②若还用同一分钟会被正确判成"这分钟已送过"。）
+  const tsB = cst(new Date(Date.now() + 60000)).slice(0, 16).replace("T", " ");
+  const rowsB0 = rowsFor(tsB).length;
+  armBackfill(tsB, "[自测] PLT-006②：账本里没有，补投必须照发");
+  const markWb = childLog.length;
+  const sawB = await waitWakeLog(markWb, /WAKE RETRY (OK|SKIP|FAILED|STILL BUSY|STOP|DROP|CANCEL)/, 8);
+  check(
+    "PLT-006②：账本里没有 → 到点补投**照发**（不许把兜底弄没）",
+    sawB && !/WAKE RETRY CANCEL/.test(retryLineOf(markWb)),
+    retryLineOf(markWb)
+  );
+  const rowsB1 = rowsFor(tsB);
+  check(
+    "PLT-006③：补投成功 → 账本**新增一行且 mailbox_ts 非空**",
+    rowsB1.length === rowsB0 + 1 && !!rowsB1[rowsB1.length - 1].mailbox_ts,
+    JSON.stringify(rowsB1.slice(-1))
+  );
+
   child.kill();
   await new Promise((res) => setTimeout(res, 500));
 
   const failed = results.filter((x) => !x.ok);
   process.stdout.write("\n自测结果：" + (results.length - failed.length) + "/" + results.length + " 通过\n");
   if (failed.length && serverLog) process.stdout.write("--- 服务日志尾部 ---\n" + serverLog.slice(-1500) + "\n");
+  // 诊断用（长期保留）：公告相关用例一红，最需要看的是"这条公告被摄取了几次"——
+  // 摄取次数 > 1 会把"投递时刻"整批刷新，回执窗口就不会关（HUB-015② 就是这种形状）。
+  if (failed.some((x) => /HUB-015|公告/.test(String(x.name)))) {
+    const ing = String(serverLog || childLog || "")
+      .split("\n")
+      .filter((l) => /NOTICE INGESTED|NOTICE NUDGE|ROUTED SEEDED/.test(l));
+    process.stdout.write("--- 公告摄取/催办 行（诊断）---\n" + ing.slice(-12).join("\n") + "\n");
+  }
   return failed.length ? 1 : 0;
 }
 

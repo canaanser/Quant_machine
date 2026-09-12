@@ -406,6 +406,53 @@ function recordPush(toAlias, mailboxTs, dedupKey) {
     log("PUSH-LEDGER-SKIP:", String((e && e.message) || e).slice(0, 120));
   }
 }
+// ★ PLT-006（codex-总监 2026-09-13 06:23）：**补投队列原来完全不看账本**——
+//   小工已经投过了，补投队列不知道，到点照投 → 同一封信第二次触达（06:22:34 那次实测）。
+//   这里给出"这封信是不是已被别的通道送过"的查询口：按 **(收件线, mailbox_ts)** 找一行。
+//   键空间两侧已归一（都是看板名，见 05:49 的修复），历史 slug 行也一并认。
+//   读账本一律**宽容**：文件缺失/坏行 → 当作"没有"，绝不让它把补投本身弄挂。
+function pushedLedgerHas(toAlias, mailboxTs) {
+  const to = String(toAlias || "");
+  const mts = String(mailboxTs || "");
+  if (!to || !mts) return false;
+  // ★ PLT-006 硬约束（codex-总监 06:25 / codex-修复 06:25 清点）：账本 `to` **混着两套键**——
+  //   历史行是 slug（`codex-director`），05:49 之后才统一写看板名（`codex-总监`）。
+  //   **查询与写入必须用同一个键**：先归一到**看板名**（真源＝名册 `agents.json` 的 `slug` 字段），
+  //   不许拿原始字符串直接比——否则 `(codex-修复, 06:16)` 查不到 `codex-fix` 那行，补投照旧发。
+  //   注意：静态别名表 `boardName()` 不含新 slug（codex-director/render/adapter…），**必须查名册**。
+  const agents = readAgents().agents || {};
+  const canon = (v) => {
+    const key = String(v == null ? "" : v).trim().replace(/^@/, "");
+    if (!key) return "";
+    if (agents[key]) return key; // 已经是看板名
+    const low = key.toLowerCase();
+    for (const [name, meta] of Object.entries(agents)) {
+      if (String((meta && meta.slug) || "").toLowerCase() === low) return name;
+    }
+    return boardName(key);
+  };
+  const want = canon(to);
+  let rows = [];
+  try {
+    rows = fs.readFileSync(PUSHED_FILE, "utf8").split("\n").filter((l) => l.trim());
+  } catch {
+    return false; // 账本读不到 → 不拦补投（宁多叫一次，也不让信躺死）
+  }
+  // 只扫尾部：账本是 append-only，关心的是"最近的推送"
+  for (let i = rows.length - 1; i >= Math.max(0, rows.length - 400); i--) {
+    let r = null;
+    try {
+      r = JSON.parse(rows[i]);
+    } catch {
+      continue;
+    }
+    if (!r) continue;
+    if (canon(r.to) !== want) continue;
+    if (String(r.mailbox_ts || "") !== mts) continue;
+    return true;
+  }
+  return false;
+}
 // opts.mailboxTs：被推的那封信的 `ts`（对账用；判水位用不上也允许缺）
 async function deliverByQueue(alias, text, opts) {
   const meta = agentFor(alias) || {};
@@ -441,8 +488,9 @@ async function deliverByQueue(alias, text, opts) {
   }
 }
 // 统一投递口：queue（首选）→ resume（备选）。返回值只描述事实，不含任何"替它说的话"。
-async function deliverToLine(alias, text) {
-  const q = await deliverByQueue(alias, text);
+// opts 一路传给 deliverByQueue（补投要带 `mailbox_ts`，见 PLT-006）。
+async function deliverToLine(alias, text, opts) {
+  const q = await deliverByQueue(alias, text, opts);
   if (q.ok) {
     log("DELIVERED+WOKEN:", alias, "via=queue", (q.ms || 0) + "ms");
     return { ok: true, how: "queue" };
@@ -455,6 +503,8 @@ async function deliverToLine(alias, text) {
   try {
     const reply = await chatOnce(text, tid, BOUND_TIMEOUT_MS);
     log("DELIVERED+WOKEN:", alias, "via=resume");
+    // 备用通道（resume）也是**真的推出去了** → 同一把尺子记账，否则"补投走 resume"就不留痕
+    recordPush(alias, opts && opts.mailboxTs, queueTextHash(text));
     return { ok: true, how: "resume", reply: reply };
   } catch (e) {
     return { ok: false, how: q.how === "no-thread" ? "no-thread" : "failed", queue: q, error: String(e.message).slice(0, 200) };
@@ -2688,6 +2738,17 @@ async function wakeRetryTick() {
       log("WAKE RETRY SKIP(本尊已回):", alias);
       continue;
     }
+    // ★ PLT-006：**补投前先查共用账本**——两条通道之间只有"账本"这一条回路，
+    //   而补投队列原来完全不看它：小工已经投过了，补投队列不知道，到点照投 → 第二次触达。
+    //   判据：账本里已有 **(收件线, 这封信的 mailbox_ts)** → 取消补投，只留一行日志（不静默）。
+    //   注：mailbox_ts 只有**分钟精度**，所以"同分钟两封不同的信"会一并取消——这是**可接受**的：
+    //   补投的作用是"把人叫醒读信箱"，叫醒一次就把整只信箱一起读掉，第二封不会因此丢掉。
+    const backfillMts = String(m.ts || "").slice(0, 16);
+    if (pushedLedgerHas(alias, backfillMts)) {
+      setWakeBook(alias, { nextAt: 0, done: true, deliveredByLedgerAt: Date.now() });
+      log("WAKE RETRY CANCEL(已由另一通道送达):", alias, "mailbox_ts=" + backfillMts);
+      continue;
+    }
     // ② 还忙 / 已退役 / 已被限流 → 只改记账表，不打扰
     const verdict = decideDelivery(alias);
     if (verdict.action !== "inject") {
@@ -2712,7 +2773,9 @@ async function wakeRetryTick() {
       // 补投同样走统一口：先 codex queue，再 resume
       const dv = await deliverToLine(
         alias,
-        "（补投·看板留言，来自 " + (m.from || "老板") + "，时间 " + (m.ts || "") + "）" + (m.body || "")
+        "（补投·看板留言，来自 " + (m.from || "老板") + "，时间 " + (m.ts || "") + "）" + (m.body || ""),
+        // ★ PLT-006：补投**也要记账**，而且带**被补投那封信自己的 mailbox_ts**（不再写空串）
+        { mailboxTs: backfillMts }
       );
       if (!dv.ok) throw new Error(dv.error || dv.how || "补投失败");
       if (dv.reply) appendBoardLine("老板", alias, dv.reply);
