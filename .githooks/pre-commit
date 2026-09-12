@@ -1,0 +1,4 @@
+#!/bin/sh
+# 提交闸（2026-09-13 老板指示"你就装吧"）：委托给 Python 实现。
+# 绕过（仅老板本人或紧急止血）：CREW_HOOK_BYPASS=1 git commit ...
+exec python "$(dirname "$0")/crew_pre_commit.py"
