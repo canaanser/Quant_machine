@@ -60,3 +60,13 @@ outputs/ace_task.xml
 outputs/emt_app.js
 outputs/bigcap_ladder.json
 outputs/bigcap_ww_local.json
+
+# ===== 会话工具运行态 (2026-09-10, Codex): 不进版本库 =====
+outputs/inbox/
+outputs/dialog/
+outputs/net_guard_state.json
+
+# ===== 2026-09-13 (codex-总监): docs/ 里"被服务持续写"的投影不纳管 =====
+# 看板投影由 Hub 每次发言都重写 —— 纳管后工作树永远脏，会**堵合并**
+# （今晚已因"已跟踪文件被改"堵过两次）。真源是 outputs/dialog/dialog.ndjson，投影可重画。
+docs/COMMS_BOARD.md

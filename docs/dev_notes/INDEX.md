@@ -77,3 +77,7 @@
 | 值守/量化看守引擎 | 2026-09-09 | 2026-09-09/README.md 一、duty/README.md | 定稿常驻: duty_engine+托盘+看门狗+20:00数据同步+20:05/20:40自动计划 |
 | 模拟盘自主运营 | 2026-09-09 | 2026-09-09/README.md 三、docs/auto_run_notes.md | 老板授权一周(9/10起): 保本>降回撤>求利润; 9/10再平衡卖3买2→6只等权 |
 | compose_daily_plan | 2026-09-09 | scripts/compose_daily_plan.py | 每日6只等权再平衡计划器; 归档现金公共模块 core/lib/emq_arch.py |
+| 限网零成交事故(10013) | 2026-09-10 | 2026-09-10/README.md、docs/HANDOVER_20260910.md | 引擎被沙箱上下文拉起→socket 全拒(892条); 计划任务上下文重拉 + net_guard 安全网 |
+| 两线实盘执行(账1卖3买2 / 账2八票建仓) | 2026-09-11 | 2026-09-11/README.md | 引擎元组 bug→14:46 人工接管; 账2 连通测试+batch1+batch2 全成 |
+| 真源缺陷(元组/dbfread/回账0笔) | 2026-09-11 | 2026-09-11/README.md、outputs/inbox/20260911_180529_dsh.task.json | 待 Codex 复审; 复现与修法见 task 与 reports/dsh_20260911_a1_exec_incident.md |
+| 末位淘汰制(在研) | 2026-09-11 | 老板 18:0x 指示 | 判据: 弹性/主力资金流/相对强度/趋势门/热门相关性; 概念成分可从7899取, 热度需自算 |

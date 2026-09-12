@@ -1,0 +1,22 @@
+# 存档 · `codex-总监` 的「开发-验收闭环巡检」心跳（原文，2026-09-13 00:45 抓取）
+#
+# 为什么存这里：这条心跳的**触发路径**在当前平台版本上是坏的——
+#   它每次触发都会写出一条缺 `call_id` 的 `function_call_output`，
+#   导致该线程整轮 400、永久锁死（2026-09-12 23:06 / 2026-09-13 00:29 两次）。
+# 所以它现在被置为 `PAUSED`，**在平台修复前不许再开**。
+# 万一以后被删除，可照本文件原样恢复（`id` 必须仍是 `automation`）。
+#
+# 替代通道（已实测可用、且不走坏路径）：`crew_host` 的 `codex queue` 门铃
+#   —— 按点投一句"该巡检了"即可，见 `docs/LESSONS.md` L13 补记 / L16。
+#
+# 现场真源：`C:\Users\Administrator\.codex\automations\automation\automation.toml`
+
+version = 1
+id = "automation"
+kind = "heartbeat"
+name = "总监线·开发-验收闭环巡检"
+prompt = "巡检「开发→验收→开发」闭环。**每轮都很短**（别在对话里长篇）：能自动推进的就推进，没有可推进的事就**保持安静、不发任何消息**。\n\n按顺序做这三件：\n1) 合入闸：看 `outputs/merge/merge_request.json`。存在且 `ok=true` 且未合入 → 先复跑 `node scripts/crew_review_merge.mjs --check --repo <repo> --branch <branch> --task <task> [--tests \"<回归命令>\"] [--review <审阅记录路径>]`，仍全绿就走沙箱外小工的 `--apply` 合入；门禁挂了就贴出挂在哪一条。\n2) 待我处理的单：扫看板尾部与 `outputs/dialog/pending_codex-director.ndjson`，找 @codex-总监 的「待验收 / 待拍板 / 故障」，以及下属线（codex-套件 / 看板编辑 / 量化总监 / 唤醒通道 / dsh）声称\"已提交待验收\"或\"等下一单\"的条目；有未回的就处理，并在看板实名回一行（≤200 字）。\n3) 挂机的线：看 `outputs/crew_host_log.txt` 最近的 `doorbell-queue` 行与各线「已投递未唤醒」标注。若某条线**有未读留言但超过 10 分钟没产生新回合、没回板** → 直接用 `codex queue` 手工叫它一次（宿主可能还在跑旧通道），并记一行。\n\n判据：能自己闭环的自己闭环（派活 / 验收 / 合入 / 回板）；只有涉及下单、资金、策略参数、平台设置、给别人放权时才停下来问老板。"
+status = "PAUSED"
+rrule = "FREQ=MINUTELY;INTERVAL=5"
+target_thread_id = "01a08ac2-d43a-72f0-8a26-618e3c8e8edd"
+created_at = 1789220481838
