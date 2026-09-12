@@ -665,6 +665,8 @@ async function main() {
         MCHAT_CODEX_SHELL: "1",
         // 值守轮询调快：检索式代答的用例不必等 20 秒
         MCHAT_DUTY_POLL_MS: "3000",
+        // 补投扫描周期调到 3 秒：让"退避到点必须被扫到"能在自测里几秒内验完（默认 60s）
+        MCHAT_WAKE_RETRY_MS: "3000",
         // 用例里代答条数多，别被每小时限流干扰（生产仍是 10）
         MCHAT_DUTY_MAX_PER_HOUR: "50",
         // 队列硬冷却在用例里几乎关掉（生产 90s）；"同一条不重复投"仍生效，另有专门用例
@@ -1035,8 +1037,8 @@ async function main() {
   const w1 = wakesNow();
   check(
     "忙线：**已排定补投**（不是静默压住 —— 口径修正的核心）",
-    Number(w1.nextAt || 0) > Date.now() && Number(w1.attempts || 0) >= 1,
-    "还要等 " + Math.round((Number(w1.nextAt || 0) - Date.now()) / 1000) + "s · attempts=" + w1.attempts
+    Number(w1.nextAt || 0) > Date.now() && Number(w1.attempts || 0) >= 1 && w1.done !== true,
+    "还要等 " + Math.round((Number(w1.nextAt || 0) - Date.now()) / 1000) + "s · attempts=" + w1.attempts + " · done=" + w1.done
   );
   // 没被"唤醒"是硬要求；但**值守可以代答**（那是程序，不是本尊跑回合）——
   // 所以判据是"它自己发的话都带〔代答〕标签"，而不是"它一句话都没有"。
@@ -1073,6 +1075,44 @@ async function main() {
     dReady.body.action + " / " + (dReady.body.reason || "")
   );
   check("补投循环已接线（服务日志有 WAKE RETRY LOOP STARTED）", /WAKE RETRY LOOP STARTED/.test(childLog), "log");
+
+  // ★ 回归（2026-09-12 真 bug · 现场抓到）：`done` 残留会把补投**静默跳过**——
+  //   wakeRetryTick 第一句曾写 `if (b.done) continue`，而排定补投的几条写点只写 nextAt、
+  //   不清 done，于是"退避到点后补投"在生产里从未真正发生过（日志里连一个字都没有）。
+  //   这里按现场形状复现：{done:true, nextAt:<已过期>} + 信箱里有一条**新的**待补投留言
+  //   → 修好后必须照样被扫到并留下动作行。
+  fs.appendFileSync(
+    mailboxFile,
+    JSON.stringify({
+      ts: cst(new Date()).slice(0, 16).replace("T", " "),
+      from: "老板",
+      to: "codex-测忙",
+      body: "[自测] 补投回归：done 残留也要被扫到",
+    }) + "\n",
+    "utf8"
+  );
+  const stFix = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  stFix.wakes["codex-测忙"] = { ...(stFix.wakes["codex-测忙"] || {}), done: true, nextAt: Date.now() - 1000 };
+  fs.writeFileSync(stateFile, JSON.stringify(stFix, null, 2), "utf8");
+  const logMark = childLog.length;
+  let retrySeen = false;
+  for (let i = 0; i < 6 && !retrySeen; i++) {
+    await new Promise((r) => setTimeout(r, 1500)); // 自测里补投 poll=3s
+    retrySeen = /WAKE RETRY (SKIP|OK|STILL BUSY|FAILED|STOP|DROP)/.test(childLog.slice(logMark));
+  }
+  const retryLine = (childLog.slice(logMark).split("\n").find((l) => /WAKE RETRY/.test(l)) || "").trim();
+  check(
+    "补投：done 残留 + 已到点 → 仍被扫到（不许静默跳过 · 2026-09-12 修）",
+    retrySeen,
+    retryLine.slice(0, 140) ||
+      "没有 WAKE RETRY 动作行（= 被静默跳过）｜服务日志尾部：" + childLog.slice(-700).replace(/\s+/g, " ")
+  );
+  const afterFix = (JSON.parse(fs.readFileSync(stateFile, "utf8")).wakes || {})["codex-测忙"] || {};
+  check(
+    "补投：扫过之后账本必须收敛（不许停在过期的 nextAt 上）",
+    Number(afterFix.nextAt || 0) === 0 || Number(afterFix.nextAt || 0) > Date.now(),
+    "nextAt=" + (afterFix.nextAt || 0) + " done=" + afterFix.done
+  );
 
   // —————————— HUB-002 must-fix（特批裁决 2026-09-11 05:0x）：锁文件在 ≠ 忙 ——————————
   fs.writeFileSync(path.join(dirs.locks, "01a0dddd-0000-7000-8000-000000000003.lock"), "", "utf8");

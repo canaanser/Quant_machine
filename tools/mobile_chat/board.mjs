@@ -2028,6 +2028,8 @@ const BUSY_OUTPUT_MS = Number(process.env.MCHAT_BUSY_OUTPUT_MS || 90000);
 // 一条留言最多补投几次。走完退避阶梯（2→5→15 分钟）就**停手并在看板留一行**——
 // 宁可留一行说明，也不要静默压住，也不要无限重试（老板 2026-09-11 05:0x 裁决第三条）。
 const WAKE_MAX_ATTEMPTS = Number(process.env.MCHAT_WAKE_MAX_ATTEMPTS || WAKE_BACKOFF_MS.length);
+// 补投扫描周期（HUB-002 忙等门铃）。做成可配是为了自测能在几秒内验到"到点必被扫到"。
+const WAKE_RETRY_MS = Math.max(500, Number(process.env.MCHAT_WAKE_RETRY_MS || 60000));
 
 function lineState(alias) {
   const meta = agentFor(alias) || {};
@@ -2050,11 +2052,19 @@ function wakeBook(alias) {
   const st = readState();
   return (st.wakes && st.wakes[String(alias).toLowerCase()]) || {};
 }
+// ★ 口径修正（2026-09-12 · 又一种"静默丢"）：`done` 与 `nextAt` 是**互斥**的两种状态。
+//   done=true 的语义是"这单不用再叫了"；而 wakeRetryTick 第一句曾是 `if (b.done) continue`，
+//   于是"排定补投"只要没清掉上一轮遗留的 done，补投就会被**静默跳过**（日志里一个字都没有）。
+//   现场抓到的实例：codex-总监 的账本 = {done:true, nextAt:22:24:35} —— 到点也永远不补投，
+//   等于"投递≠唤醒"这条老病又从一个新口子漏了回来。
+//   修法放在**唯一汇聚点**：只要排了 nextAt>0，就一定是"未完成"，强制 done=false。
 function setWakeBook(alias, patch) {
   const st = readState();
   const all = st.wakes || {};
   const key = String(alias).toLowerCase();
-  all[key] = { ...(all[key] || {}), ...patch };
+  const next = { ...(all[key] || {}), ...patch };
+  if (Number(next.nextAt || 0) > 0) next.done = false;
+  all[key] = next;
   writeState({ ...readState(), wakes: all });
   return all[key];
 }
@@ -2383,19 +2393,32 @@ async function wakeRetryTick() {
   const wakes = st.wakes || {};
   const now = Date.now();
   for (const [key, b] of Object.entries(wakes)) {
-    if (!b || b.done || !b.nextAt || now < Number(b.nextAt)) continue;
+    // 只认"到点的补投"：nextAt>0 且已到点。**不再拿 done 当挡箭牌** ——
+    // done 残留曾让补投静默消失（见 setWakeBook 的注释）；这里的唯一依据是 nextAt。
+    // done=true 而 nextAt=0 的条目（已投递未唤醒 / 已叫醒 / 已停机）本来就不会进来。
+    if (!b || !Number(b.nextAt) || now < Number(b.nextAt)) continue;
     const alias = key;
     const file = dutyMailboxFile(alias);
     let lines = [];
     try {
       lines = fs.readFileSync(file, "utf8").split("\n").filter((l) => l.trim());
     } catch {
-      setWakeBook(alias, { nextAt: 0, done: true }); // 信箱没了 → 没什么可补投
+      // 信箱没了 → 没什么可补投。**但必须留痕**：静默分支正是"投递≠唤醒"跑偏的老口子。
+      setWakeBook(alias, { nextAt: 0, done: true });
+      log("WAKE RETRY DROP:", alias, "信箱不存在，无待补投");
       continue;
     }
-    if (!lines.length) { setWakeBook(alias, { nextAt: 0, done: true }); continue; }
+    if (!lines.length) {
+      setWakeBook(alias, { nextAt: 0, done: true });
+      log("WAKE RETRY DROP:", alias, "信箱已空，无待补投");
+      continue;
+    }
     let m = null;
-    try { m = JSON.parse(lines[lines.length - 1]); } catch { setWakeBook(alias, { nextAt: 0, done: true }); continue; }
+    try { m = JSON.parse(lines[lines.length - 1]); } catch {
+      setWakeBook(alias, { nextAt: 0, done: true });
+      log("WAKE RETRY DROP:", alias, "末条不是合法 JSON，无待补投");
+      continue;
+    }
     // ① 幂等：本尊已经回过了 → 作废这条待唤醒，**不再打扰**（重复扫描/补投都不会再注入）
     const at = Date.parse(String(m.ts || "").replace(" ", "T") + ":00+08:00") || 0;
     if (at && readDialog(300).some((r) => String(r.from || "") === alias && parseCst(r.ts) > at)) {
@@ -2408,6 +2431,7 @@ async function wakeRetryTick() {
     if (verdict.action !== "inject") {
       if (verdict.action === "retired" || verdict.action === "unknown") {
         setWakeBook(alias, { nextAt: 0, done: true });
+        log("WAKE RETRY DROP:", alias, "不可投（" + verdict.action + "）");
         continue;
       }
       const n = Number(b.attempts || 0);
@@ -2438,6 +2462,7 @@ async function wakeRetryTick() {
       if (kind === "window-idle") {
         // 窗口占用但空闲（抢锁失败、它并没在跑回合）→ 按裁决：停止重试 + 看板显式标注
         setWakeBook(alias, { nextAt: 0, done: true, parked: true, parkedAt: Date.now(), lastReason: "窗口占用但空闲（抢锁失败）", lastError: String(e.message).slice(0, 120) });
+        log("WAKE RETRY STOP:", alias, "窗口占用但空闲（已投递未唤醒，不再补投）", String(e.message).slice(0, 80));
         annotateNotWoken(alias, "桌面端占着这条线的窗口、但没在跑回合（抢锁失败）");
       } else {
         const wait = WAKE_BACKOFF_MS[Math.min(n, WAKE_BACKOFF_MS.length - 1)];
@@ -5530,8 +5555,8 @@ async function main() {
   // HUB-002 忙等门铃：退避到点后补投一次（一轮只补一条线；仍进不去就再退避）
   setInterval(() => {
     wakeRetryTick().catch((e) => log("WAKE RETRY TICK FAILED:", e.message));
-  }, 60000);
-  log("WAKE RETRY LOOP STARTED poll=60000ms backoff=" + WAKE_BACKOFF_MS.join("/") + "ms");
+  }, WAKE_RETRY_MS);
+  log("WAKE RETRY LOOP STARTED poll=" + WAKE_RETRY_MS + "ms backoff=" + WAKE_BACKOFF_MS.join("/") + "ms");
   // HUB-006：暂停期间每 30 分钟在看板重申一次（节流；标"重复提醒"），直到解除
   setInterval(() => {
     try {
