@@ -112,7 +112,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.49";
+const PAGE_VER = "2026-09-10.50"; // .50：HUB-004 派单页（手机端表单 + 三态结果）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -1365,6 +1365,10 @@ function capabilities() {
     },
     transports: ["http+json", "sse"],
     auth: ["x-mchat-token", "query:token(/api/events 不需要)"],
+    // HUB-004 派单表单：下拉的候选一律由服务端给，页面不写死（不然登记表一改就漂）
+    taskPrefixes: TASK_PREFIXES,
+    taskKinds: TASK_KINDS,
+    taskPrios: TASK_PRIOS,
     limits: { dialogDefaultLimit: 200, dialogMaxLimit: 500, sseHeartbeatSec: 20 },
   };
 }
@@ -1458,6 +1462,9 @@ function sseNotify(kind) {
 const TASKS_DIR = process.env.MCHAT_TASKS_DIR || path.join(WORKSPACE, "docs", "tasks");
 const TASKS_STATE_FILE = path.join(STATE_DIR, "tasks_state.json");
 const TASK_PREFIXES = ["HUB", "KIT", "TRD", "NET", "DAT"]; // 真源 docs/TASK_ID_STANDARD.md §二
+// HUB-004 派单表单用：类型 / 优先级清单。页面**从 /api/meta 取**，不写死在页面里。
+const TASK_KINDS = ["incident", "dev", "debug", "test", "ops"];   // 卡 §二
+const TASK_PRIOS = ["P0", "P1", "P2", "P3"];                      // 卡 §二
 const TASK_STATES = ["open", "claimed", "blocked", "done", "dropped"];
 function readTasksState() {
   try {
@@ -3258,6 +3265,33 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 #groupCancel,#groupCreate{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:6px 10px;font-size:var(--fs-ui);cursor:pointer;flex-shrink:0}
 #groupCreate{border-color:var(--accent);color:var(--accent)}
 #groupPick{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:6px 0 20px}
+/* 派单页（HUB-004）：老板选人 + 写要求 + 一键生成标准卡；结果区给三态（叫醒/未唤醒/落信箱） */
+#taskPage{display:none;position:fixed;inset:0;z-index:43;background:var(--bg);flex-direction:column}
+#taskPage.on{display:flex}
+#taskBar{display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 8px) var(--pad-x) 8px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
+#taskBar .ct-title{font-size:var(--fs-ui);font-weight:600;color:var(--text);flex:1}
+#taskCancel{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:6px 10px;font-size:var(--fs-ui);cursor:pointer;flex-shrink:0}
+#taskBody{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:12px var(--pad-x) 28px}
+.tp-f{margin-bottom:14px}
+.tp-l{display:block;font-size:var(--fs-ui);color:var(--dim);margin-bottom:6px}
+.tp-l .req{color:#e5484d}
+#taskPage input,#taskPage textarea,#taskPage select{width:100%;box-sizing:border-box;background:var(--input-bg);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:var(--fs-ui);font-family:inherit}
+#taskPage textarea{min-height:62px;resize:vertical;line-height:1.5}
+.tp-row{display:flex;gap:10px}
+.tp-row>div{flex:1;min-width:0}
+.tp-acc{display:flex;gap:8px;margin-bottom:6px}
+.tp-acc input{flex:1;min-width:0}
+.tp-del{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:0 10px;cursor:pointer;flex-shrink:0}
+#taskAddAcc{width:100%;background:transparent;border:1px dashed var(--line);color:var(--dim);border-radius:9px;padding:7px 10px;font-size:var(--fs-ui);cursor:pointer}
+#taskSubmit{width:100%;background:var(--accent);color:#fff;border:0;border-radius:11px;padding:12px;font-size:var(--fs-ui);cursor:pointer}
+#taskSubmit:disabled{opacity:.5;cursor:default}
+#taskResult{margin-top:4px}
+.tp-res{background:var(--panel);border-left:3px solid var(--line);border-radius:10px;padding:10px 12px;font-size:var(--fs-ui);line-height:1.65}
+.tp-res.ok{border-left-color:#2f9e44}
+.tp-res.warn{border-left-color:#f59f00}
+.tp-res.info{border-left-color:var(--accent)}
+.tp-res .tp-id{font-weight:650}
+.tp-res .tp-sub{display:block;margin-top:4px;color:var(--dim);font-size:var(--fs-meta)}
 .gp{display:flex;align-items:center;gap:10px;padding:10px var(--pad-x);border-bottom:1px solid var(--line);cursor:pointer}
 .gp.on{background:var(--flash-bg)}
 .gp .gp-box{width:18px;height:18px;border:1px solid var(--line);border-radius:5px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--accent)}
@@ -3399,6 +3433,7 @@ body{min-height:100vh}
   <div id="warn"><span id="warnText"></span><button id="warnX" title="知道了（同样的旧账不再提示）">✕</button></div>
 </div>
 <div id="menu">
+  <button class="mrow" id="menuTask">派单（生成标准卡）</button>
   <button class="mrow" id="menuContacts">联系人</button>
   <button class="mrow" id="menuSearch">搜索记录</button>
   <button class="mrow" id="menuNotify">新消息提醒：关</button>
@@ -3440,6 +3475,55 @@ body{min-height:100vh}
     <button id="groupCreate">创建</button>
   </div>
   <div id="groupPick"></div>
+</div>
+<div id="taskPage">
+  <div id="taskBar">
+    <span class="ct-title">派单</span>
+    <button id="taskCancel">取消</button>
+  </div>
+  <div id="taskBody">
+    <div class="tp-f">
+      <label class="tp-l" for="taskAssignee">派给谁 <span class="req">*</span></label>
+      <select id="taskAssignee"></select>
+    </div>
+    <div class="tp-f">
+      <label class="tp-l" for="taskTitle">要什么（标题）<span class="req">*</span></label>
+      <input id="taskTitle" placeholder="一句话说清要做什么（≥4 字）">
+    </div>
+    <div class="tp-f">
+      <label class="tp-l" for="taskGoal">目标 / 背景</label>
+      <textarea id="taskGoal" placeholder="为什么要做、做成什么样（可选）"></textarea>
+    </div>
+    <div class="tp-f">
+      <label class="tp-l">验收标准 <span class="req">*</span>（至少一条；机器按它判）</label>
+      <div id="taskAcc"></div>
+      <button id="taskAddAcc" type="button">＋ 加一条</button>
+    </div>
+    <div class="tp-f tp-row">
+      <div>
+        <label class="tp-l" for="taskKind">类型</label>
+        <select id="taskKind"></select>
+      </div>
+      <div>
+        <label class="tp-l" for="taskPrio">优先级</label>
+        <select id="taskPrio"></select>
+      </div>
+    </div>
+    <div class="tp-f tp-row">
+      <div>
+        <label class="tp-l" for="taskPrefix">前缀（自动取号）</label>
+        <select id="taskPrefix"></select>
+      </div>
+      <div>
+        <label class="tp-l" for="taskDue">截止（可选）</label>
+        <input id="taskDue" placeholder="如 2026-09-15 18:00">
+      </div>
+    </div>
+    <div class="tp-f">
+      <button id="taskSubmit" type="button">派单（生成卡 + 投信箱 + 看板留记录）</button>
+    </div>
+    <div class="tp-f" id="taskResult"></div>
+  </div>
 </div>
 <div id="composer">
   <div id="diag"></div>
@@ -3626,6 +3710,112 @@ async function createGroup(){
     closeGroupPage();
     load();
   }catch(e){toast("建群失败：网络/超时");}
+}
+// —— 派单页（HUB-004）：选人 + 写要求 + 一键生成标准卡 ——
+//   规则全活在服务端（/api/tasks）：自动取号、套标准模板、投对方信箱、看板留一条派单记录，
+//   并**返回三态投递结论**（叫醒 / 已投递未唤醒 / 已落信箱）。页面只做三件事：
+//   给人用的表单、必填校验、把三态**原样**显示出来（不许自己编"已通知"）。
+let TASK_META=null; // 前缀/类型/优先级：从 /api/meta 取（不写死在页面，登记表一改就跟着变）
+function fillSel(sel,list,def){
+  if(!sel||!Array.isArray(list))return;
+  const keep=String(sel.value||"");
+  sel.innerHTML="";
+  for(const v of list){
+    const o=document.createElement("option");
+    o.value=String(v);o.textContent=String(v);
+    sel.appendChild(o);
+  }
+  if(list.indexOf(keep)>=0)sel.value=keep;
+  else if(def&&list.indexOf(def)>=0)sel.value=def;
+  else if(list.length)sel.value=String(list[0]);
+}
+function taskMetaApply(m){
+  if(!m)return;
+  TASK_META=m;
+  fillSel($("#taskKind"),m.taskKinds,"dev");
+  fillSel($("#taskPrio"),m.taskPrios,"P2");
+  fillSel($("#taskPrefix"),m.taskPrefixes,"HUB");
+}
+function taskRenderAssignees(){
+  const sel=$("#taskAssignee");
+  if(!sel)return;
+  const keep=String(sel.value||"");
+  sel.innerHTML="";
+  const list=(AGENTS||[]).filter(a=>!a.retired).slice()
+    .sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+  for(const a of list){
+    const o=document.createElement("option");
+    o.value=String(a.alias);
+    o.textContent=String(a.alias)+(a.title?("（"+a.title+"）"):"")+(a.pendingMail?(" · 信箱 "+a.pendingMail):"");
+    sel.appendChild(o);
+  }
+  if(keep)sel.value=keep;
+}
+function taskAccRow(v){
+  const wrap=document.createElement("div");
+  wrap.className="tp-acc";
+  const inp=document.createElement("input");
+  inp.className="tp-acc-in";
+  inp.placeholder="一条能判定的标准，例如「selftest 全绿」";
+  inp.value=String(v||"");
+  const del=document.createElement("button");
+  del.type="button";del.className="tp-del";del.textContent="✕";del.title="删掉这条";
+  del.addEventListener("click",()=>{
+    if($("#taskAcc").querySelectorAll(".tp-acc").length<=1){inp.value="";return;}
+    wrap.remove();
+  });
+  wrap.appendChild(inp);wrap.appendChild(del);
+  return wrap;
+}
+function taskAccAdd(v){$("#taskAcc").appendChild(taskAccRow(v));}
+function openTaskPage(){
+  $("#taskPage").classList.add("on");
+  $("#taskResult").innerHTML="";
+  $("#taskTitle").value="";$("#taskGoal").value="";$("#taskDue").value="";
+  $("#taskAcc").innerHTML="";
+  taskAccAdd("");
+  taskRenderAssignees();
+  if(TASK_META)taskMetaApply(TASK_META);
+  fetchT("/api/meta",{},8000).then(r=>r.json()).then(taskMetaApply).catch(()=>{});
+  setTimeout(()=>{try{$("#taskTitle").focus();}catch(e){}},50);
+}
+function closeTaskPage(){$("#taskPage").classList.remove("on");}
+function taskResultShow(kind,html){
+  const box=$("#taskResult");
+  if(!box)return;
+  box.innerHTML="";
+  const d=document.createElement("div");
+  d.className="tp-res "+kind;
+  d.innerHTML=html;
+  box.appendChild(d);
+}
+async function submitTask(){
+  const assignee=String($("#taskAssignee").value||"").trim();
+  const title=String($("#taskTitle").value||"").trim();
+  const goal=String($("#taskGoal").value||"").trim();
+  const due=String($("#taskDue").value||"").trim();
+  const acc=[].slice.call($("#taskAcc").querySelectorAll(".tp-acc-in"))
+    .map(e=>String(e.value||"").trim()).filter(Boolean);
+  const kind=String($("#taskKind").value||"dev"), prio=String($("#taskPrio").value||"P2"), prefix=String($("#taskPrefix").value||"HUB");
+  if(!assignee){toast("先选派给谁");return;}
+  if(title.length<4){toast("标题至少 4 个字");return;}
+  if(!acc.length){toast("没有验收标准不许派（至少一条）");return;}
+  const btn=$("#taskSubmit");
+  btn.disabled=true;
+  try{
+    const r=await fetchT("/api/tasks",{method:"POST",headers:{"Content-Type":"application/json","x-mchat-token":token},
+      body:JSON.stringify({author:"老板",assignee:assignee,title:title,goal:goal,acceptance:acc,kind:kind,priority:prio,prefix:prefix,due:due})},20000);
+    const j=await r.json();
+    if(!r.ok){taskResultShow("warn","派单没成："+String(j.error||r.status));toast("派单失败");return;}
+    const dv=j.delivery||{};
+    const cls=dv.status==="woken"?"ok":(dv.status==="not-woken"?"warn":"info");
+    const icon=dv.status==="woken"?"✅":(dv.status==="not-woken"?"⚠️":"📥");
+    taskResultShow(cls,"<span class='tp-id'>"+String(j.id)+"</span> · "+icon+" "+String(dv.text||"已提交")+
+      "<span class='tp-sub'>卡：docs/tasks/"+String(j.id)+".md ｜ 接手：@"+assignee+"</span>");
+    toast("已派 "+String(j.id));
+    load();
+  }catch(e){taskResultShow("warn","派单失败：网络/超时（卡可能没落，别重复点）");}
+  finally{btn.disabled=false;}
 }
 function renderContacts(q){
   const box=$("#contactsList");
@@ -4633,6 +4823,10 @@ renderTargets();
   });
 $("#searchCancel").addEventListener("click",closeSearch);
 $("#menuContacts").addEventListener("click",openContacts);
+$("#menuTask").addEventListener("click",()=>{setMenu(false);openTaskPage();});
+$("#taskCancel").addEventListener("click",closeTaskPage);
+$("#taskAddAcc").addEventListener("click",()=>taskAccAdd(""));
+$("#taskSubmit").addEventListener("click",submitTask);
 $("#contactsCancel").addEventListener("click",closeContacts);
 $("#contactsFilter").addEventListener("input",(e)=>renderContacts(e.target.value));
 $("#groupCancel").addEventListener("click",closeGroupPage);
@@ -4644,7 +4838,10 @@ $("#groupCreate").addEventListener("click",createGroup);
   document.addEventListener("click",(e)=>{
     if(!menuIsOpen())return;
     const t=e.target;
-    if(t.closest&&(t.closest("#menu")||t.closest("#menuBtn")))return;
+    // ★ 允许列表里**必须**带上开菜单的那两个开关本身，否则"先开、再被同一击关掉"：
+    //   点标题（#titleBtn）曾因此**永远打不开菜单**——它自己有 toggle 处理器，但事件冒泡到这里
+    //   又立刻 setMenu(false)（2026-09-13 在 ui_check 里抓到，点 ⋯ 能开、点标题不能）。
+    if(t.closest&&(t.closest("#menu")||t.closest("#menuBtn")||t.closest("#titleBtn")))return;
     setMenu(false);
   });
 // 往下翻消息 -> 收起面板让位；往上翻 / 回到顶部 -> 放出来
@@ -5138,10 +5335,39 @@ async function main() {
       try {
         fs.appendFileSync(path.join(MAILBOX_DIR, "pending_" + slugFor(assignee) + ".ndjson"), JSON.stringify({ ts: fmtNow(), from: author, to: assignee, body: summary }) + "\n", "utf8");
       } catch {}
-      const dv = await deliverToLine(assignee, "（看板派单，来自 " + author + "）" + summary).catch(() => ({ ok: false }));
-      appendBoardLine("老板", CODEX_SERVICE, "（系统：派单 **" + id + "** → @" + assignee + "：" + title + (dv.ok ? "（已投递+已唤醒）" : "（已落它信箱，未唤醒）") + "）");
-      log("TASK CREATED:", id, "->", assignee, dv.ok ? "woken" : "mailbox", "by=" + author);
-      sendJson(res, 200, { ok: true, id: id, file: "docs/tasks/" + id + ".md", assignee: assignee, delivered: !!dv.ok });
+      const dv = await deliverToLine(assignee, "（看板派单，来自 " + author + "）" + summary)
+        .catch((e) => ({ ok: false, how: "error", error: String((e && e.message) || e) }));
+      // ★ HUB-004 §四之一（总监 2026-09-11 05:4x 追加）：提交后**立刻**给出这条单的投递结论，
+      //   三态之一，依据直接复用 HUB-002 的排障口（decideDelivery）——不许只回一句"提交成功"，
+      //   否则老板分不清这单是"有人接"还是"压在信箱里"。
+      const verdict = decideDelivery(assignee);
+      const dstate = dv.ok
+        ? "woken"
+        : dv.how === "no-thread"
+          ? "mailbox"
+          : verdict.action === "inject"
+            ? "not-woken"
+            : "mailbox";
+      const dtext =
+        dstate === "woken"
+          ? "已叫醒，它本人已接手"
+          : dstate === "not-woken"
+            ? "已投递未唤醒（" + (verdict.reason || dv.error || dv.how || "投递未成功") + "）——留言在它信箱"
+            : "已落它信箱，未叫醒（" + (verdict.reason || dv.how || "没绑定会话") + "）";
+      appendBoardLine(
+        "老板",
+        CODEX_SERVICE,
+        "（系统：@" + author + " 派单 **" + id + "** → @" + assignee + "：" + title + "｜" + dtext + "）"
+      );
+      log("TASK CREATED:", id, "->", assignee, dstate, "by=" + author);
+      sendJson(res, 200, {
+        ok: true,
+        id: id,
+        file: "docs/tasks/" + id + ".md",
+        assignee: assignee,
+        delivered: dstate === "woken",
+        delivery: { status: dstate, text: dtext, how: dv.how || "", reason: verdict.reason || "" },
+      });
       return;
     }
     // 状态流转（写侧车，不改卡；卡是规范真源，运行态是投影）

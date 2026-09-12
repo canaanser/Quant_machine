@@ -308,6 +308,60 @@ def main():
         pg.wait_for_timeout(150)
         ck("群组：新建页能关掉（不挡主界面）", not pg.is_visible("#groupPage"), "closed")
 
+        # HUB-004 派单页：老板选人 + 写要求 + 一键生成标准卡；结果区给三态
+        # 注意：菜单是 position:fixed，offsetParent 恒为 null，不能用它判可见（踩过）
+        def menu_visible():
+            return pg.evaluate(
+                "()=>{const e=document.querySelector('#menuTask');if(!e)return false;"
+                "const s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden'"
+                "&&e.getBoundingClientRect().height>0;}"
+            )
+
+        # 菜单可能已经开着（前面几段测试轮流开关过），别硬点一下把它又关掉
+        if not menu_visible():
+            pg.click("#menuBtn")
+            pg.wait_for_timeout(300)
+        ck("派单：菜单里有入口", menu_visible(), "menuTask")
+        pg.click("#menuTask")
+        pg.wait_for_timeout(500)
+        ck("派单：点一下能打开派单页（且菜单自动收起）", pg.is_visible("#taskPage"), "taskPage")
+        who = pg.eval_on_selector_all("#taskAssignee option", "n=>n.map(e=>e.textContent)")
+        ck("派单：派给谁取自实例表（不写死）", len(who) >= 5, "候选 %s 个：%s" % (len(who), who[:3]))
+        ck(
+            "派单：退役条目不在候选里（它不是活人）",
+            not any("退役" in str(x) for x in who),
+            who,
+        )
+        kinds = pg.eval_on_selector_all("#taskKind option", "n=>n.map(e=>e.value)")
+        prios = pg.eval_on_selector_all("#taskPrio option", "n=>n.map(e=>e.value)")
+        prefix = pg.eval_on_selector_all("#taskPrefix option", "n=>n.map(e=>e.value)")
+        ck("派单：类型/优先级/前缀候选取自 /api/meta（不写死在页面）", len(kinds) >= 3 and len(prios) >= 3 and len(prefix) >= 3, "kind=%s prio=%s prefix=%s" % (kinds, prios, prefix))
+        ck("派单：验收标准默认给一行（省得老板找不到地方写）", pg.eval_on_selector_all("#taskAcc .tp-acc", "n=>n.length") >= 1, "accrows")
+        # 必填校验必须在客户端就拦住：没写验收标准不许提交（卡 §四.1）
+        pg.fill("#taskTitle", "自测：这条不该发出去")
+        pg.click("#taskSubmit")
+        pg.wait_for_timeout(700)
+        ck(
+            "派单：没写验收标准时不许提交（本地就拦住）",
+            pg.eval_on_selector("#taskResult", "e=>e.children.length") == 0,
+            "result=%s" % pg.eval_on_selector("#taskResult", "e=>e.textContent"),
+        )
+        pg.click("#taskAddAcc")
+        pg.wait_for_timeout(120)
+        ck("派单：「＋ 加一条」能加出第二行验收标准", pg.eval_on_selector_all("#taskAcc .tp-acc", "n=>n.length") == 2, "accrows=2")
+        pg.click("#taskCancel")
+        pg.wait_for_timeout(200)
+        ck("派单：派单页能关掉（不挡主界面）", not pg.is_visible("#taskPage"), "closed")
+        # 顺带钉住一个真 bug：点标题也能弹出菜单。
+        # 原来 #titleBtn 自己有 toggle，但事件冒泡到"点空白处收起菜单"那段时不在允许列表里，
+        # 于是**先开、再被同一击关掉** —— 点 ⋯ 能开、点标题永远打不开（2026-09-13 抓到）。
+        pg.wait_for_timeout(150)
+        pg.click("#titleBtn")
+        pg.wait_for_timeout(300)
+        ck("点标题也能弹出菜单（不再被「点空白处收起」立刻关掉）", menu_visible(), "titleBtn")
+        pg.evaluate("()=>{try{setMenu(false)}catch(e){}}")
+        pg.wait_for_timeout(120)
+
         try:
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             pg.screenshot(path=SHOT)

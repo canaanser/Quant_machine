@@ -1577,6 +1577,28 @@ async function main() {
     made.status === 200 && madeBody.id === "HUB-902" && fs.existsSync(path.join(dirs.tasks, "HUB-902.md")),
     JSON.stringify(madeBody).slice(0, 120)
   );
+  // ★ HUB-004 §四之一（总监 2026-09-11 05:4x）：提交后必须**立刻**给出这条单的投递结论（三态），
+  //   不许只回一句"提交成功"——否则老板分不清这单是"有人接"还是"压在信箱里"。
+  const dv = madeBody.delivery || {};
+  check(
+    "HUB-004：派单回应带三态投递结论（woken / not-woken / mailbox）",
+    ["woken", "not-woken", "mailbox"].indexOf(String(dv.status)) >= 0 && String(dv.text || "").length > 0,
+    JSON.stringify(dv).slice(0, 150)
+  );
+  check(
+    "HUB-004：接手方没绑定会话时，结论**不许**写「已叫醒」（不谎报）",
+    dv.status === "mailbox" && !/已叫醒/.test(String(dv.text || "")),
+    String(dv.status) + " / " + String(dv.text || "").slice(0, 70)
+  );
+  const taskLine = fs
+    .readFileSync(BOARD_FILE, "utf8")
+    .split("\n")
+    .find((l) => l.indexOf("HUB-902") >= 0 && l.indexOf("派单") >= 0) || "";
+  check(
+    "HUB-004：看板留的派单记录里写了**谁派的**（署名归发起线，不冒充老板）",
+    taskLine.indexOf("@codex-看板编辑") >= 0 && taskLine.indexOf("@codex-测无会话") >= 0,
+    taskLine.slice(0, 150)
+  );
   const noAccept = await fetch(base + "/api/tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
