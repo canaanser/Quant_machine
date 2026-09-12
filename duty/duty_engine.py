@@ -285,20 +285,20 @@ def task_tail_exec():
     sells = []
     for e in ev:
         if e["trigger"] in ("防崩", "峰顶", "滞涨") and e.get("px"):
-            sells.append([e["code"], e["shares"], e["px"],
+            sells.append(["SELL", e["code"], e["shares"], e["px"],
                           e["name"] or NAMED.get(e["code"], "")])
             decision(f"[tail] 卖触发 {e['code']} {e['action']}")
     # 2) 计划减仓(sell行): 不超持仓; 同码已触发卖出则跳过(防重复卖超)
     if plan and not _already_sent():
         for (code, side, sh, pxr, nm) in plan:
             if side == "sell" and code in pos and code in px:
-                if any(s[0] == code for s in sells):
+                if any(s[1] == code for s in sells):
                     decision(f"[tail] {code} 已触发卖出, 跳过计划减仓")
                     continue
                 own = pos[code]["shares"]
                 if own <= 0:
                     continue
-                sells.append([code, min(int(sh), own), px[code], nm or NAMED.get(code, "")])
+                sells.append(["SELL", code, min(int(sh), own), px[code], nm or NAMED.get(code, "")])
                 decision(f"[tail] 计划减仓 {code} {min(int(sh), own)}股")
     # 3) 买入(按计划)
     buys = []
