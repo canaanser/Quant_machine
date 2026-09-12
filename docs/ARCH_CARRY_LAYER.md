@@ -117,7 +117,7 @@
 | 口 | 作用 | 幂等 |
 | --- | --- | --- |
 | `POST /api/post {author,target,body}` | 看板正门（泛称/未注册拒收） | 是（按行内容） |
-| `POST /api/send {target,message,quoteId?,author?}` | 手机/程序发消息（`author` 可选，须注册） | — |
+| `POST /api/send {author,target,message,quoteId?}` | 手机/程序发消息（**`author` 必填**：注册看板名或 `老板`；缺 → 400） | — |
 | `POST /api/mail {to,from,body}` | 定向投信箱（不保证唤醒） | — |
 | `POST /api/ingest {source,ref,from,body,to?,kind?}` | **多来源归一**（看板/txt/套件/脚本） | 是（id 去重） |
 | `POST /api/tasks` | 建卡（自动取号/落卡/投信箱/看板留痕/**尽力唤醒**） | 重号 409 |

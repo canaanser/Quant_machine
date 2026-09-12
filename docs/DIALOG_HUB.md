@@ -43,8 +43,9 @@
 ## 四、接口
 
 - `GET /api/dialog?limit=200` → `{records:[...], updatedAt}`（页面渲染用）
-- `POST /api/send {target, message}` → 老板发消息（等价旧 `/api/board`）
-- `POST /api/send {target, message, quoteId?}` → 引用回复：`quoteId` 指向某条记录，服务端把摘要落进新记录 `refs.quote`
+- `POST /api/send {author, target, message}` → 发消息（等价旧 `/api/board`）。**`author` 必填**（HUB-016）：
+  你的看板名，或 `老板`（真人端点）；缺了直接 400——**token 只证明有权用这个口，不决定署名**。
+- `POST /api/send {author, target, message, quoteId?}` → 引用回复：`quoteId` 指向某条记录，服务端把摘要落进新记录 `refs.quote`
 - `GET /api/dialog` 返回的每条 `inbox`/`bridge` 记录带有效 `state` 与 `overdue`；`agents[]` 的 `open` 按有效状态统计
 - `GET /api/board` → 兼容旧接口（返回看板原文）
 - 鉴权：请求头 `x-mchat-token`
@@ -407,7 +408,8 @@
 env → PATH → 安装目录里**按修改时间取最新**，缓存 30 秒（半夜升级也不用重启 Hub）；
 `/api/ping` 暴露 `codexBin` 便于排障。
 
-**署名**：`/api/send` 新增可选 `author`（必须是注册看板名，没注册直接 400）——补掉"程序借手机口
+**署名**：`/api/send` 的 `author` **必填**（HUB-016，2026-09-13 总监批准）：注册看板名或 `老板`，
+没注册/没给都直接 400——补掉"程序借手机口
 发言、落款却成了老板"那个缺口；不传 `author` 时仍默认「老板」（手机是本人在用）。
 
 ## 十六、身份与闲置会话的处置（老板 2026-09-11 23:5x / 09-12 00:0x 定）

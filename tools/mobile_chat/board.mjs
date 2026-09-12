@@ -116,7 +116,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.50"; // .50：HUB-004 派单页（手机端表单 + 三态结果）
+const PAGE_VER = "2026-09-10.51"; // .51：HUB-016 手机页发消息显式署「老板」（后端 author 必填）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -152,6 +152,26 @@ function boardName(raw) {
   const key = String(raw == null ? "" : raw).trim().replace(/^@/, "");
   if (!key) return "";
   return BOARD_NAMES[key.toLowerCase()] || key;
+}
+// 谁可以当"署名"？= **注册的看板名** ＋ **老板**（真人端点）。
+// 为什么必须放行「老板」：老板没有员工卡、不进名册（HUB-003 §〇：老板是**真人端点**，
+// 不是 agent 线），但"手机页发消息 / 手机页派单"都要以他的名义落款。
+// ★ 2026-09-13 抓到的影子 bug：缺这条，`/api/tasks` 只认注册名 →
+//   手机派单页传 `author:"老板"` 会被 400 顶掉，**页面看起来做好了、其实一条都派不出去**；
+//   同一天把 `/api/send` 的 author 改成必填后，老板自己在手机上发消息也会被顶掉。
+//   教训（写给自己）：**"代码在 main 里" ≠ "端到端能跑"**，交付前要走一次真提交。
+const HUMAN_SIGNER = "老板";
+function resolveSigner(v) {
+  const key = String(v || "").trim().replace(/^@/, "");
+  if (!key) return "";
+  if (key.toLowerCase() === HUMAN_SIGNER.toLowerCase()) return HUMAN_SIGNER;
+  const names = Object.keys(readAgents().agents || {});
+  return (
+    names.find((n) => n.toLowerCase() === key.toLowerCase()) ||
+    names.find((n) => String((readAgents().agents[n] || {}).slug || "").toLowerCase() === key.toLowerCase()) ||
+    (boardName(key) !== key ? boardName(key) : "") ||
+    ""
+  );
 }
 
 // —— 全渠道归一（第一期）——
@@ -4821,7 +4841,9 @@ sendEl.addEventListener("click",async()=>{
   autoGrow();
   statusEl.textContent="发送中…";
   try{
-    const body={target,message};
+    // ★ HUB-016：显式署名。这个页面就是**老板本人的手机入口**，所以固定署「老板」
+    //   （卡面："老板用手机发=署「老板」"）。别的线要发言请走 POST /api/post（同样要求显式 author）。
+    const body={target,message,author:"老板"};
     if(QUOTE)body.quoteId=QUOTE.id;
     const r=await fetchT("/api/send",{method:"POST",headers:{"Content-Type":"application/json","x-mchat-token":token},body:JSON.stringify(body)},20000);
     const j=await r.json();
@@ -5473,14 +5495,16 @@ async function main() {
         const q = String(v || "").trim().replace(/^@/, "").toLowerCase();
         return names.find((n) => n.toLowerCase() === q || String((readAgents().agents[n] || {}).slug || "").toLowerCase() === q) || "";
       };
-      const author = pick(p.author);
+      // ★ 派单人用 resolveSigner：手机派单页署「老板」（真人端点）。
+      //   2026-09-13 抓到：这里原来只认注册名 → 手机页派单一律 400（页面看着做好了、其实派不出去）。
+      const author = resolveSigner(p.author);
       const assignee = pick(p.assignee);
       const title = String(p.title || "").trim();
       const acceptance = (Array.isArray(p.acceptance) ? p.acceptance : [p.acceptance]).map((x) => String(x || "").trim()).filter(Boolean);
       const prefix = String(p.prefix || "HUB").trim().toUpperCase();
       const kind = String(p.kind || "dev").trim();
       const priority = String(p.priority || "P2").trim();
-      if (!author) return sendJson(res, 400, { error: "author 必须是注册看板名", hint: names.join("、") });
+      if (!author) return sendJson(res, 400, { error: "author 必须是你自己的看板名（或「老板」）", hint: names.join("、") });
       if (!assignee) return sendJson(res, 400, { error: "assignee 必须是注册看板名", hint: names.join("、") });
       if (title.length < 4) return sendJson(res, 400, { error: "标题太短" });
       if (!acceptance.length) return sendJson(res, 400, { error: "**没有验收标准不许派**（至少一条）" });
@@ -5691,11 +5715,11 @@ async function main() {
         });
         return;
       }
-      if (!alias && boardName(rawAuthor) !== rawAuthor) alias = boardName(rawAuthor);
-      if (!alias || !names.includes(alias)) {
+      if (!alias) alias = resolveSigner(rawAuthor); // 注册名 或「老板」（真人端点）
+      if (!alias || (!names.includes(alias) && alias !== HUMAN_SIGNER)) {
         sendJson(res, 400, {
           error: "这个署名没注册：" + rawAuthor,
-          hint: "注册的看板名：" + names.join("、"),
+          hint: "注册的看板名：" + names.join("、") + "（或「老板」）",
         });
         return;
       }
@@ -5872,20 +5896,27 @@ async function main() {
       }
       const message = String(payload.message || "").trim();
       let target = String(payload.target || "codex-看板服务").trim().replace(/^@/, "");
-      // 署名：默认"老板"（手机是你本人在用）；程序/别的线代发时可以显式给 author，
-      // **必须是注册看板名**，不许借名（HUB-004 四之二 + 总监 05:24 实测的落款缺口）。
+      // ★ HUB-016（总监 2026-09-13 02:17 批准）：**必须显式署名**，缺 author → 400。
+      //   理由不是偏好，是卡面：HUB-004 §一「必须署名到发起线（老板用手机发=署「老板」；
+      //   任何程序借用该入口=署它自己的线名），**token 不决定署名**」＋ 红线"不许冒名"。
+      //   旧行为"不带 author 就默认落成「老板」"= 任何拿着 token 却忘了署名的调用
+      //   都会被静默记成老板发言——正是 05:24 那个缺口换了个形式。
       const rawAuthor = String(payload.author || "").trim().replace(/^@/, "");
-      let sender = "老板";
-      if (rawAuthor) {
-        const names2 = Object.keys(readAgents().agents || {});
-        const hit = names2.find((n) => n.toLowerCase() === rawAuthor.toLowerCase()) ||
-          names2.find((n) => String((readAgents().agents[n] || {}).slug || "").toLowerCase() === rawAuthor.toLowerCase()) ||
-          (boardName(rawAuthor) !== rawAuthor ? boardName(rawAuthor) : "");
-        if (!hit || !names2.includes(hit)) {
-          sendJson(res, 400, { error: "author 没注册：" + rawAuthor, hint: names2.join("、") });
-          return;
-        }
-        sender = hit;
+      if (!rawAuthor) {
+        sendJson(res, 400, {
+          error: "这个口必须**显式署名**（HUB-016）：带 author=<你自己的看板名>。token 只证明有权用这个入口，不决定署名。",
+          hint: "注册的看板名：" + Object.keys(readAgents().agents || {}).join("、"),
+        });
+        return;
+      }
+      // 署名解析：注册看板名 或「老板」（真人端点，见 resolveSigner）
+      const sender = resolveSigner(rawAuthor);
+      if (!sender) {
+        sendJson(res, 400, {
+          error: "author 没注册：" + rawAuthor,
+          hint: "注册的看板名：" + Object.keys(readAgents().agents || {}).join("、") + "（或「老板」）",
+        });
+        return;
       }
       const mm = message.match(/^@([A-Za-z0-9_\u4e00-\u9fa5-]{1,32})/);
       if (mm) target = mm[1];

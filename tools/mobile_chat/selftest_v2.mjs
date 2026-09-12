@@ -805,7 +805,7 @@ async function main() {
   const send = await fetch(base + "/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
-    body: JSON.stringify({ target: "老板", message: "自测：引用回复正文", quoteId: bmsg ? bmsg.id : "" }),
+    body: JSON.stringify({ target: "老板", message: "自测：引用回复正文", quoteId: bmsg ? bmsg.id : "", author: "老板" }),
   });
   const sendJson = await send.json();
   check("POST /api/send 引用回复返回 ok", send.status === 200 && sendJson.ok === true, JSON.stringify(sendJson));
@@ -824,7 +824,7 @@ async function main() {
   const bad = await fetch(base + "/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
-    body: JSON.stringify({ target: "codex", message: "" }),
+    body: JSON.stringify({ target: "codex", message: "", author: "老板" }),
   });
   check("POST /api/send 空消息被拒（400）", bad.status === 400, "status=" + bad.status);
 
@@ -834,7 +834,8 @@ async function main() {
     const rr = await timed("POST /api/send " + String(payload.message).slice(0, 12), () => fetch(base + "/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...hdr },
-      body: JSON.stringify(payload),
+      // HUB-016：该口 require 显式署名；夹具默认以「老板」身份发（要测别的署名就自己传 author）
+      body: JSON.stringify({ author: "老板", ...payload }),
     }));
     return { status: rr.status, body: await rr.json() };
   };
@@ -1340,7 +1341,7 @@ async function main() {
   await fetch(base + "/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
-    body: JSON.stringify({ target: "codex-测在岗", message: "[自测] 老板看到置顶了" }),
+    body: JSON.stringify({ target: "codex-测在岗", message: "[自测] 老板看到置顶了", author: "老板" }),
   });
   await new Promise((r) => setTimeout(r, 1500));
   const b3 = await bossJson();
@@ -1477,6 +1478,38 @@ async function main() {
   });
   check("/api/send 署名：没注册的 author 被拒（400）", badAuthor.status === 400, "status=" + badAuthor.status);
 
+  // ⑨之三 HUB-016（总监 2026-09-13 02:17 批准）：`/api/send` **必须显式署名**——token 只证明
+  //   有权用这个入口、**不决定署名**（HUB-004 卡面）。四条判别性用例，缺一条这条改动就没闭环。
+  const h16 = async (payload) => {
+    const r = await fetch(base + "/api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...hdr },
+      body: JSON.stringify(payload),
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+  const r1601 = await h16({ target: "老板", message: "[自测] HUB-016 这条不带署名" });
+  check("HUB-016①：不带 author → 400（不许默认落成「老板」）", r1601.status === 400, "status=" + r1601.status);
+  const r1602 = await h16({ target: "老板", message: "[自测] HUB-016 冒名", author: "codex-不存在" });
+  check("HUB-016②：未注册的 author → 400", r1602.status === 400, "status=" + r1602.status);
+  await h16({ target: "老板", message: "[自测] HUB-016 署看板名", author: "codex-测在岗" });
+  await h16({ target: "老板", message: "[自测] HUB-016 署老板", author: "老板" });
+  await new Promise((r) => setTimeout(r, 1500));
+  const d16 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const recLine = (kw) => (d16.records || []).filter((r) => String(r.body || "").indexOf(kw) >= 0).pop();
+  const rec1603 = recLine("HUB-016 署看板名");
+  check(
+    "HUB-016③：带注册名 → 就落该名（不再一律写死「老板」）",
+    !!rec1603 && rec1603.from === "codex-测在岗",
+    rec1603 ? rec1603.from : "no record"
+  );
+  const rec1604 = recLine("HUB-016 署老板");
+  check(
+    "HUB-016④：author=\"老板\" → 落「老板」（页面路径不变）",
+    !!rec1604 && rec1604.from === "老板",
+    rec1604 ? rec1604.from : "no record"
+  );
+
   // ⑩ 承诺词自动标注（最小化：只挂一枚小圆角标签，不写长句）
   fs.appendFileSync(
     BOARD_FILE,
@@ -1602,7 +1635,7 @@ async function main() {
   await fetch(base + "/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
-    body: JSON.stringify({ target: "全体", message: "【解除暂停】已处理完，继续干活。" }),
+    body: JSON.stringify({ target: "全体", message: "【解除暂停】已处理完，继续干活。", author: "老板" }),
   });
   await new Promise((r) => setTimeout(r, 3000));
   const h3 = await haltJson();
@@ -1632,7 +1665,7 @@ async function main() {
   await fetch(base + "/api/send", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
-    body: JSON.stringify({ target: "老板", message: "[自测] SSE：这条应当触发一次 changed" }),
+    body: JSON.stringify({ target: "老板", message: "[自测] SSE：这条应当触发一次 changed", author: "老板" }),
   });
   let sseGot = false;
   let sseBuf = "";
@@ -1722,6 +1755,26 @@ async function main() {
     "状态流转：写侧车、任务表里可见（带 by/at）",
     st1.status === 200 && rec902 && rec902.state === "done" && rec902.by === "codex-看板编辑" && /T/.test(String(rec902.at || "")),
     JSON.stringify(rec902 || {}).slice(0, 130)
+  );
+  // 连带修复（HUB-016 顺带抓到）：手机派单页署「老板」，而 `/api/tasks` 原来只认注册名 →
+  //   一律 400 —— **页面看着做好了、其实一条都派不出去**。这里放在 HUB-902 之后**真提交一次**，
+  //   既不抢号，也把"端到端能跑"钉住（教训：代码在 main 里 ≠ 端到端能跑）。
+  const taskAsBoss = await fetch(base + "/api/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...hdr },
+    body: JSON.stringify({
+      author: "老板",
+      assignee: "codex-测无会话",
+      prefix: "HUB",
+      title: "自测HUB-016：手机派单页署老板",
+      acceptance: ["能从手机页的署名路径提交成功"],
+    }),
+  });
+  const taskAsBossBody = await taskAsBoss.json().catch(() => ({}));
+  check(
+    "HUB-016 连带：手机派单页署「老板」能提交（原来 400，端到端才抓得到）",
+    taskAsBoss.status === 200 && taskAsBossBody.ok === true,
+    JSON.stringify(taskAsBossBody).slice(0, 120)
   );
 
   // ⑮ HUB-010 群组：注入接口（幂等 upsert）+ 校验
