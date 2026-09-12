@@ -30,7 +30,10 @@ def check(name, cond, extra=""):
 check("老板本人发来的 → P0", ch.is_priority_row({"from": "老板", "body": "在吗"}))
 check("【公告】正文 → P0", ch.is_priority_row({"from": "codex-看板编辑", "body": "【公告 N-XXXX】..."}))
 check("（公告 N-xxxx 投递提示）→ P0", ch.is_priority_row({"from": "老板", "body": "（公告 N-ED4C 投递提示 · 来自 老板）"}))
-check("（催办 · 公告 N-xxxx）→ P0", ch.is_priority_row({"from": "codex-看板服务", "body": "（催办 · 公告 N-2343）你还没回执。"}))
+check("（催办 · 公告 N-xxxx）**不算 P0**（机器人催办不许借老板的优先级）",
+      not ch.is_priority_row({"from": "codex-看板服务", "body": "（催办 · 公告 N-2343）你还没回执。"}))
+check("（公告投递提示）但发件人不是老板 → **不算 P0**",
+      not ch.is_priority_row({"from": "codex-看板服务", "body": "（公告 N-ED4C 投递提示 · 来自 老板）"}))
 check("普通线间来信 ≠ P0", not ch.is_priority_row({"from": "codex-套件", "body": "【回·补卡裁定收到，投影已备好】"}))
 check("空记录 ≠ P0", not ch.is_priority_row({}))
 
@@ -76,7 +79,8 @@ ch.run_codex_wake = lambda exe, tid, msg: (0, "stub", "stub")   # 不真投递
 ch.read_last_spoken = lambda cfg: {}              # 所有人"没发过言"→ 信箱全算未读
 
 P0_A = {"ts": "2026-09-13 03:00", "from": "老板", "body": "【公告 N-TEST】先停一下"}
-P0_B = {"ts": "2026-09-13 03:01", "from": "codex-看板服务", "body": "（催办 · 公告 N-TEST）你还没回执"}
+# 第二条 P0 用"**非老板发的真公告**"（P0 判据收窄后：催办不再算 P0，但真公告仍算 —— 2026-09-13 07:4x）
+P0_B = {"ts": "2026-09-13 03:01", "from": "codex-看板编辑", "body": "【公告 N-TEST2】制度更新：请照办"}
 NORM = {"ts": "2026-09-13 04:00", "from": "codex-套件", "body": "【回·裁定收到】"}
 
 # 场景 1：2 条 P0 + 3 条普通（普通单轮上限 2）→ P0 两条都要响，且排最前
