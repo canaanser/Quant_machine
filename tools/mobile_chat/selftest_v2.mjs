@@ -1327,12 +1327,17 @@ async function main() {
     });
     return { status: rr.status, body: await rr.json() };
   };
-  const e1 = await bossPost({ from: "codex-测在岗", kind: "accept", task: "KIT-999", needAction: "请你验收 M0 交付（报告在 docs/reports/x.md）" });
+  // ★ PLT-005 裁决阶梯（老板 2026-09-13 06:2x）：上老板面的门槛 = **总监也判不了**；
+  //   每条必须写清「已判到哪级 + 为什么判不了」。所以下面三条都按门槛带上这两格。
+  const e1 = await bossPost({ from: "codex-测在岗", kind: "accept", task: "KIT-999", needAction: "请你验收 M0 交付（报告在 docs/reports/x.md）", judgedTo: "总监", whyNot: "验收标准属老板口径，总监无权代签" });
   check("门铃①：待验收事件被接受", e1.status === 200 && e1.body.ok === true && e1.body.board === true, JSON.stringify(e1.body));
-  const e2 = await bossPost({ from: "codex-测在岗", kind: "decide", task: "KIT-998", needAction: "需要你授权提交这次契约变更" });
+  const e2 = await bossPost({ from: "codex-测在岗", kind: "decide", task: "KIT-998", needAction: "需要你授权提交这次契约变更", judgedTo: "总监", whyNot: "属平台面改动，总监判不了" });
   check("门铃①：需拍板事件被接受", e2.status === 200 && e2.body.ok === true, JSON.stringify(e2.body));
-  const e3 = await bossPost({ from: "codex-测在岗", kind: "incident", task: "KIT-997", needAction: "引擎掉线已处置，需要你决定是否回滚参数" });
+  const e3 = await bossPost({ from: "codex-测在岗", kind: "incident", task: "KIT-997", needAction: "引擎掉线已处置，需要你决定是否回滚参数", judgedTo: "总监", whyNot: "回滚涉及资金口径，红线在上" });
   check("门铃①：故障事件被接受", e3.status === 200 && e3.body.ok === true, JSON.stringify(e3.body));
+  // 没过门槛的那条：**不拒收**（fail-open，宁放勿堵），但**不进老板面**——只单独计数
+  const e3b = await bossPost({ from: "codex-测在岗", kind: "accept", task: "KIT-994", needAction: "请你拍板一件事（这条故意没写已判到哪级）" });
+  check("裁决阶梯：没写「已判到/为什么判不了」**不拒收**（fail-open，仍记录+上板）", e3b.status === 200 && e3b.body.ok === true && e3b.body.board === true, JSON.stringify(e3b.body));
   const bt = fs.readFileSync(BOARD_FILE, "utf8");
   check(
     "门铃①：**一律上板并 @老板**（三条都在看板上）",
@@ -1351,6 +1356,16 @@ async function main() {
   const b1 = await bossJson();
   check("门铃⑥：置顶数据 = 「待老板：N 条」", b1.count === 3, JSON.stringify({ count: b1.count, today: b1.today }));
   check("门铃⑦：每条都带「要你做什么」", (b1.items || []).every((x) => String(x.needAction || "").length >= 4), "ok");
+  check(
+    "裁决阶梯：没过门槛的**不进老板面**（N 条仍是 3），但**单独报数**（blocked=1，不静默吞掉）",
+    b1.count === 3 && b1.blocked === 1,
+    JSON.stringify({ count: b1.count, blocked: b1.blocked })
+  );
+  check(
+    "裁决阶梯：进来的每条都能摊开「已判到哪级 + 为什么判不了」",
+    (b1.items || []).every((x) => String(x.judgedTo || "").length >= 2 && String(x.whyNot || "").length >= 4),
+    JSON.stringify((b1.items || []).map((x) => [x.judgedTo, String(x.whyNot || "").slice(0, 10)]))
+  );
   await fetch(base + "/api/boss-mute", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...hdr },
@@ -2128,6 +2143,19 @@ async function main() {
     "推送记账：推失败**不写**（这正是门铃兜底要叫的场景）",
     pushBad.woke !== true && !delta.some((r) => r && r.to === "codex-测在岗"),
     "woke=" + pushBad.woke + " delta=" + JSON.stringify(delta.map((r) => r && r.to))
+  );
+  // ★ HUB-018 追加（codex-修复 2026-09-13 05:41 给的判别性用例②）：
+  //   **同一分钟两封不同的信 → 账本必须两行**（不能因为"这一分钟推过了"把第二封并掉）。
+  //   这正是我第一版写错的地方：去重键用了分钟精度的 `mailbox_ts`，同分钟的第二封会被吃掉 →
+  //   门铃还会为它多叫一次（等于没修）。改用正文哈希做去重键之后才对。
+  const t0SameMin = Date.now();
+  await pushMail("codex-测窗口", "[自测] 同分钟第一封 A");
+  await pushMail("codex-测窗口", "[自测] 同分钟第二封 B");
+  const sameMin = readLedger().filter((r) => r && r.to === "codex-测窗口" && Number(r.ts_ms) >= t0SameMin);
+  check(
+    "推送记账：同分钟两封**不同**的信 → 账本**两行**（不许并成一封）",
+    sameMin.length === 2,
+    "rows=" + sameMin.length + " mailbox_ts=" + JSON.stringify(sameMin.map((r) => r.mailbox_ts))
   );
   // 写失败不许影响投递：把账本路径临时换成"目录"→ append 必然抛 → 只在日志记一笔，投递**仍须成功**。
   let pushNoLedger = null;
