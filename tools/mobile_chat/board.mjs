@@ -122,7 +122,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.54"; // .54：PLT-005 裁决阶梯——"待老板"必须写清「已判到哪级 + 为什么判不了」才进老板面
+const PAGE_VER = "2026-09-10.55"; // .55：HUB-AVATAR 头像放大 + 点头像出资料卡 + 长按名字 @（页面改了必须跳版本号，否则已打开的客户端不会自动刷新）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -1714,6 +1714,43 @@ function retiredSlugOwner(tok) {
 
 // 头像：**由看板名稳定派生**（同一个名字永远同一个头像；不存文件、不用外链）。
 // 前端只拿到 {text, hue} 自己画一个圆——保持现有配色与圆角风格。
+// —— 头像素材（HUB-AVATAR）：图片放 tools/mobile_chat/avatars/<工号>.png ——
+// 三条护栏（看板编辑 03:3x 口径）：① 只认「工号/看板名 + 扩展名」，**不做通用文件服务、
+// 不接受任意路径**（防路径穿越）；② 目录索引按 (mtime,size) 缓存，换素材自动生效；
+// ③ 认不到图就回 null → 页面退回首字圆点（绝不裂图、绝不编图）。
+const AVATAR_DIR = process.env.MCHAT_AVATAR_DIR || path.join(__dirname, "avatars");
+const AVATAR_EXT_RE = /\.(png|jpe?g|webp|svg)$/i;
+let avatarIndexCache = { key: "", map: {} };
+function avatarIndex() {
+  try {
+    const st = fs.statSync(AVATAR_DIR);
+    const key = st.mtimeMs + ":" + st.size;
+    if (avatarIndexCache.key === key) return avatarIndexCache.map;
+    const map = {};
+    for (const f of fs.readdirSync(AVATAR_DIR)) {
+      const base = String(f);
+      if (!AVATAR_EXT_RE.test(base) || base.indexOf("/") >= 0 || base.indexOf("\\") >= 0) continue;
+      map[base.replace(AVATAR_EXT_RE, "").toLowerCase()] = base;
+    }
+    avatarIndexCache = { key: key, map: map };
+    return map;
+  } catch {
+    avatarIndexCache = { key: "", map: {} };
+    return {};
+  }
+}
+/** 按工号确定性指派：avatars/<slug>.png（也认看板名同名文件）；认不到返回 null。 */
+function avatarImgFor(alias) {
+  try {
+    const idx = avatarIndex();
+    const bySlug = idx[String(slugFor(alias) || "").toLowerCase()];
+    const byName = idx[String(alias || "").toLowerCase()];
+    const f = bySlug || byName;
+    return f ? "/avatars/" + encodeURIComponent(f) : null;
+  } catch {
+    return null;
+  }
+}
 function avatarOf(alias) {
   const s = String(alias || "?");
   const short = s.replace(/^(dsh|codex)-/, "");
@@ -1721,7 +1758,7 @@ function avatarOf(alias) {
   const text = (m ? m[0] : "?").toUpperCase();
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return { text: text, hue: h };
+  return { text: text, hue: h, img: avatarImgFor(alias) };
 }
 
 const sseClients = new Set();
@@ -3563,10 +3600,29 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 /* 行首标签（〔代答〕等）：一枚小牌，不占正文 */
 .bubble .tag{display:inline-block;background:var(--code-bg);border:1px solid var(--line);border-radius:999px;padding:0 7px;margin-right:5px;font-size:calc(var(--fs-msg) - 3px);color:var(--dim);vertical-align:1px}
 /* —— 头像（由看板名稳定派生：首字 + 色相）；不引外链、不存文件 —— */
-.av{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;flex-shrink:0;color:#fff;font-weight:700;font-size:11px;line-height:1;user-select:none}
-.av.lg{width:38px;height:38px;font-size:15px}
-.av.sm{width:18px;height:18px;font-size:9px}
-.row .av,.entry .av{margin-right:6px}
+.av{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;flex-shrink:0;color:#fff;font-weight:700;font-size:16px;line-height:1;user-select:none;overflow:hidden;cursor:pointer;vertical-align:middle}
+.av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
+.av.lg{width:60px;height:60px;font-size:24px}
+.av.sm{width:28px;height:28px;font-size:13px}
+.av.plain{cursor:default}
+.row .av,.entry .av{margin-right:8px}
+/* —— 资料卡（点头像弹出）：字段缺了显示「—」，绝不编数字 —— */
+#profilePage{display:none;position:fixed;inset:0;z-index:45;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:18px}
+#profilePage.on{display:flex}
+#profileCard{position:relative;width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.5);padding:16px 14px 12px}
+#profileX{position:absolute;right:8px;top:8px;background:transparent;border:0;color:var(--dim);font-size:16px;cursor:pointer;padding:2px 6px}
+#profileTop{display:flex;align-items:center;gap:12px;padding-right:22px}
+#profileTop .av{cursor:default}
+.pwho{min-width:0}
+.pname{font-size:17px;font-weight:700;color:var(--text);word-break:break-all}
+.prole{font-size:var(--fs-ui);color:var(--dim);margin-top:3px;word-break:break-all}
+#profileRows{margin-top:12px;border-top:1px solid var(--line)}
+.prow{display:flex;align-items:baseline;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line)}
+.pl{color:var(--dim);font-size:var(--fs-ui);flex-shrink:0;width:72px}
+.pv{color:var(--text);font-size:var(--fs-ui);font-weight:600;word-break:break-all}
+.pv-missing{color:var(--dim);font-weight:400}
+.pn{color:var(--dim);font-size:11px;flex:1;min-width:0}
+#profileFoot{color:var(--dim);font-size:11px;padding-top:8px;line-height:1.5}
 /* —— 联系人页（与搜索页同一套语言：整屏 + 顶部条 + 列表） —— */
 #contactsPage{display:none;position:fixed;inset:0;z-index:40;background:var(--bg);flex-direction:column}
 #contactsPage.on{display:flex}
@@ -3796,6 +3852,14 @@ body{min-height:100vh}
   </div>
   <div id="groupPick"></div>
 </div>
+<div id="profilePage">
+  <div id="profileCard">
+    <button id="profileX" title="关闭">✕</button>
+    <div id="profileTop"></div>
+    <div id="profileRows"></div>
+    <div id="profileFoot"></div>
+  </div>
+</div>
 <div id="taskPage">
   <div id="taskBar">
     <span class="ct-title">派单</span>
@@ -3862,17 +3926,103 @@ const $=s=>document.querySelector(s);
 let AVATARS={};
 function avHue(s){let h=0;const t=String(s||"?");for(let i=0;i<t.length;i++)h=(h*31+t.charCodeAt(i))%360;return h;}
 function noticeCode(id){return "N-"+String(id||"").slice(0,4).toUpperCase();} // 与服务端同一算法
-function avNode(alias,size){
+function avNode(alias,size,opt){
   const el=document.createElement("span");
   const av=(alias&&AVATARS[alias])||null;
   const short=String(alias||"?").replace(/^(dsh|codex)-/,"");
   const m=short.match(/[A-Za-z0-9\u4e00-\u9fa5]/);
+  const initial=(av&&av.text)?av.text:(m?m[0].toUpperCase():"?");
   el.className="av"+(size?" "+size:"");
   el.style.background="hsl("+((av&&typeof av.hue==="number")?av.hue:avHue(alias))+" 45% 42%)";
-  el.textContent=(av&&av.text)?av.text:(m?m[0].toUpperCase():"?");
-  el.title=String(alias||"");
+  el.textContent=initial;
+  // 头像素材（HUB-AVATAR）：有图用图；图 404 / 解码失败 → 当场退回首字圆点（绝不显示裂图）
+  if(av&&av.img){
+    const im=document.createElement("img");
+    im.alt="";
+    // 头像路由要 token（与别的接口同一个门槛），所以这里把 token 带上
+    im.src=av.img+(av.img.indexOf("?")>=0?"&":"?")+"t="+encodeURIComponent(token);
+    im.addEventListener("error",()=>{try{im.remove();el.textContent=initial;}catch(e){}});
+    el.textContent="";
+    el.appendChild(im);
+  }
+  if(opt&&opt.noClick){el.classList.add("plain");el.title=String(alias||"");return el;}
+  el.title=String(alias||"")+"（点开资料卡）";
+  el.addEventListener("click",(e)=>{e.preventDefault();e.stopPropagation();openProfileCard(alias);});
   return el;
 }
+// —— 资料卡（点头像弹出）：数据只来自接口，缺字段显示「—」，**绝不编数字** ——
+let EMP_CACHE={at:0,rows:[]};
+function employeesRows(){
+  if(Date.now()-EMP_CACHE.at<30000&&EMP_CACHE.rows.length)return Promise.resolve(EMP_CACHE.rows);
+  return fetchT("/api/employees",{},8000).then((r)=>r.json()).then((j)=>{
+    EMP_CACHE={at:Date.now(),rows:(j&&j.employees)||[]};
+    return EMP_CACHE.rows;
+  }).catch(()=>EMP_CACHE.rows||[]);
+}
+// 工龄：按天 + 按小时两个数（只有拿到入职时间才算；拿不到就返回空串 → 显示「—」）
+function fmtAge(joinedAt){
+  const t=Date.parse(String(joinedAt||""));
+  if(!t||isNaN(t))return "";
+  const ms=Math.max(0,Date.now()-t);
+  return Math.floor(ms/86400000)+" 天 · "+Math.floor(ms/3600000)+" 小时";
+}
+function profileRow(label,value,note){
+  const r=document.createElement("div");
+  r.className="prow";
+  const l=document.createElement("span");
+  l.className="pl";
+  l.textContent=label;
+  const v=document.createElement("span");
+  v.className="pv"+(value?"":" pv-missing");
+  v.textContent=value||"—";
+  r.appendChild(l);r.appendChild(v);
+  if(note){
+    const n=document.createElement("span");
+    n.className="pn";
+    n.textContent=note;
+    r.appendChild(n);
+  }
+  return r;
+}
+function openProfileCard(alias){
+  const pg=$("#profilePage");
+  if(!pg||!alias)return;
+  const a=(AGENTS||[]).filter((x)=>x.alias===alias)[0]||{alias:alias};
+  const top=$("#profileTop"),rows=$("#profileRows"),foot=$("#profileFoot");
+  top.innerHTML="";rows.innerHTML="";foot.textContent="";
+  top.appendChild(avNode(alias,"lg",{noClick:true}));
+  const who=document.createElement("div");
+  who.className="pwho";
+  const nm=document.createElement("div");
+  nm.className="pname";
+  nm.textContent=alias;
+  const rl=document.createElement("div");
+  rl.className="prole";
+  rl.textContent=[a.title||a.role||"",a.note||""].filter(Boolean).join(" · ")||"（未填职责）";
+  who.appendChild(nm);who.appendChild(rl);
+  top.appendChild(who);
+  const paint=(e)=>{
+    const row=e||{};
+    const joined=row.joinedAt||a.joinedAt||"";
+    const age=fmtAge(joined);
+    rows.innerHTML="";
+    rows.appendChild(profileRow("入职时间",String(joined).slice(0,10),(joined?"":"待接真源 · 显示 —，不推算")));
+    rows.appendChild(profileRow("工龄",age,age?"":"待接真源"));
+    rows.appendChild(profileRow("职级",String(row.level||a.level||""),""));
+    rows.appendChild(profileRow("直属领导",String(row.leader||a.leader||""),""));
+    rows.appendChild(profileRow("消耗 token","","暂不实现 · 待接账本"));
+    rows.appendChild(profileRow("状态",String(row.status||a.status||""),""));
+    rows.appendChild(profileRow("工号",String(row.slug||a.slug||""),""));
+  };
+  paint(null);
+  foot.textContent="点头像看资料卡 · 点名字可 @ 提及（长按也行）";
+  pg.classList.add("on");
+  employeesRows().then((list)=>{
+    const hit=(list||[]).filter((x)=>x.alias===alias)[0];
+    if(hit)paint(hit);
+  });
+}
+function closeProfileCard(){const pg=$("#profilePage");if(pg)pg.classList.remove("on");}
 const boardEl=$("#board"),statusEl=$("#status"),msgEl=$("#msg"),sendEl=$("#send"),agentsEl=$("#agents");
 const topEl=$("#top"),panelEl=$("#panel"),summaryEl=$("#summary");
 // —— 面板折叠 ——
@@ -3962,7 +4112,7 @@ function renderGroups(){
   for(const g of GROUPS){
     const c=document.createElement("div");
     c.className="gchip"+(FILTER.group===g.id?" on":"");
-    c.appendChild(avNode(g.name,"sm"));
+    c.appendChild(avNode(g.name,"sm",{noClick:true}));
     const b=document.createElement("span");
     b.textContent=g.name+(g.members&&g.members.length?("（"+g.members.length+"）"):"");
     c.appendChild(b);
@@ -4001,7 +4151,7 @@ function renderGroupPick(){
     bx.className="gp-box";
     bx.textContent=PICKED.has(a.alias)?"✓":"";
     row.appendChild(bx);
-    row.appendChild(avNode(a.alias,"sm"));
+    row.appendChild(avNode(a.alias,"sm",{noClick:true}));
     const main=document.createElement("div");
     main.className="ct-main";
     const nm=document.createElement("div");
@@ -4181,7 +4331,10 @@ function renderContacts(q){
     bits.push(a.retired?"退役":a.status==="active"?"在岗":a.status==="idle"?"闲":a.status==="stale"?"久未动静":"未上岗");
     right.innerHTML=bits.join("<br>");
     row.appendChild(right);
+    // 长按名字 = @ 提及（手机按住约 0.45s；桌面端等价：右键 / 按住不放）
+    addLongPress(nm,()=>insertMention(a.alias));
     row.addEventListener("click",()=>{
+      if(lpSuppressClick())return; // 长按后紧跟的那次 click 吃掉，别又插提及又切了收件人
       setTarget(a.alias);
       closeContacts();
       toast("收件人已切到 "+a.alias);
@@ -4691,7 +4844,7 @@ function renderAgents(list){
       syncTools();
     });
     // 头像 + 状态色环（原来那个纯色圆点保留成"环"的信息量，但更好看）
-    const dot=avNode(a.alias,"sm");
+    const dot=avNode(a.alias,"sm",{noClick:true});
     dot.style.boxShadow="0 0 0 2px "+(a.status==="active"?"#3fb950":a.status==="idle"?"#d29922":a.status==="stale"?"#6e7681":"#484f58");
     const nm=document.createElement("b");
     nm.textContent=a.alias;
@@ -5012,7 +5165,16 @@ function renderDialog(records){
     const name=document.createElement("span");
     name.className="name c-"+cls;
     name.textContent=r.from||"?";
-    name.title="长按插入 @"+(r.from||"");
+    name.title="点一下 / 长按，都能插入 @"+(r.from||"");
+    // 老板 2026-09-13 07:3x 改口：**点**名字就艾特（原话"点到名字…是艾特他"）；
+    // 长按保留（多一条路不吃亏）。长按后紧跟的那次 click 用 lpSuppressClick 吃掉。
+    // 注意边界：只改消息行这个名字节点；名单芯片（#agents .chip）单击=筛选，是既有行为，不动。
+    name.addEventListener("click",(e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      if(lpSuppressClick())return;
+      insertMention(r.from);
+    });
     addLongPress(name,()=>insertMention(r.from));
     if(cls!=="boss")meta.appendChild(avNode(r.from,"sm")); // 别人的消息带小头像（老板自己不带）
     const arrow=document.createElement("span");
@@ -5302,6 +5464,8 @@ $("#contactsCancel").addEventListener("click",closeContacts);
 $("#contactsFilter").addEventListener("input",(e)=>renderContacts(e.target.value));
 $("#groupCancel").addEventListener("click",closeGroupPage);
 $("#groupCreate").addEventListener("click",createGroup);
+$("#profileX").addEventListener("click",closeProfileCard);
+$("#profilePage").addEventListener("click",(e)=>{if(e.target&&e.target.id==="profilePage")closeProfileCard();});
   $("#searchInput").addEventListener("input",(e)=>renderSearch(e.target.value));
   $("#jump").addEventListener("click",jumpToBottom);
   $("#newPill").addEventListener("click",jumpToBottom);
@@ -5385,6 +5549,44 @@ async function main() {
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://" + HOST);
 
+    // —— 头像素材（HUB-AVATAR）：只读 avatars/ 这一目录里的图片。**不是通用文件服务** ——
+    //    白名单文件名 + 解析后必须仍在该目录内（双保险防路径穿越）；SVG 额外上 CSP 禁脚本。
+    if (req.method === "GET" && url.pathname.indexOf("/avatars/") === 0) {
+      const name = decodeURIComponent(url.pathname.slice("/avatars/".length));
+      // 头像图和别的接口一个门槛：要 token（页面在 <img src> 上自己带上 ?t=）。
+      // 不做成"免鉴权静态目录"——那等于在私网里开一个可枚举的读口。
+      if (!tokensEqual(String(url.searchParams.get("t") || ""), token)) {
+        res.writeHead(401, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      const safeName = /^[A-Za-z0-9_][A-Za-z0-9_.-]*\.(png|jpe?g|webp|svg)$/i.test(name) && name.indexOf("..") < 0;
+      const full = path.resolve(AVATAR_DIR, name);
+      const inside = path.dirname(full).toLowerCase() === path.resolve(AVATAR_DIR).toLowerCase();
+      if (!safeName || !inside) {
+        res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "no such avatar" }));
+        return;
+      }
+      try {
+        const buf = fs.readFileSync(full);
+        const mime = /\.svg$/i.test(name)
+          ? "image/svg+xml"
+          : /\.webp$/i.test(name)
+            ? "image/webp"
+            : /\.jpe?g$/i.test(name)
+              ? "image/jpeg"
+              : "image/png";
+        const head = { "Content-Type": mime, "Cache-Control": "no-cache" };
+        if (mime === "image/svg+xml") head["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'";
+        res.writeHead(200, head);
+        res.end(buf);
+      } catch {
+        res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: "no such avatar" }));
+      }
+      return;
+    }
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/board")) {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
       res.end(PAGE);
