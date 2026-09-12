@@ -1507,6 +1507,47 @@ async function main() {
   });
   check("绑定：threadId 格式不对被拒（400）", badBind.status === 400, "status=" + badBind.status);
 
+  // ⑪之二 HUB-001 入职：给**新线**发牌（这是"新窗口走员工流程"缺的那一步）
+  const onboard = (body) =>
+    fetch(base + "/api/onboard", { method: "POST", headers: { "Content-Type": "application/json", ...hdr }, body: JSON.stringify(body) });
+  const obOk = await onboard({
+    by: "codex-看板编辑",
+    approval: "老板 2026-09-13 自测口述",
+    name: "codex-测新线",
+    slug: "codex-newline",
+    threadId: "01a03333-0000-7000-8000-000000000008",
+    title: "自测新线",
+  });
+  const obBody = await obOk.json();
+  const cfgAfterOb = JSON.parse(fs.readFileSync(AGENTS_FILE, "utf8"));
+  check(
+    "入职：新线能登记进名册（工号/会话/批准人都在）",
+    obOk.status === 200 && obBody.ok === true && cfgAfterOb.agents["codex-测新线"] &&
+      cfgAfterOb.agents["codex-测新线"].slug === "codex-newline" &&
+      cfgAfterOb.agents["codex-测新线"].threadId === "01a03333-0000-7000-8000-000000000008" &&
+      /批准：老板 2026-09-13/.test(String(cfgAfterOb.agents["codex-测新线"].note || "")),
+    JSON.stringify(obBody).slice(0, 120)
+  );
+  // 入职完就该能派活：投它信箱必须成功（不然"流程"是空的）
+  const obMail = await fetch(base + "/api/mail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...hdr },
+    body: JSON.stringify({ to: "codex-测新线", from: "codex-看板编辑", body: "自测：入职后应当能收到信" }),
+  });
+  check("入职：入册后立刻能被投信（信箱通道打通）", obMail.status === 200, "status=" + obMail.status);
+  const obDup = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-测新线", slug: "codex-newline2" });
+  check("入职：重名被拒（409）", obDup.status === 409, "status=" + obDup.status);
+  const obSlugDup = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-测新线2", slug: "codex-mtest" });
+  check("入职：工号已被占用被拒（409，工号不撞号）", obSlugDup.status === 409, "status=" + obSlugDup.status);
+  const obSlugRetired = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-测新线3", slug: "codex-retired" });
+  check("入职：退役条目的工号也不许复用（409）", obSlugRetired.status === 409, "status=" + obSlugRetired.status);
+  const obNoApproval = await onboard({ by: "codex-看板编辑", name: "codex-测新线4", slug: "codex-newline4" });
+  check("入职：没写批准人被拒（400，发牌必须有人拍板）", obNoApproval.status === 400, "status=" + obNoApproval.status);
+  const obBadBy = await onboard({ by: "codex-不存在", approval: "老板 口述", name: "codex-测新线5", slug: "codex-newline5" });
+  check("入职：by 不是注册看板名被拒（400，署名实名）", obBadBy.status === 400, "status=" + obBadBy.status);
+  const obTidTaken = await onboard({ by: "codex-看板编辑", approval: "老板 口述", name: "codex-测新线6", slug: "codex-newline6", threadId: "01a02222-0000-7000-8000-000000000007" });
+  check("入职：会话已被别的线占用被拒（409，一个会话只属于一条线）", obTidTaken.status === 409, "status=" + obTidTaken.status);
+
   // ⑫ HUB-006 暂停闸：置闸 → 非老板解除无效 → 老板公告解除
   const haltSet = await fetch(base + "/api/halt", {
     method: "POST",

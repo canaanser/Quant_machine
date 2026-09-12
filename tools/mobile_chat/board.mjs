@@ -64,6 +64,10 @@ const WATCH_EVENTS = [
   "13:10", "14:00", "14:30", "14:44", "15:08",
 ];
 const TOKEN_FILE = path.join(DATA_DIR, "token.txt");
+// 泛称黑名单：署名与**入职名字**都不许用。泛称 = "写的人没说自己是谁"，
+// 接受它等于把"看板上分不清谁在说"这个老问题合法化（老板 2026-09-11 定）。
+// /api/post 与 /api/onboard 共用这一份，免得两处名单漂移。
+const GENERIC_BOARD_NAMES = ["codex", "dsh", "ds h", "deepseek", "助手", "agent", "ai"];
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const LAST_FILE = path.join(DATA_DIR, "last_board.txt");
 const LOG_FILE = path.join(DATA_DIR, "log.txt");
@@ -1351,6 +1355,7 @@ function capabilities() {
       "bossEvents:post",
       "mail:post",
       "bind:post",
+      "onboard:post",       // HUB-001 入职：给新线发牌（工号永不复用 / 会话唯一 / 必须写批准人）
       "avatars:derived",
     ],
     schemas: {
@@ -5025,6 +5030,75 @@ async function main() {
     // ── HUB-001 实例绑定 / 换绑（不再手改 agents.json；换绑留痕）──
     //   换绑时把旧 threadId 记进 failedThreadIds，并写明归档原因（审计用）；
     //   绑定成功即 status=active（NEW_EMPLOYEE_RUNBOOK 阶段 2 那一步的机器化）。
+    // ── HUB-001 入职：给一条**新线**发牌（登记名册） ──────────────────────────
+    //   为什么单独开一个口：`/api/bind` 只能在**已入册**的名字上换绑，新建员工没有路径——
+    //   于是"新窗口"既不能被派活、也不能被信箱/门铃叫醒（老板 2026-09-13："走个员工流程"）。
+    //   三条硬规矩：
+    //     ① **工号永不复用**（在册 slug / `slugAliases` 的历史工号 / 退役条目全都不许撞）；
+    //     ② **一个会话只属于一条线**（threadId 已被别人绑 → 409，指出是谁）；
+    //     ③ **必须写清批准人**（入职=发牌；按红线"给别人放权"只有老板能拍板，接口不接受没批准人的登记）。
+    //   写入走唯一入口 updateAgents（读前/写前 (mtime,size) 校验，冲突宁可 409 不覆盖）。
+    if (req.method === "POST" && url.pathname === "/api/onboard") {
+      let payload = {};
+      try {
+        payload = JSON.parse((await readBody(req)) || "{}");
+      } catch {}
+      const cfg0 = readAgents();
+      const names = Object.keys(cfg0.agents || {});
+      const norm = (v) => String(v || "").trim().replace(/^@/, "").toLowerCase();
+      const by = names.find((n) => n.toLowerCase() === norm(payload.by)) || "";
+      const name = String(payload.name || "").trim().replace(/^@/, "");
+      const slug = norm(payload.slug);
+      const approval = String(payload.approval || "").trim();
+      const tid = String(payload.threadId || "").trim();
+      if (!by) return sendJson(res, 400, { error: "by 必须是**你自己的注册看板名**（谁办的写在看板行里）", hint: names.join("、") });
+      if (!approval) return sendJson(res, 400, { error: "缺 approval：入职=发牌，必须写清谁批准的（如「老板 2026-09-13 口述」）" });
+      if (name.length < 3 || name.length > 40) return sendJson(res, 400, { error: "名字长度要在 3–40 之间" });
+      if (GENERIC_BOARD_NAMES.includes(name.toLowerCase())) return sendJson(res, 400, { error: "名字不能是泛称：" + name });
+      if (names.some((n) => n.toLowerCase() === name.toLowerCase())) return sendJson(res, 409, { error: "这个名字已注册：" + name, hint: "换绑请用 POST /api/bind" });
+      if (!/^[a-z0-9][a-z0-9-]{1,30}$/.test(slug)) return sendJson(res, 400, { error: "工号 slug 格式不对（小写字母/数字/连字符，2–31 位）" });
+      const holder = Object.entries(cfg0.agents || {}).find(([, m]) => String((m || {}).slug || "").toLowerCase() === slug);
+      if (holder) return sendJson(res, 409, { error: "工号已被占用：" + slug, hint: "现役：" + holder[0] });
+      const aliased = Object.keys(cfg0.slugAliases || {}).find((k) => String(k).toLowerCase() === slug);
+      if (aliased) return sendJson(res, 409, { error: "工号已退役、永不复用：" + slug, hint: "历史岗位：" + cfg0.slugAliases[aliased] });
+      if (tid) {
+        if (!/^[0-9a-fA-F-]{36}$/.test(tid)) return sendJson(res, 400, { error: "threadId 格式不对（要 UUID）" });
+        const used = Object.entries(cfg0.agents || {}).find(([, m]) => String((m || {}).threadId || "") === tid);
+        if (used) return sendJson(res, 409, { error: "这个会话已经绑在别的线上：" + used[0], hint: "一个会话只属于一条线" });
+      }
+      const wr = updateAgents(
+        (cfg) => {
+          const agents = cfg.agents || (cfg.agents = {});
+          if (agents[name]) return false; // 重放着拦一次（幂等）
+          agents[name] = {
+            label: name,
+            title: String(payload.title || "").trim().slice(0, 40) || "新入职",
+            slug: slug,
+            workspace: String(payload.workspace || "").trim() || WORKSPACE,
+            status: tid ? "active" : "unknown",
+            ...(tid ? { threadId: tid } : {}),
+            ...(payload.level ? { level: String(payload.level).slice(0, 16) } : {}),
+            ...(payload.duty === true ? {} : { duty: false }),
+            note:
+              "入职登记（" + fmtNow().slice(0, 16) + "，by " + by + "，批准：" + approval.slice(0, 60) + "）" +
+              (payload.note ? "；" + String(payload.note).slice(0, 120) : ""),
+          };
+          return true;
+        },
+        { backup: true }
+      );
+      if (!wr.ok) return sendJson(res, 409, { error: "名册正被其他进程修改，本次未写入（请重试）", detail: wr });
+      appendBoardLine(
+        "老板",
+        CODEX_SERVICE,
+        "（系统：@" + by + " 给 **" + name + "** 办了入职（批准：" + approval + "）：工号 " + slug +
+          (tid ? "，会话 " + tid.slice(0, 8) + "…" : "，未绑会话") + "）"
+      );
+      log("ONBOARD:", name, "slug=" + slug, "by=" + by, tid ? "thread=" + tid.slice(0, 8) : "no-thread");
+      sendJson(res, 200, { ok: true, name: name, slug: slug, threadId: tid || null, by: by });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/bind") {
       let payload = {};
       try {
@@ -5514,7 +5588,7 @@ async function main() {
       const cfg = readAgents().agents || {};
       const names = Object.keys(cfg);
       const lower = rawAuthor.toLowerCase().replace(/^@/, "");
-      const GENERIC = ["codex", "dsh", "ds h", "deepseek", "助手", "agent", "ai"];
+      const GENERIC = GENERIC_BOARD_NAMES; // 共用一份黑名单（见模块顶部的定义）
       let alias = names.find((n) => n.toLowerCase() === lower) ||
         names.find((n) => String((cfg[n] || {}).slug || "").toLowerCase() === lower) ||
         names.find((n) => boardName(n).toLowerCase() === lower);
