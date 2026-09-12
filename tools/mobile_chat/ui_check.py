@@ -16,6 +16,7 @@ r"""手机页 UI 验收：用无头 Chromium 真渲染 + 真点击，逐条量�
 截图落在 outputs/dialog/ui_check.png。
 """
 import io
+import json
 import os
 import sys
 
@@ -161,6 +162,26 @@ def main():
            and ("已收到" in ack_txt[0] or "回执" in ack_txt[0])
            and ("✓" in ack_txt[0] or "○" in ack_txt[0]),
            ack_txt[:1])
+        # 公告收件人可多选（HUB-018 D，老板 03:4x："让我能够选择艾特谁，其中有个选项是艾特所有人"）
+        #   只在收件人=「全体」时出现勾选条；一个不勾=全体；勾了=只发这几条线。
+        prev_target = pg.eval_on_selector("#targetSel", "e=>e.value")
+        pg.eval_on_selector("#targetSel", "e=>{e.value='全体';e.dispatchEvent(new Event('change'));}")
+        pg.wait_for_timeout(250)
+        ck("公告多选：收件人切「全体」后出现勾选条", pg.is_visible("#noticePick"), "visible=%s" % pg.is_visible("#noticePick"))
+        chips = pg.eval_on_selector_all("#noticePick .np-chip", "n=>n.map(e=>e.textContent)")
+        ck("公告多选：勾选条里既有「全体」也有各条线", len(chips) >= 3 and any("全体" in c for c in chips), chips[:4])
+        ck("公告多选：默认勾在「全体」上", any(("全体" in c and "on" in cl) for c, cl in
+           zip(chips, pg.eval_on_selector_all("#noticePick .np-chip", "n=>n.map(e=>e.className)"))), chips[:2])
+        pg.eval_on_selector_all("#noticePick .np-chip", "n=>n.filter(e=>e.textContent.indexOf('全体')<0)[0].click()")
+        pg.wait_for_timeout(250)
+        # 勾选条自己的标签说明"只发这 N 条线"；路由提示同步改成"发给勾选的 N 条线"
+        np_lab = pg.inner_text("#noticePick")
+        rh = pg.inner_text("#routeHint")
+        ck("公告多选：勾一条线后写明「只发这 1 条线，回执也只要它们回」", "只发这 1 条线" in np_lab, np_lab)
+        ck("公告多选：路由提示同步改成「发给勾选的 1 条线」", "勾选的 1 条线" in rh, rh)
+        # 收工：把收件人切回去，别影响后面的用例
+        pg.eval_on_selector("#targetSel", "e=>{e.value=%s;e.dispatchEvent(new Event('change'));}" % json.dumps(prev_target))
+        pg.wait_for_timeout(200)
         # 公告页签：点一下只留公告（附带回执），不被对话刷掉
         pg.click("#menuBtn")  # 关掉可能开着的东西
         pg.keyboard.press("Escape")

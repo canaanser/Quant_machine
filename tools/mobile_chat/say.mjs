@@ -12,12 +12,16 @@
 //   ② **发完回读真源逐字节比对**——不一致就报 MISMATCH 并**非零退出**，绝不假装成功。
 //
 // 用法：
-//   node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 [--to 老板]
-//   node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --to codex-总监 --mail --wake
+//   node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --card HUB-018 [--to 老板]
+//   node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --card HUB-018 --to codex-总监 --mail --wake
 // 参数：
 //   --file <路径>     必填。正文文件（UTF-8）。会做三件小事：去 BOM / CRLF→LF / 去首尾空白
 //                     （与 Hub 的 `body.trim()` 对齐，避免"我发了空格，对面看不见"）。
 //   --author <看板名> 必填。你的实名看板名（泛称会被 Hub 拒收）。
+//   --card <卡号>     必填。你正在干的**任务卡号**（如 HUB-018）；确实无卡就写 `--card -`（印成「无卡」）。
+//                     工具会自动在正文最前面拼 `【卡号 · 时间戳】`（老板 2026-09-13 05:1x 定：
+//                     "以后信要给我带……把你正在干的相关的事的那个编号带上。然后再带个时间戳。"）。
+//                     信头**参与 --max 计数与回读校验**；缺这个参数**直接拒绝发送**。
 //   --to <看板名>     看板模式的收件人（默认 老板）；--mail 模式是收信人（必填）。
 //   --mail            投对方信箱（POST /api/mail）而不是发板（POST /api/post）。
 //   --wake            仅 --mail：顺手敲门铃（投递成功 ≠ 对方起了回合，见 AGENTS.md）。
@@ -59,17 +63,40 @@ const dry = has("--dry");
 const asJson = has("--json");
 const flatten = has("--flatten");
 const max = Number(arg("--max", 0)) || 0;
+// ★ HUB-018 信头规约（老板 2026-09-13 05:1x 定，**锚定**）：
+//   "以后信要给我带……你把你正在干的相关的事的那个编号带上。然后再带个时间戳。"
+//   工具替人记，不靠记性：`--card HUB-018`；**确实无卡**就显式写 `--card -`（印成「无卡」，一眼看得出来）。
+//   信头放在正文最前面，并且**参与 --max 计数与回读逐字节校验**（它也是正文的一部分）。
+const card = arg("--card", "");
+const cardGiven = !!card && card !== true && String(card).trim() !== "";
 
-if (!file || !author || (useMail && !to)) {
+if (!file || !author || (useMail && !to) || !cardGiven) {
   process.stderr.write(
-    "用法：node tools/mobile_chat/say.mjs --file <正文文件> --author <看板名> [--to <看板名>] [--mail] [--wake] [--dry]\n"
+    "用法：node tools/mobile_chat/say.mjs --file <正文文件> --author <看板名> --card <卡号|- > [--to <看板名>] [--mail] [--wake] [--dry]\n" +
+      (cardGiven ? "" : "缺 --card：每封信都要带卡号 + 时间戳（老板 2026-09-13 定）。在干的卡就写卡号，确实无卡写 `--card -`。\n")
   );
   process.exit(2);
 }
+// 信头用的东八区时间戳（与 Hub 的 fmtNow 同格式，分钟精度）
+function stampNow() {
+  const p = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const g = (t) => (p.find((x) => x.type === t) || {}).value || "";
+  return g("year") + "-" + g("month") + "-" + g("day") + " " + g("hour") + ":" + g("minute");
+}
+const CARD_LABEL = String(card).trim() === "-" ? "无卡" : String(card).trim();
+const HEADER = "【" + CARD_LABEL + " · " + stampNow() + "】 ";
 
 // 正文：只从文件读，并做与 Hub 一致的归（去 BOM / CRLF→LF / 去首尾空白）
 const raw = fs.readFileSync(file, "utf8");
-const body = raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+const body = HEADER + raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 const sha = (s) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
 if (!body) {
   process.stderr.write("空正文，不发。\n");
