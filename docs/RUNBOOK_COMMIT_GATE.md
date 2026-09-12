@@ -14,14 +14,20 @@
 
 ## 二、怎么用（对所有人）
 
-1. **先把身份设成自己**（一次性）：
+> 🔴 **本仓是"共用一个工作树"**：`user.name/email` 存在**共用的 `.git/config`，全仓只有一份**——
+> **谁设谁覆盖别人**（今晚实测：一分钟内被从"总监"改成"量化总监"）。因此：
+> **① 共用工作树下不要设 repo-local 身份；② 每次提交都把身份显式带上（`-c`）。**
+
+1. **提交（唯一推荐写法，谁都一样）**：
    ```
-   git config user.name  "<你的看板名>"
-   git config user.email "<你的工号>@agents.canaanser.local"
+   git -c user.name="<你的看板名>" -c user.email="<你的工号>@agents.canaanser.local" commit -m "…"
    ```
-   （你的看板名/工号见名册 `outputs/dialog/agents.json`；拿不准跑 `node tools/mobile_chat/whoami.mjs --me <看板名>`。）
+   （看板名/工号见名册 `outputs/dialog/agents.json`；拿不准跑 `node tools/mobile_chat/whoami.mjs --me <看板名>`。）
+   **本仓已把仓库级身份清空**：不显式带 `-c` → 闸**直接拒**（这正是我们要的：逼出"谁提交、谁具名"）。
 2. **提交前顺手看一眼分支**：`git branch --show-current`（闸也会打印，但别等它拦）。
-3. **提权提交（沙箱外）**：`-c user.name=… -c user.email=…` 一起带上，别让 Git 回落到默认身份。
+3. **提权提交（沙箱外）**：同样带 `-c` 那一段——提权最容易让 Git 回落默认身份，今晚的红就是这么来的。
+4. **有自己独立 worktree 的线**（例：渲染线 `run/wt-avatar`）：可开 `extensions.worktreeConfig` 并用
+   `git config --worktree user.name/email` —— **那只影响你的工作树**，不会覆盖别人。
 
 ## 三、绕过（只两种情形，且要留痕）
 
@@ -46,5 +52,12 @@ git hook run pre-commit                                                        #
 ## 六、已知边界
 
 - **合并提交不走 pre-commit**（Git 的规矩）：`git merge` 生成的合并提交**不受本闸约束**（自动合入小工也在此列）；
+- **闸不校验"是不是你本人"**：它只校验"名字在名册里"。**共用工作树下靠"清空仓库级身份 + 每次 `-c`"来堵**（见 §二）；
+  若某天有人又去设 repo-local 身份，**"最后设的人会替别人署名"**这个口子会回来——发现请立刻报总监。
 - **只覆盖本仓**：其他仓（如 `D:\agent_crew_kits`）要装得各自装一次（套件线自己定）；
 - **不改写历史**：此前用默认身份提交的那些 commit **保持原样**（红线：不追溯），从启用时点起生效。
+
+## 七、致谢/来源
+
+§二那条"共用工作树下不要设身份"是 **`codex-人事` 2026-09-13 07:03 报出来的真漏洞**（附现场证据：一分钟内身份被改）。
+我原稿给的"两条命令"会制造**冒名**，已按它的建议改成"**显式 `-c`**"，并把仓库级身份清空。

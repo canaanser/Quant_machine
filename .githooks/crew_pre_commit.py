@@ -80,9 +80,10 @@ def main():
         fail([
             head.rstrip(),
             "[X] 拒提交：`user.name` = %r 不在名册里（名册 = outputs/dialog/agents.json）。" % name,
-            "  红线：署名一律实名看板名。修法（一行）：",
-            '    git config user.name "codex-量化总监" && git config user.email "codex-quant@agents.canaanser.local"',
-            "  （把两个值换成你自己的看板名/工号；工号见名册。）",
+            "  红线：署名一律实名看板名。**共用工作树下不要设 repo-local 身份**（那会替别人签名），",
+            "  正确用法是**每次提交显式带 `-c`**：",
+            '    git -c user.name="<你的看板名>" -c user.email="<你的工号>@agents.canaanser.local" commit ...',
+            "  （工号见名册；如 `codex-quant@agents.canaanser.local`。自己独占 worktree 的线可用 `git config --worktree`。）",
             "  仅老板本人或紧急止血可绕过：CREW_HOOK_BYPASS=1 git commit ...",
         ])
     if name == "老板":
