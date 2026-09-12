@@ -2023,6 +2023,13 @@ async function main() {
   //   ① 入职时补投**生效公告正文**；② 回执窗口从**投递时刻**起算（入职晚于发布也要回执）；
   //   ③ 在册但没 threadId 的条目不进 pendingAck（不再空催 + 不再上板噪声）
   //   TTL 已在本轮启动时调到 9 秒（见 spawn env），才能把"入职晚于发布"压缩进自测时限。
+  // ★ 决定性的时间基准（2026-09-13 修偶发红）：老线"窗口关没关"只取决于**投递时刻**
+  //   （`noticeDeliveredAt[<公告id>|<线>]`），而那个时刻最晚可能落在发布后约 6 秒
+  //   （看板文件轮询 5s + 一次处理余量）。原来固定等 8s：发布→检查共约 10.5~11s，
+  //   减去"最晚 2.5~6s 才投递" → 与 9s TTL 的余量只剩零点几秒 → 机器一慢就翻（今晚红-红-绿）。
+  //   所以这里按**用例自己的钟**算够余量再看，不贴边、也不靠重试。
+  const tPub15 = Date.now();
+  const NOTICE_POLL_WORST_MS = 6000; // 轮询间隔 5s + 处理余量
   const notice15 = "- @全体 " + boardStamp(new Date()) + " 老板：自测HUB015：这条专门用来验回执窗口";
   fs.appendFileSync(BOARD_FILE, notice15 + "\n", "utf8");
   await new Promise((r) => setTimeout(r, 2500)); // 等入库 + 扇出（投信箱并记下投递时刻）
@@ -2046,8 +2053,35 @@ async function main() {
     ob15.status === 200 && Number(ob15Body.noticesDelivered || 0) >= 1 && bfMail.includes("【公告 " + code15) && bfMail.includes("验回执窗口"),
     "noticesDelivered=" + ob15Body.noticesDelivered
   );
-  // 等到公告**全局过期**（TTL 9s，发布后约 10.5s）再看：老线窗口已关，新线窗口还开着
-  await new Promise((r) => setTimeout(r, 8000));
+  // ★ 这条用例要同时成立两件相反的事：**老线窗口已关** 且 **新线窗口未关**。
+  //   两条边界只差"摄取时刻 ↔ 入职时刻"那点距离（实测约 2~3 秒），所以**任何固定 sleep 都会贴边**——
+  //   这就是它偶发红的确定性根因（红-红-绿）。修法不是重试，而是**用真源里的投递时刻算出那条带子的正中**：
+  //     · 老线关：now > maxOldDeliveredAt + TTL
+  //     · 新线开：now < newDeliveredAt + TTL
+  //   取中点 now = (maxOld + new)/2 + TTL → **两边余量一样大**，与机器快慢无关。
+  const st15 = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  const dmap15 = st15.noticeDeliveredAt || {};
+  const pref15 = String(n15.id) + "|";
+  let oldDeliv = 0;
+  let newDeliv = 0;
+  for (const [k, v] of Object.entries(dmap15)) {
+    if (!k.startsWith(pref15)) continue;
+    if (k === pref15 + "codex-测补投") newDeliv = Math.max(newDeliv, Number(v) || 0);
+    else oldDeliv = Math.max(oldDeliv, Number(v) || 0);
+  }
+  const TTL15 = 9000;
+  // 兜底：拿不到真源时刻时退到"发布 + 轮询最坏 + TTL + 余量"（只保证老线关，不保证新线还开）
+  const target15 =
+    oldDeliv && newDeliv
+      ? (oldDeliv + newDeliv) / 2 + TTL15
+      : tPub15 + NOTICE_POLL_WORST_MS + TTL15 + 2000;
+  const waitRest = target15 - Date.now();
+  if (waitRest > 0) await new Promise((r) => setTimeout(r, waitRest));
+  check(
+    "HUB-015②前提：真源里能同时拿到『老线投递时刻』与『新线投递时刻』（带子宽度 > 0）",
+    oldDeliv > 0 && newDeliv > oldDeliv,
+    "old=" + oldDeliv + " new=" + newDeliv + " 带子=" + (newDeliv - oldDeliv) + "ms"
+  );
   const d15b = await (await fetch(base + "/api/dialog?limit=500", { headers: hdr })).json();
   const n15b = (d15b.records || []).filter((r) => r.kind === "notice" && /自测HUB015/.test(String(r.body || ""))).pop();
   const pend15 = (n15b && n15b.refs && n15b.refs.pendingAck) || [];
