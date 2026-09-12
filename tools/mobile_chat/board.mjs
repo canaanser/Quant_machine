@@ -116,7 +116,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.51"; // .51：HUB-016 手机页发消息显式署「老板」（后端 author 必填）
+const PAGE_VER = "2026-09-10.52"; // .52：老板面开关（默认只显示组长及以上 + 发给老板的关键消息；组员往来折成协作带）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -3252,6 +3252,9 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 .qbtn{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:0 6px;font-size:calc(var(--fs-meta) - 1px);cursor:pointer}
 .quote{background:var(--code-bg);border-left:3px solid #6e7681;border-radius:6px;padding:5px 9px;margin:0 0 2px 6px;color:var(--dim);font-size:var(--fs-meta);white-space:pre-wrap;word-break:break-word}
 .empty{color:var(--dim);font-size:var(--fs-ui);text-align:center;padding:24px 10px}
+/* 协作/通报带（HUB-017 老板面 v1）：默认折叠，点开/收起；只显示条数，不占主屏 */
+.collab{margin:8px 2px;padding:7px 10px;border:1px dashed var(--line);border-radius:9px;
+  color:var(--dim);font-size:var(--fs-meta);text-align:center;cursor:pointer;user-select:none}
 /* —— 输入区：默认只占一行，引用/前缀提示才展开 —— */
 #composer{flex-shrink:0;background:var(--panel);border-top:1px solid var(--line);padding:clamp(8px,2.4vw,12px) var(--pad-x);padding-bottom:calc(clamp(8px,2.4vw,12px) + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px}
 #route{display:flex;align-items:center;gap:7px;font-size:var(--fs-ui);color:var(--dim)}
@@ -3528,6 +3531,7 @@ body{min-height:100vh}
   <button class="mrow" id="menuNotify">新消息提醒：关</button>
   <button class="mrow" id="menuPanel">面板：自动收起</button>
   <button class="mrow" id="menuProgress">进度流：关</button>
+  <button class="mrow" id="menuBossView">老板面：开</button>
   <div class="mrow" id="menuTheme"><span>配色</span><span id="themeDots"></span></div>
 </div>
 <div id="boardWrap">
@@ -4216,6 +4220,30 @@ let CACHE=[],CACHE_VIOL=[],CACHE_ADDED=[],QUOTE=null,UNREAD_N=0,firstLoad=true,N
 // dsh 的进度流是英文思考（reasoning…），默认**不显示**，免得糊满聊天框；
 // 需要看的时候在 ⋯ 菜单里打开。
 let SHOW_PROGRESS=localStorage.getItem("mchat_prog")==="1";
+// ★ 老板面（老板 2026-09-13 03:0x 定；总监落级别、立发言权 · AGENTS.md「老板面纪律 §按层级的发言权」）：
+//   默认只显示 **组长及以上** 的发言 + **发给老板的关键消息**（公告/事件）+ 老板自己发的；
+//   **组员之间的往来、系统/代答/progress** 收进"协作"区（v1：折成一条带子 + 状态行报条数，点开可展开）。
+//   级别唯一真源 = 名册 agents.json 的 level（页面从 /api/dialog 的 agents[] 取）。
+let BOSS_VIEW=localStorage.getItem("mchat_bossview")!=="0"; // 默认开
+let SHOW_COLLAB=false;
+function lvlOf(alias){
+  const a=(AGENTS||[]).find(x=>String(x.alias)===String(alias));
+  return String((a&&a.level)||"").toLowerCase();   // 拿不到就是 ""（交给 bossFacing 决定，别默认 member）
+}
+function isLead(alias){const L=lvlOf(alias);return L==="director"||L==="lead";}
+function bossFacing(r){
+  const f=String((r&&r.from)||"");
+  if(f==="老板")return true;                                  // 老板自己发的
+  if(/^〔代答〕/.test(String((r&&r.body)||"")))return false;    // 代答是程序，永不进老板面
+  if((r&&r.kind)==="progress")return !!SHOW_PROGRESS;         // 进度流：除非你**主动**打开进度流，否则不进老板面
+  if((r&&r.kind)==="notice")return true;                      // 公告 → 关键消息
+  if((r&&r.kind)&&(r.kind!=="message"))return true;            // 门铃/事件等非普通消息
+  // ★ 拿不到级别 → **宁多勿漏**（fail-open）：名册缺字段/接口没给，也绝不把主屏藏空。
+  //   只有**明确标了 member** 的线才被收进协作区（总监已把级别落进名册，所以正常情况都会走到下面这行）。
+  const L=lvlOf(f);
+  if(!L)return true;
+  return L==="director"||L==="lead";
+}
 let HIDDEN_PROG=0;
 let HIDDEN_OLD_NOTICE=0; // 公告页签里被收起来的"已过期/已被取代"条数
 function saveSeen(){
@@ -4534,13 +4562,28 @@ function renderDialog(records){
   boardEl.innerHTML="";
   HIDDEN_PROG=0;
   HIDDEN_OLD_NOTICE=0;
-  const shown=(records||[]).filter(pass);
+  const shown0=(records||[]).filter(pass);
+  // 老板面过滤（v1）：BOSS_VIEW 开着且没点开协作区时，主屏只留 bossFacing 的
+  const collabList=BOSS_VIEW?shown0.filter(r=>!bossFacing(r)):[];
+  const shown=(BOSS_VIEW&&!SHOW_COLLAB)?shown0.filter(bossFacing):shown0;
+  if(BOSS_VIEW&&collabList.length){
+    // 协作/通报区：折成一条带子（**默认折叠、带条数**，点开/再点收起）——组员往来、系统、代答、进度都在这里
+    const band=document.createElement("div");
+    band.className="collab";
+    band.textContent=SHOW_COLLAB
+      ? ("▴ 收起协作/通报（"+collabList.length+" 条）——回到老板面")
+      : ("协作/通报 "+collabList.length+" 条 ▸（组员往来 · 系统 · 代答 · 进度；点开看）");
+    band.addEventListener("click",()=>{SHOW_COLLAB=!SHOW_COLLAB;renderDialog(CACHE);});
+    boardEl.appendChild(band);
+  }
   LAST_RENDERED=shown.length;
   if(!shown.length){
     const e=document.createElement("div");
     e.className="empty";
     // 空列表必须说清"为什么空"，否则看起来就是"啥也没有"
-    e.textContent=(FILTER.mode==="notice")
+    e.textContent=(BOSS_VIEW&&!SHOW_COLLAB&&collabList.length)
+      ? ("老板面暂无新内容——组员/协作往来 "+collabList.length+" 条已折叠在上面那条带子里（点它展开）")
+      : (FILTER.mode==="notice")
       ? "还没有公告（发公告：收件人下拉选「@全体（公告·不回复）」）"
       : (records&&records.length)
       ? "没有符合当前筛选的记录（共 "+(records.length-((records||[]).filter(r=>r.kind==="progress").length))+" 条对话，当前筛选："+
@@ -4757,6 +4800,14 @@ function syncProgressBtn(){
   b.classList.toggle("on",SHOW_PROGRESS);
   b.textContent="进度流："+(SHOW_PROGRESS?"开":"关");
 }
+// 老板面开关（v1，老板 2026-09-13 03:0x 定）：开着=主屏只留"组长及以上 + 发给老板的关键消息"，
+// 组员往来/系统/代答/进度折成一条带子；关掉=全量视图（对比用）。状态行会写明当前模式。
+function syncBossViewBtn(){
+  const b=$("#menuBossView");
+  if(!b)return;
+  b.classList.toggle("on",BOSS_VIEW);
+  b.textContent="老板面："+(BOSS_VIEW?"开":"全量");
+}
 function notifyNew(list){
   const fresh=list.filter(r=>r.kind!=="progress"&&String(r.from||"")!=="老板");
   if(!fresh.length)return;
@@ -4823,7 +4874,10 @@ async function load(){
     }
     updateJump();
     firstLoad=false;
-    statusEl.textContent=p.busy?"Codex 回复中…":"已同步 "+(j.updatedAt||"")+" · v"+PAGE_VER.split(".").pop();
+    // 状态行**写明当前模式**（不骗人）：老板面 → 顺带报协作区条数；关掉就是"全量"
+    const collabN=(CACHE||[]).filter(r=>!bossFacing(r)).length;
+    statusEl.textContent=(p.busy?"Codex 回复中…":"已同步 "+(j.updatedAt||""))+" · v"+PAGE_VER.split(".").pop()+
+      (BOSS_VIEW?(" · 老板面"+(collabN?(" · 协作 "+collabN+" 条"):"")):" · 全量");
     const violFresh=freshViolations(CACHE_VIOL).length;
     setDiag((p.busy?"Codex 回复中":"正常")+(violFresh?" · 署名违规 "+violFresh:""));
     uiReport({ok:true,status:statusEl.textContent});
@@ -4894,8 +4948,25 @@ $("#warnX").addEventListener("click",()=>{
     setDiag();
     toast(SHOW_PROGRESS?"显示 dsh 进度流":"已隐藏 dsh 进度流");
   });
+  $("#menuBossView").addEventListener("click",()=>{
+    BOSS_VIEW=!BOSS_VIEW;
+    SHOW_COLLAB=false;
+    try{localStorage.setItem("mchat_bossview",BOSS_VIEW?"1":"0");}catch(e){}
+    syncBossViewBtn();
+    setMenu(false);
+    renderDialog(CACHE);
+    setDiag();
+    // 状态行**立刻**跟着变（不能等下一次 30 秒轮询，否则用户/自测都看到旧模式）
+    (function(){
+      const collabN=(CACHE||[]).filter(r=>!bossFacing(r)).length;
+      const base=String(statusEl.textContent||"").replace(/ · (老板面|全量).*$/,"");
+      statusEl.textContent=base+(BOSS_VIEW?(" · 老板面"+(collabN?(" · 协作 "+collabN+" 条"):"")):" · 全量");
+    })();
+    toast(BOSS_VIEW?"老板面：只看组长及以上 + 发给老板的关键消息":"全量视图：所有人的发言都显示");
+  });
   syncNotifyBtn();
   syncProgressBtn();
+  syncBossViewBtn();
 document.body.dataset.theme=THEME;
 renderThemeDots();
 renderTargets();
@@ -5838,6 +5909,8 @@ async function main() {
           // 退役的线：status 直接写 retired（与 /api/contacts 一致），页面据此灰显 + 写「退役」
           status: String(meta.status || "").toLowerCase() === "retired" ? "retired" : health,
           retired: String(meta.status || "").toLowerCase() === "retired",
+          // ★ level（老板面过滤用，2026-09-13）：唯一真源 = 名册 agents.json 的 level（总监落）
+          level: String(meta.level || "member").toLowerCase(),
           note: normalizeTaskIds(meta.note || ""),
           auto: !!meta.auto,
           lastSeen,
