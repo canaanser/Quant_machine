@@ -406,6 +406,96 @@ def main():
         pg.evaluate("()=>{try{setMenu(false)}catch(e){}}")
         pg.wait_for_timeout(120)
 
+        # ———— HUB-AVATAR（老板 2026-09-13 03:3x 交办）：头像放大 / 点头像出资料卡 / 长按名字 @ ————
+        # ① 头像放大：主屏条目头像 ≥26px、联系人页头像 ≥56px（改前 18 / 38）
+        entry_av = box(".entry .av")
+        if entry_av:
+            ck("主屏头像已放大（≥26px）", entry_av["h"] >= 26, "h=%s" % entry_av["h"])
+        else:
+            ck("主屏头像已放大（≥26px）", False, "页面里没有 .entry .av（测试数据缺非老板条目？）")
+        # 头像素材：有图就必须真加载出来（naturalWidth>0）；没图就必须退回首字圆点（不裂图、不空白）
+        av_state = pg.evaluate(
+            "()=>{const imgs=[...document.querySelectorAll('.av img')];"
+            "const avs=[...document.querySelectorAll('.av')];"
+            "const txt=avs.filter(e=>!e.querySelector('img')&&(e.textContent||'').trim().length>0).length;"
+            "return {avs:avs.length,imgs:imgs.length,broken:imgs.filter(i=>!i.naturalWidth).length,txt:txt,"
+            "sample:imgs.slice(0,3).map(i=>i.getAttribute('src'))};}"
+        )
+        ck(
+            "头像：有图真加载 / 没图退首字（都能显示）",
+            av_state["broken"] == 0 and (av_state["imgs"] > 0 or av_state["txt"] > 0),
+            av_state,
+        )
+
+        # ② 点头像 = 资料卡：真点一下，卡片要开，五格要齐，token 格必须留空「—」
+        if entry_av:
+            pg.click(".entry .av")
+            pg.wait_for_timeout(500)
+            opened = "on" in (pg.get_attribute("#profilePage", "class") or "")
+            ck("点头像弹出资料卡", opened, pg.get_attribute("#profilePage", "class"))
+            if opened:
+                body = pg.inner_text("#profileRows")
+                for label in ["入职时间", "工龄", "职级", "直属领导", "消耗 token"]:
+                    ck("资料卡有「%s」一栏" % label, label in body, body[:60].replace("\n", " | "))
+                ck("token 格留空显示「—」（绝不编数字）", "待接账本" in body and "—" in body, body[-60:].replace("\n", " | "))
+                pg.click("#profileX")
+                pg.wait_for_timeout(300)
+                ck("资料卡能关掉", "on" not in (pg.get_attribute("#profilePage", "class") or ""), "profileX")
+
+        # ③ 字段缺了不炸：拿一条没 leader / 没 joinedAt 的线开卡 → 显示「—」且页面无 JS 报错
+        pg.evaluate("()=>{try{openProfileCard('codex-测试缺字段')}catch(e){}}")
+        pg.wait_for_timeout(400)
+        miss = pg.inner_text("#profileRows")
+        ck("缺字段不报错（页面 errs 仍为空）", not errs, errs[:1])
+        ck("缺入职时间/工龄显示「—」而不是编数字", miss.count("—") >= 2, miss.replace("\n", " | ")[:120])
+        pg.evaluate("()=>{try{closeProfileCard()}catch(e){}}")
+        pg.wait_for_timeout(200)
+
+        # ④ 长按名字 = @ 提及（真按住 ~0.7s；桌面端等价：右键 / 按住不放）
+        if not menu_visible():
+            pg.click("#menuBtn")
+            pg.wait_for_timeout(300)
+        pg.click("#menuContacts")
+        pg.wait_for_timeout(600)
+        nm = box(".ct .ct-name")
+        if nm:
+            pg.fill("#msg", "")
+            cx, cy = nm["x"] + nm["w"] / 2, nm["y"] + nm["h"] / 2
+            pg.mouse.move(cx, cy)
+            pg.mouse.down()
+            pg.wait_for_timeout(700)
+            pg.mouse.up()
+            pg.wait_for_timeout(300)
+            ck("长按名字出 @ 提及", "@" in pg.input_value("#msg"), pg.input_value("#msg"))
+        else:
+            ck("长按名字出 @ 提及", False, "联系人页没有 .ct-name")
+        pg.click("#contactsCancel")
+        pg.wait_for_timeout(250)
+
+        # ⑤ 单击名字 = 艾特（老板 2026-09-13 07:3x 改口："点到名字…是艾特他"；长按保留）
+        #    边界：只认消息行里的名字；名单芯片单击=筛选是既有行为，本条不碰它。
+        names = pg.query_selector_all(".entry .name")
+        if names:
+            pg.fill("#msg", "")
+            want = (names[0].inner_text() or "").strip()
+            names[0].click()
+            pg.wait_for_timeout(300)
+            val = pg.input_value("#msg")
+            tgt = pg.evaluate("()=>{try{return effectiveTarget()}catch(e){return ''}}")
+            ck("单击名字 = 艾特（输入框出现 @名字）", val.strip().startswith("@" + want), val)
+            ck("单击名字后收件人变成那个人", (want in (tgt or "")), tgt)
+            # 边界：名单芯片单击仍是"筛选"，不该跟着变成 @（改完再点一下还原）
+            pg.fill("#msg", "")
+            chip = pg.query_selector("#agents .chip")
+            if chip:
+                chip.click()
+                pg.wait_for_timeout(300)
+                ck("名单芯片单击仍是筛选（没被改成 @）", pg.input_value("#msg").strip() == "", pg.input_value("#msg"))
+                chip.click()
+                pg.wait_for_timeout(250)
+        else:
+            ck("单击名字 = 艾特（输入框出现 @名字）", False, "页面里没有 .entry .name")
+
         try:
             os.makedirs(os.path.dirname(SHOT), exist_ok=True)
             pg.screenshot(path=SHOT)

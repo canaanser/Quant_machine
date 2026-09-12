@@ -89,7 +89,10 @@ const dirs = {
   tasks: path.join(ROOT, "tasks"),
   locks: path.join(ROOT, "locks"),
   stub: path.join(ROOT, "stub"),
+  avatars: path.join(ROOT, "avatars"),
 };
+// HUB-AVATAR 夹具：给"codex-测在岗"（slug codex-awake）放一张真图，另放一张只为验 mime 的文件
+const AV_IMG_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#2f7d4f"/></svg>';
 const BOARD_FILE = path.join(ROOT, "COMMS_BOARD.md");
 const DIALOG_FILE = path.join(ROOT, "dialog.ndjson");
 const AGENTS_FILE = path.join(ROOT, "agents.json");
@@ -146,6 +149,9 @@ function setup() {
   );
   fs.writeFileSync(BOARD_FILE, ["# 自测看板（临时）", "", "- @老板 " + boardStamp(T.reply) + " DSH-main：收到", ""].join("\n"), "utf8");
   fs.writeFileSync(DIALOG_FILE, "", "utf8");
+  // HUB-AVATAR 夹具：按工号命名（页面据此确定性取图）；png 那份只为验 mime，不挂任何线
+  fs.writeFileSync(path.join(dirs.avatars, "codex-awake.svg"), AV_IMG_SVG, "utf8");
+  fs.writeFileSync(path.join(dirs.avatars, "zz-mime-probe.png"), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   // 闲置会话停用清单的夹具：codex-测占用2 的会话标成"停用"，验证投递口会绕开它
   fs.writeFileSync(
     path.join(dirs.data, "state.json"),
@@ -716,6 +722,8 @@ async function main() {
         MCHAT_TASKS_DIR: dirs.tasks,
         // 会话写锁目录也要隔离：否则测试要么读不到锁、要么污染真实 locks 目录
         MCHAT_THREAD_LOCKS: dirs.locks,
+        // 头像素材也隔离：否则自测会读真素材目录，用例随素材变而飘
+        MCHAT_AVATAR_DIR: dirs.avatars,
         // Codex CLI 换成桩程序：自测不碰真会话（生产默认走真 codex.exe，shell:false）
         MCHAT_CODEX_BIN: path.join(dirs.stub, "codex-stub.cmd"),
         MCHAT_CODEX_SHELL: "1",
@@ -1075,6 +1083,54 @@ async function main() {
     "HUB-002 判定：退避阶梯可观测（2/5/15 分钟）",
     Array.isArray(dActive.body.backoffMs) && dActive.body.backoffMs.join(",") === "120000,300000,900000",
     String(dActive.body.backoffMs)
+  );
+
+  // —————————— HUB-AVATAR：头像图路由（只读 · 要 token · 白名单 · 防穿越 · 缺图退化）——————————
+  const avBase = base + "/avatars/";
+  const tq = "?t=" + encodeURIComponent(token);
+  const avOk = await fetch(avBase + "codex-awake.svg" + tq);
+  check(
+    "HUB-AVATAR：按工号取图 200、mime 正确",
+    avOk.status === 200 && (avOk.headers.get("content-type") || "").indexOf("image/svg+xml") >= 0,
+    avOk.status + " " + avOk.headers.get("content-type")
+  );
+  check(
+    "HUB-AVATAR：SVG 带 CSP 禁脚本",
+    (avOk.headers.get("content-security-policy") || "").indexOf("default-src 'none'") >= 0,
+    avOk.headers.get("content-security-policy")
+  );
+  const avBytes = Buffer.from(await avOk.arrayBuffer());
+  check("HUB-AVATAR：取图字节与磁盘一致", avBytes.equals(Buffer.from(AV_IMG_SVG, "utf8")), "len=" + avBytes.length);
+  const avPng = await fetch(avBase + "zz-mime-probe.png" + tq);
+  check(
+    "HUB-AVATAR：按扩展名定 mime（png → image/png）",
+    avPng.status === 200 && (avPng.headers.get("content-type") || "").indexOf("image/png") >= 0,
+    avPng.headers.get("content-type")
+  );
+  const avNoTok = await fetch(avBase + "codex-awake.svg");
+  check("HUB-AVATAR：不带 token => 401（不做免鉴权静态目录）", avNoTok.status === 401, "status=" + avNoTok.status);
+  const avMiss = await fetch(avBase + "nobody-here.png" + tq);
+  check("HUB-AVATAR：没这张图 => 404（页面据此退回首字圆点）", avMiss.status === 404, "status=" + avMiss.status);
+  const avTrav = await fetch(base + "/avatars/..%2F..%2Fagents.json" + tq);
+  check("HUB-AVATAR：编码路径穿越被拒（404）", avTrav.status === 404, "status=" + avTrav.status);
+  const avTrav2 = await fetch(base + "/avatars/%2e%2e%2fagents.json" + tq);
+  check("HUB-AVATAR：另一种穿越写法同样被拒（404）", avTrav2.status === 404, "status=" + avTrav2.status);
+  const avHdr = await fetch(avBase + "codex-awake.svg", { headers: hdr });
+  check("HUB-AVATAR：token 只走 query（header 不带也行/不带则 401），口径写清", avHdr.status === 401, "status=" + avHdr.status);
+  // 名册联动：有图的线必须给 img（页面据此决定用图）；没图的线必须是 null，**不许编**
+  const avEmp = await (await fetch(base + "/api/employees", { headers: hdr })).json();
+  const withImg = (avEmp.employees || []).filter((e) => e.avatar && e.avatar.img);
+  check(
+    "HUB-AVATAR：名册只给真有图的线带 img",
+    withImg.length === 1 && withImg[0].alias === "codex-测在岗" && String(withImg[0].avatar.img).indexOf("/avatars/") === 0,
+    "withImg=" + withImg.length + " " + JSON.stringify(withImg.map((e) => e.alias))
+  );
+  const avDial = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const dImg = (avDial.agents || []).filter((a) => a.avatar && a.avatar.img);
+  check(
+    "HUB-AVATAR：/api/dialog 的 agents[] 用同一个口径（页面芯片/消息头像同源）",
+    dImg.length === 1 && dImg[0].alias === "codex-测在岗",
+    "dImg=" + dImg.length
   );
 
   // —————————— HUB-002 口径修正：忙 ≠ 永远叫不醒 ——————————
