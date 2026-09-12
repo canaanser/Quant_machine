@@ -72,6 +72,17 @@ function say(args, env) {
   });
   return { code: r.status, out: String(r.stdout || ""), err: String(r.stderr || "") };
 }
+// 并发版（用于 ⑦ 的"同一分钟两个作者"竞态）
+function sayAsync(args, env) {
+  return new Promise((res) => {
+    const c = spawn(process.execPath, [SAY, ...args], { cwd: REPO, env: { ...process.env, ...env } });
+    let o = "";
+    let e = "";
+    c.stdout.on("data", (d) => (o += d));
+    c.stderr.on("data", (d) => (e += d));
+    c.on("close", (code) => res({ code, out: o, err: e }));
+  });
+}
 
 let child = null;
 let childLog = "";
@@ -224,6 +235,36 @@ try {
     "⑥ 无卡也带时间戳（【无卡 · 2026-09-13 05:2x】）",
     /^【无卡 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】 /.test(String(noCardRec.body || "")),
     JSON.stringify(String(noCardRec.body || "").slice(0, 30))
+  );
+
+  // ⑦ **假失败**（codex-修复 2026-09-13 07:06 报的）：同一分钟里**别人发给同一收件人**的信
+  //   成了文件最后一行 → 回读如果"按收件人取最后一行"，就拿别人的行来比 → 必然 MISMATCH →
+  //   **假失败**（比没校验更危险：线以为没发出去会重发，正好制造重复噪声）。
+  //
+  //   ⚠️ 端到端造不出**确定性**复现（POST 与回读之间的并发窗口太窄；我先写了并发版用例，
+  //      实测**旧代码也绿**——那是摆设，所以改成把**匹配逻辑**单独拎出来做确定性判别）。
+  //   夹具：我的那条**被夹在别人两条之间**（最后一行是别人的）→ 旧版必红、新版必绿。
+  const probeFile = path.join(ROOT, "verify-probe.ndjson");
+  const probeExpect = path.join(ROOT, "verify-probe-expect.txt");
+  const MYBODY = "【无卡 · 2026-09-13 07:05】 我的正文（452 字那封）";
+  fs.writeFileSync(
+    probeFile,
+    [
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "乙", to: "codex-总监", body: "别人的正文一" }),
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "codex-看板编辑", to: "codex-总监", body: MYBODY }),
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "乙", to: "codex-总监", body: "别人的正文二（它才是最后一行）" }),
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(probeExpect, MYBODY, "utf8");
+  const probe = say(
+    ["--verify-probe", probeFile, "--probe-from", "codex-看板编辑", "--probe-to", "codex-总监", "--probe-expect", probeExpect],
+    env
+  );
+  ck(
+    "⑦ 回读必须按 **(发件人, 收件人) 找我那条**，不许拿别人写在最后的行来比（假失败根因）",
+    probe.code === 0,
+    "exit=" + probe.code + " " + String(probe.out || probe.err).trim().slice(0, 110)
   );
 
   const failed = results.filter((x) => !x).length;
