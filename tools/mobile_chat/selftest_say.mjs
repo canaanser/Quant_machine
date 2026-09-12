@@ -58,6 +58,11 @@ const POISON = [
   "第四行：中文「」、破折号——、emoji ✅⚠️",
 ].join("\n");
 const FLATTENED = POISON.replace(/\s*\n\s*/g, " ").trim();
+// ★ HUB-018 信头规约（老板 2026-09-13 05:1x）：say.mjs 会在正文最前面拼 `【卡号 · 时间戳】`。
+//   断言"正文没被吞"时先把信头剥掉再比——信头本身也参与逐字节校验（工具内部已验）。
+const CARD = "HUB-018";
+const HEADER_RE = /^【HUB-018 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】 /;
+const stripHeader = (s) => String(s || "").replace(HEADER_RE, "");
 
 function say(args, env) {
   const r = spawnSync(process.execPath, [SAY, ...args], {
@@ -117,11 +122,11 @@ try {
   const author = "codex-看板编辑";
 
   // ① 多行发看板、不给 --flatten → 拒绝
-  const r1 = say(["--file", BODY_FILE, "--author", author, "--to", "老板"], env);
+  const r1 = say(["--file", BODY_FILE, "--author", author, "--card", CARD, "--to", "老板"], env);
   ck("① 多行发看板 → 默认拒绝（不许静默丢格式）", r1.code === 2 && /行式存储/.test(r1.err), "exit=" + r1.code);
 
   // ② 多行发看板 + --flatten → 成功且与"压好的文本"一致
-  const r2 = say(["--file", BODY_FILE, "--author", author, "--to", "老板", "--flatten", "--json"], env);
+  const r2 = say(["--file", BODY_FILE, "--author", author, "--card", CARD, "--to", "老板", "--flatten", "--json"], env);
   let j2 = {};
   try {
     j2 = JSON.parse(r2.out);
@@ -147,7 +152,8 @@ try {
     .pop() || {};
   ck(
     "② 落盘正文 = 压好后的原文（毒字符原样活着，换行按看板口径变空格）",
-    String(boardRec.body || "") === FLATTENED &&
+    stripHeader(boardRec.body) === FLATTENED &&
+      HEADER_RE.test(String(boardRec.body || "")) &&
       String(boardRec.body || "").includes("a37bbd9") &&
       String(boardRec.body || "").includes("`x1") &&
       String(boardRec.body || "").includes("${a}") &&
@@ -157,7 +163,7 @@ try {
   );
 
   // ③ 多行发信箱 → 成功且换行原样保留
-  const r3 = say(["--file", BODY_FILE, "--author", author, "--to", "codex-总监", "--mail", "--json"], env);
+  const r3 = say(["--file", BODY_FILE, "--author", author, "--card", CARD, "--to", "codex-总监", "--mail", "--json"], env);
   let j3 = {};
   try {
     j3 = JSON.parse(r3.out);
@@ -174,7 +180,7 @@ try {
   } catch {}
   ck(
     "③ 信箱里换行原样保留（4 行）",
-    String(mailRec.body || "") === POISON && String(mailRec.body || "").split("\n").length === 4,
+    stripHeader(mailRec.body) === POISON && String(mailRec.body || "").split("\n").length === 4,
     "lines=" + String(mailRec.body || "").split("\n").length
   );
 
@@ -182,7 +188,7 @@ try {
   const emptyDir = path.join(ROOT, "empty");
   fs.mkdirSync(emptyDir, { recursive: true });
   const r4 = say(
-    ["--file", BODY_FILE, "--author", author, "--to", "老板", "--flatten"],
+    ["--file", BODY_FILE, "--author", author, "--card", CARD, "--to", "老板", "--flatten"],
     { ...env, MCHAT_DIALOG_FILE: path.join(emptyDir, "dialog.ndjson") }
   );
   ck("④ 回读找不到落盘记录 → 报错并非零退出（不假装成功）", r4.code === 1 && /失败/.test(r4.err), "exit=" + r4.code);
@@ -190,10 +196,35 @@ try {
   // ⑤ 长度闸（--max）：超长直接拒绝，不发送（门铃/回执有"≤200 字"的约定，别靠人肉数）
   const longFile = path.join(ROOT, "long.txt");
   fs.writeFileSync(longFile, "字".repeat(50), "utf8");
-  const r5 = say(["--file", longFile, "--author", author, "--to", "老板", "--max", "10"], env);
+  const r5 = say(["--file", longFile, "--author", author, "--card", CARD, "--to", "老板", "--max", "10"], env);
   ck("⑤ 超长正文被 --max 拦住（非零退出 + 报字数）", r5.code === 3 && /超过 --max 10 字/.test(r5.err), "exit=" + r5.code + " " + r5.err.split("\n")[0]);
-  const r5b = say(["--file", longFile, "--author", author, "--to", "老板", "--max", "200"], env);
+  const r5b = say(["--file", longFile, "--author", author, "--card", CARD, "--to", "老板", "--max", "200"], env);
   ck("⑤ 长度达标就照常发（没有误杀）", r5b.code === 0 && /回读逐字节一致/.test(r5b.out), "exit=" + r5b.code);
+
+  // ⑥ 信头规约（HUB-018）：不给 --card 直接拒绝；`--card -` = 显式"无卡"，照发
+  const r6 = say(["--file", BODY_FILE, "--author", author, "--to", "老板", "--flatten"], env);
+  ck("⑥ 缺 --card → 拒绝发送（每封信都要带卡号 + 时间戳）", r6.code === 2 && /--card/.test(r6.err), "exit=" + r6.code);
+  const r6b = say(["--file", longFile, "--author", author, "--card", "-", "--to", "老板", "--max", "200"], env);
+  ck("⑥ `--card -`（显式无卡）照常发，信头印「无卡」", r6b.code === 0 && /回读逐字节一致/.test(r6b.out), "exit=" + r6b.code);
+  const noCardRec = fs
+    .readFileSync(DIALOG, "utf8")
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .filter((r) => String(r.from) === author)
+    .pop() || {};
+  ck(
+    "⑥ 无卡也带时间戳（【无卡 · 2026-09-13 05:2x】）",
+    /^【无卡 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】 /.test(String(noCardRec.body || "")),
+    JSON.stringify(String(noCardRec.body || "").slice(0, 30))
+  );
 
   const failed = results.filter((x) => !x).length;
   process.stdout.write("\nsay 自测结果：" + (results.length - failed) + "/" + results.length + " 通过\n");

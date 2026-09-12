@@ -508,12 +508,14 @@ function testPageRender(records, js) {
 }
 
 function testPageMention(js) {
-  const fns = ["mentionPrefixOf", "knownTargets", "effectiveTarget", "renderTargets", "setTarget", "insertMention", "addLongPress", "lpSuppressClick", "refreshRouteHint", "violAck", "freshViolations"];
+  // `lvlOf` / `isMemberNoise`：HUB-018 B（老板面剔除组员↔组长往来）的判据函数——**必须能单独抽出来验**，
+  //   否则这条产品口径只能靠肉眼在真页面上看，没回归保护。
+  const fns = ["mentionPrefixOf", "knownTargets", "effectiveTarget", "renderTargets", "setTarget", "insertMention", "addLongPress", "lpSuppressClick", "refreshRouteHint", "violAck", "freshViolations", "lvlOf", "isMemberNoise"];
   const src =
     'function $(s){return document.querySelector(s);}\n' +
     "function toast(t){globalThis.__toasts.push(t);}\n" +
     fns.map((n) => grabFunction(js, n)).join("\n") +
-    "\nglobalThis.__lp={insertMention,addLongPress,lpSuppressClick,refreshRouteHint,mentionPrefixOf,knownTargets,effectiveTarget,setTarget,renderTargets,violAck,freshViolations};";
+    "\nglobalThis.__lp={insertMention,addLongPress,lpSuppressClick,refreshRouteHint,mentionPrefixOf,knownTargets,effectiveTarget,setTarget,renderTargets,violAck,freshViolations,lvlOf,isMemberNoise};";
 
   const msgEl = { value: "", focus() {}, addEventListener() {} };
   const statusEl = { textContent: "" };
@@ -547,7 +549,14 @@ function testPageMention(js) {
     document: doc,
     QUOTE: null,
     TARGET: "codex-看板服务",
-    AGENTS: [{ alias: "dsh-老员工" }, { alias: "dsh-quant" }, { alias: "codex-看板服务" }, { alias: "codex-看板编辑" }],
+    // 级别字段是 HUB-018 B 的判据来源（真实页面从 /api/dialog 的 agents[] 取，同一份名册）
+    AGENTS: [
+      { alias: "dsh-老员工", level: "member" },
+      { alias: "dsh-quant", level: "member" },
+      { alias: "codex-看板服务", level: "lead" },
+      { alias: "codex-看板编辑", level: "lead" },
+      { alias: "codex-总监", level: "director" },
+    ],
     localStorage: (() => {
       const store = {};
       return {
@@ -613,6 +622,17 @@ function testPageMention(js) {
     msgEl.value = "";
     sandbox.__lp.setTarget("codex");
     sandbox.__lp.refreshRouteHint();
+
+    // ★ HUB-018 B（老板 2026-09-13 03:4x）：**老板面剔除组员↔组长的往来**——不进协作带、条数也不报。
+    //   判据是"普通消息 + 两头都不是老板 + 至少一头是 member"。逐条钉死，免得以后放宽了口径没人发现。
+    const noise = (from, to, kind) => sandbox.__lp.isMemberNoise({ from: from, to: to, kind: kind || "message" });
+    check("老板面：组员→组长 的往来算噪声（老板面看不到、也不报条数）", noise("dsh-老员工", "codex-总监") === true);
+    check("老板面：组长→组员 也算噪声（两个方向都要剔）", noise("codex-看板服务", "dsh-quant") === true);
+    check("老板面：老板→组员 **不算**噪声（老板参与的一律留）", noise("老板", "dsh-老员工") === false);
+    check("老板面：组员→老板 **不算**噪声（发给老板的照留）", noise("dsh-老员工", "老板") === false);
+    check("老板面：组长↔组长 不算噪声（正常协作带）", noise("codex-看板服务", "codex-总监") === false);
+    check("老板面：公告/进度等非普通消息不在这个判据里吞（各有各的规则）", noise("dsh-老员工", "codex-总监", "notice") === false);
+    check("老板面：名册缺级别 => **fail-open**（宁多勿漏，别把主屏藏空）", noise("实习生甲", "实习生乙") === false);
 
     // 长按实例胶囊：450ms 才触发，触发后插入 @别名，有效收件人跟着前缀走
   const chip = fakeEl();
@@ -1962,10 +1982,12 @@ async function main() {
   await new Promise((r) => setTimeout(r, 2500));
   const d1 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
   const n1 = (d1.records || []).filter((r) => r.kind === "notice").pop();
+  // ★ 口径变更（老板 2026-09-13 04:0x）：**裸词「收到」现在算**——按记录顺序销它之前最近一条未回执的公告（mode=bare）。
+  //   所以这条用例从"不算"翻转成"算"，并钉住 mode。
   check(
-    "公告回执：**裸词「收到」不算**（每条必须单独回，已回执的也要回）",
-    !(n1.refs.acks || {})["codex-测无会话"],
-    JSON.stringify(Object.keys(n1.refs.acks || {}))
+    "公告回执：裸词「收到」也算（老板 04:0x 新口径，mode=bare）",
+    !!((n1.refs.acks || {})["codex-测无会话"] || {}).mode,
+    JSON.stringify((n1.refs.acks || {})["codex-测无会话"] || {})
   );
   fs.appendFileSync(BOARD_FILE, "- @老板 " + boardStamp(new Date()) + " codex-测无会话：收到 " + ncode + "\n", "utf8");
   await new Promise((r) => setTimeout(r, 2500));
@@ -2029,6 +2051,100 @@ async function main() {
     "HUB-015③：在册但**没 threadId** 的条目不进 pendingAck（dsh-老员工/测无会话不再空催）",
     !pend15.includes("dsh-老员工") && !pend15.includes("codex-测无会话"),
     "pending=" + JSON.stringify(pend15)
+  );
+
+  // ★ HUB-018 E（老板 04:0x 定）：**回执只回「收到」两个字**——按记录顺序销掉该线**最近一条未回执**的公告。
+  //   判别性：连发两条公告、只回一句裸「收到」→ 必须销**后**那条（B），且**不许**把前一条（A）也销掉。
+  // 注意：**发一条就读一条**——测试环境热文件轮转凶（4000B/10 行），发完两条再读会被归档出热文件（我先前就这样扑空过）
+  const getE = async (kw) => {
+    const d = await (await fetch(base + "/api/dialog?limit=500", { headers: hdr })).json();
+    return (d.records || []).filter((r) => r.kind === "notice" && String(r.body || "").indexOf(kw) >= 0).pop();
+  };
+  fs.appendFileSync(BOARD_FILE, "- @全体 " + boardStamp(new Date()) + " 老板：E测公告A（先发）\n", "utf8");
+  await new Promise((r) => setTimeout(r, 2600));
+  const nEa = await getE("E测公告A");
+  fs.appendFileSync(BOARD_FILE, "- @全体 " + boardStamp(new Date()) + " 老板：E测公告B（后发）\n", "utf8");
+  await new Promise((r) => setTimeout(r, 2600));
+  const nEb0 = await getE("E测公告B");
+  fs.appendFileSync(BOARD_FILE, "- @老板 " + boardStamp(new Date()) + " codex-测在岗：收到\n", "utf8");
+  await new Promise((r) => setTimeout(r, 2600));
+  check("E①：两条公告都能读到（发一条读一条，避开轮转）", !!nEa && !!nEb0, (nEa ? "A ok" : "A 缺") + " / " + (nEb0 ? "B ok" : "B 缺"));
+  const nEb = await getE("E测公告B");
+  check(
+    "E：只回「收到」两个字 → 销的是**最近那条**公告（mode=bare）",
+    !!nEb && !!((nEb.refs.acks || {})["codex-测在岗"] || {}).mode,
+    JSON.stringify((nEb && nEb.refs.acks) || {})
+  );
+  const nEa2 = await getE("E测公告A");
+  check(
+    "E：更早那条公告**不被误销**（一句「收到」只销一条）",
+    !!nEa2 && !((nEa2.refs.acks || {})["codex-测在岗"]),
+    JSON.stringify((nEa2 && nEa2.refs.acks) || {})
+  );
+
+  // ★ HUB-018 追加（老板 2026-09-13 04:5x 定）：**推送记账**
+  //   痛点：同一封信被叫两次（① /api/mail 的"来信提示"带正文 ② crew_host 30 秒门铃只报条数）。
+  //   口径：**推成功就记一行**进 pushed.ndjson（给门铃算未读水位）；推失败/写失败都不许影响投递。
+  //   判别性：同一次「推得通」+「推不通」各来一发，账本**只许**出现前者。
+  const pushedPath = path.join(path.dirname(DIALOG_FILE), "pushed.ndjson");
+  const readLedger = () =>
+    fs.existsSync(pushedPath) && fs.statSync(pushedPath).isFile()
+      ? fs
+          .readFileSync(pushedPath, "utf8")
+          .split("\n")
+          .filter(Boolean)
+          .map((s) => {
+            try {
+              return JSON.parse(s);
+            } catch {
+              return null; // 解析侧宽容：坏行跳过，不许炸调用方
+            }
+          })
+      : [];
+  const ledgerBefore = readLedger().length;
+  const pushMail = (to, body) =>
+    fetch(base + "/api/mail", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...hdr },
+      body: JSON.stringify({ to, from: "codex-测在岗", body, wake: true }),
+    }).then((r) => r.json());
+  const pushOk = await pushMail("codex-测窗口", "[自测] 推送记账：这条推得通（桩返回 0）");
+  const pushBad = await pushMail("codex-测在岗", "[自测] 推送记账：这条推不通（桩返回 1）");
+  const delta = readLedger().slice(ledgerBefore);
+  check(
+    "推送记账：推成功写一行（by=hub / to=看板名 / ts_ms / mailbox_ts 齐）",
+    delta.some(
+      (r) =>
+        r &&
+        r.to === "codex-测窗口" &&
+        r.by === "hub" &&
+        Number.isFinite(r.ts_ms) &&
+        !!r.mailbox_ts &&
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(r.ts))
+    ),
+    "pushOk=" + JSON.stringify(pushOk) + " delta=" + JSON.stringify(delta)
+  );
+  check(
+    "推送记账：推失败**不写**（这正是门铃兜底要叫的场景）",
+    pushBad.woke !== true && !delta.some((r) => r && r.to === "codex-测在岗"),
+    "woke=" + pushBad.woke + " delta=" + JSON.stringify(delta.map((r) => r && r.to))
+  );
+  // 写失败不许影响投递：把账本路径临时换成"目录"→ append 必然抛 → 只在日志记一笔，投递**仍须成功**。
+  let pushNoLedger = null;
+  try {
+    fs.rmSync(pushedPath, { force: true });
+    fs.mkdirSync(pushedPath, { recursive: true });
+    pushNoLedger = await pushMail("codex-测窗口", "[自测] 推送记账：账本写不进去，投递也不许失败");
+  } finally {
+    try {
+      fs.rmdirSync(pushedPath);
+    } catch {}
+  }
+  const pingOk = await (await fetch(base + "/api/ping")).json().catch(() => ({}));
+  check(
+    "推送记账：账本写失败**不许影响投递**（只多叫一次门铃）",
+    pushNoLedger && pushNoLedger.ok === true && pushNoLedger.woke === true && pingOk.ok === true,
+    JSON.stringify(pushNoLedger)
   );
 
   child.kill();

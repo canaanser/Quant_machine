@@ -72,6 +72,12 @@ const STATE_FILE = path.join(DATA_DIR, "state.json");
 const LAST_FILE = path.join(DATA_DIR, "last_board.txt");
 const LOG_FILE = path.join(DATA_DIR, "log.txt");
 const DIALOG_FILE = process.env.MCHAT_DIALOG_FILE || path.join(WORKSPACE, "outputs", "dialog", "dialog.ndjson");
+// 推送账本（HUB-018 追加，老板 2026-09-13 04:5x 定）：**推成功**就记一行，
+// 给 crew_host 门铃算未读水位（水位 = max(本人最后一条板行, 最后一次被叫醒, 账本里最后一次成功推送)）。
+// 只增不删；推失败/抛异常**不写**——那正是门铃兜底要叫的场景。
+// 默认跟 DIALOG_FILE 同目录：生产落在 outputs/dialog/pushed.ndjson，
+// 而自测/探针把 DIALOG_FILE 指到临时目录时会自动隔离，不会污染仓库真账本。
+const PUSHED_FILE = process.env.MCHAT_PUSHED_FILE || path.join(path.dirname(DIALOG_FILE), "pushed.ndjson");
 // 历史归档：热文件超过阈值就把"老的"挪去 dialog.archived.ndjson（只重新挂载、不物理删）。
 // 目的：长期把 /api/dialog 的解析成本钉在常数级，而不是随年月线性变慢。
 const DIALOG_ARCHIVE_FILE = process.env.MCHAT_DIALOG_ARCHIVE || DIALOG_FILE + ".archived";
@@ -116,7 +122,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.52"; // .52：老板面开关（默认只显示组长及以上 + 发给老板的关键消息；组员往来折成协作带）
+const PAGE_VER = "2026-09-10.53"; // .53：HUB-018 B 老板面剔组员↔组长往来（不进协作带、条数也不报，只在「全量」可见）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -379,7 +385,29 @@ function markQueueSent(alias) {
   writeState({ ...st, queueSent: all });
 }
 // 投递 = 把留言"塞进那条会话的队列"，它会被 app-server 叫起来自己处理（我们**不替它说**）
-async function deliverByQueue(alias, text) {
+// 推送记账的进程内去重集：同一 (收件线, 正文哈希) 一次运行只记一行。
+// **不要用 mailbox_ts 当去重键**：它是分钟精度，同一分钟内两封不同的信会被误判成"同一封"
+//   → 后一封不记账 → 门铃为它多叫一次（就等于没修）。正文哈希才是"这封信"的身份。
+// （跨重启最多重复一行，账本读取侧按 max(ts_ms) 取值，天然幂等。）
+const PUSHED_SEEN = new Set();
+function recordPush(toAlias, mailboxTs, dedupKey) {
+  try {
+    const to = String(toAlias || "");
+    const mts = String(mailboxTs || "");
+    const part = String(dedupKey || mts || "");
+    const key = to + "\u0000" + part;
+    if (part && PUSHED_SEEN.has(key)) return;
+    const row = { ts: fmtStampSec(), ts_ms: Date.now(), by: "hub", to, mailbox_ts: mts };
+    fs.mkdirSync(path.dirname(PUSHED_FILE), { recursive: true });
+    fs.appendFileSync(PUSHED_FILE, JSON.stringify(row) + "\n", "utf8");
+    if (part) PUSHED_SEEN.add(key);
+  } catch (e) {
+    // 账本写不进去最多"多叫一次"门铃——**绝不能**因此投不出去
+    log("PUSH-LEDGER-SKIP:", String((e && e.message) || e).slice(0, 120));
+  }
+}
+// opts.mailboxTs：被推的那封信的 `ts`（对账用；判水位用不上也允许缺）
+async function deliverByQueue(alias, text, opts) {
   const meta = agentFor(alias) || {};
   const tid = meta.threadId ? String(meta.threadId) : "";
   if (!tid) return { ok: false, how: "no-thread" };
@@ -405,6 +433,8 @@ async function deliverByQueue(alias, text) {
     }
     markQueueSent(alias);
     markQueueText(alias, hash);
+    // ★ HUB-018 追加：**真的推出去了**才记账（dup-skip 不算——那封信早记过，或压根没送出去）
+    recordPush(alias, opts && opts.mailboxTs, hash);
     return { ok: true, how: "queue", ms: Date.now() - t0 };
   } catch (e) {
     return { ok: false, how: "queue-error", ms: Date.now() - t0, error: String(e.message).slice(0, 200) };
@@ -476,6 +506,22 @@ function fmtNow() {
   }).formatToParts(new Date());
   const get = (t) => (parts.find((x) => x.type === t) || {}).value || "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
+// 秒级时间戳（`YYYY-MM-DD HH:MM:SS`，东八区）：推送账本的 `ts` 字段用它。
+function fmtStampSec() {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t) => (parts.find((x) => x.type === t) || {}).value || "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
 function appendBoardLine(target, author, content, extraRefs) {
@@ -1076,6 +1122,21 @@ const ACK_RE = new RegExp("(?:^|\\n)\\s*" + ACK_WORDS + "\\s*[:：]?\\s*(N-[0-9A
 function noticeCode(id) {
   return "N-" + String(id || "").slice(0, 4).toUpperCase();
 }
+// ★ HUB-018 D（老板 2026-09-13 03:4x）：**公告可以只 @ 指定几条线**（"让我能够选择艾特谁，
+//   其中有个选项是艾特所有人"）。看板行的收件人列只有一格，所以名单写在**正文开头的 @ 列举**里：
+//   一个 @ 都没有 = 全体；有 @ 列举 = 只发这几条（谁收到、谁要回执，都按它收窄）。
+//   **只认开头连续的那一串** @，免得正文里随口提一句 @某人 就被当成收件人名单。
+function noticeRecipientsOf(content) {
+  const out = [];
+  const m = String(content || "").match(/^\s*(?:@[A-Za-z0-9_\u4e00-\u9fa5-]{1,32}\s*)+/);
+  if (!m) return out;
+  for (const x of m[0].matchAll(/@([A-Za-z0-9_\u4e00-\u9fa5-]{1,32})/g)) {
+    const a = boardName(x[1]);
+    if (a === "全体" || a === "老板") continue;
+    if (!out.includes(a)) out.push(a);
+  }
+  return out;
+}
 // 公告有效期：过期就不再要求回执（"有些公告已经失效了，自然不必存在"）。默认 24 小时。
 const NOTICE_TTL_MS = Number(process.env.MCHAT_NOTICE_TTL_MS || 24 * 3600 * 1000);
 // ── 公告"送到"的记账（HUB-015，`codex-修复` 2026-09-13 01:54 反馈）────────────────
@@ -1118,8 +1179,27 @@ function applyNoticeAcks(records) {
   // （投递按名册寻址，没 threadId 直接 no-thread），列进去只会每次公告固定产生 2 次空催 + 1 行噪声
   // （现场：dsh-老员工 / dsh-quant，板上 09-12 23:17、23:27 那两行）。它们**仍可回执、仍会被记账**。
   const reachable = agents.filter((a) => !!(allAgents[a] || {}).threadId);
+  // ★ 老板 2026-09-13 04:0x 定："**公告我要能确认的**（组长及以上要回执）；**组员**的**他看到了就行了**，
+  //   其他的不用他干。" → **回执名单只算 director/lead**；组员照旧投递、能看见，但**不要求回执、也不催**。
+  //   fail-open：名册缺 level（判不准）→ 仍按"要回执"处理（宁多勿漏，也保住既有用例的语义）。
+  const mustAck = reachable.filter((a) => {
+    const L = String(((allAgents[a] || {}).level) || "").toLowerCase();
+    return !L || L === "director" || L === "lead";
+  });
   // 每条线对每条公告的投递时刻（HUB-015(b)）
   const deliveredMap = noticeDeliveryMap();
+  // ★ 信箱回执（老板 2026-09-13 定案 / 总监派单 A）：**组员不上板也能回执**——回执信投给发起线或组长。
+  //   这里把「本人投出的信箱信」并进**扫描源**（from=该线实名 + 正文命中回执），mode 记 `mail`。
+  //   只用于**认账**，不并入返回给前端的记录（信箱不是板行）。
+  const mailScan = [];
+  for (const a of agents) {
+    const rows = readMailboxLines(path.join(MAILBOX_DIR, "pending_" + slugFor(a) + ".ndjson"));
+    for (const m of rows) {
+      if (String((m && m.from) || "") !== a) continue;
+      mailScan.push({ id: "mailack|" + a + "|" + String((m && m.ts) || ""), ts: m.ts, from: a, to: "", kind: "message", body: String((m && m.body) || ""), refs: { mail: true } });
+    }
+  }
+  const scan = mailScan.length ? records.concat(mailScan) : records;
   const notices = records.filter((r) => r.kind === "notice").sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
   if (!notices.length) return records;
   // "回执在这条公告之后" 用**记录顺序**判，不用时间戳：看板行是**分钟精度**，
@@ -1138,7 +1218,7 @@ function applyNoticeAcks(records) {
     const nTs = parseCst(n.ts);
     const nIdx = orderIdx.get(String(n.id));
     const acks = {};
-    for (const r of records) {
+    for (const r of scan) {
       if (r.kind === "notice") continue;
       const rIdx = orderIdx.get(String(r.id));
       // 顺序优先；顺序不可得时退回时间比较
@@ -1149,6 +1229,9 @@ function applyNoticeAcks(records) {
       const quoted = r.refs && r.refs.quote && String(r.refs.quote.id || "") === String(n.id);
       // ② 正文里出现 `收到 <短号>` 或 `收到 <时间>`（**必须带指向**，裸词不算）
       const body = String(r.body || "");
+      // ★ HUB-018：**〔代答〕不算本尊回执**——值守分线顶着本线的名摘旧话，不能替人认账
+      //   （老板 2026-09-13 04:5x 前后两次抓到；口径由本线定，总监已提示）。
+      if (/^\s*〔代答〕/.test(body)) continue;
       const mentions = [...body.matchAll(new RegExp(ACK_RE.source, "g"))];
       const code = noticeCode(n.id);
       const codes = mentions.filter((x) => x[1] && /^N-/.test(x[1])).map((x) => String(x[1]).toUpperCase());
@@ -1156,17 +1239,61 @@ function applyNoticeAcks(records) {
       const byCode = codes.includes(code);
       const byTime = points.includes(String(n.ts).slice(11, 16));
       if (!acks[from] && (quoted || byCode || byTime)) {
-        acks[from] = { ts: r.ts, mode: quoted ? "quote" : byCode ? "code" : "point" };
+        // `ord` = 这条回执在**记录顺序**里的位次（F 件"回执编号"按它排，别用分钟精度的时间戳）
+        acks[from] = { ts: r.ts, mode: quoted ? "quote" : byCode ? "code" : byTime ? "point" : (r.refs && r.refs.mail ? "mail" : "point"), ord: rIdx != null ? rIdx : null };
       }
     }
     out.set(n.id, { ...(out.get(n.id) || {}), acks });
+  }
+  // ★ E（老板 2026-09-13 04:0x 定）：**回执只回「收到」两个字**也认——
+  //   规则：把该线所有"裸回执"语句（收到/已阅/回执，后面**没跟短号也没跟时间**）按记录顺序排，
+  //   每一条销掉它**之前**最近的一条"它还没回执"的公告。同时两条公告 → 连回两次「收到」就各销一条（不会串）。
+  //   带短号/带时间的回执仍走上面的精确匹配；`mode:"bare"` 让页面能标出"这条回执销的是哪条公告"（F 那件）。
+  const bareByLine = new Map();
+  for (const r of scan) {
+    const from = String((r && r.from) || "");
+    // 注意：回执**记录**对全体员工线都认（与上面按短号认账同一口径）；
+    // 只有"**必须回执的名单**"（expected/pendingAck）才收窄到组长及以上（I 那件）。
+    if (!agents.includes(from)) continue;
+    const body = String((r && r.body) || "");
+    if (!/(收到|已阅|回执)/.test(body)) continue;
+    if (/^\s*〔代答〕/.test(body)) continue;            // ★ 代答不算本尊回执（同主循环）
+    if (/N-[0-9A-Z]{4}/.test(body)) continue;          // 带短号 → 走精确匹配
+    if (/[0-2]?\d:[0-5]\d/.test(body)) continue;        // 带时间 → 走精确匹配
+    bareByLine.set(from, [...(bareByLine.get(from) || []), r]);
+  }
+  for (const [from, rows] of bareByLine) {
+    for (const st of rows) {
+      const stIdx = orderIdx.get(String(st.id));
+      let target = null;
+      // ★ 修法（codex-总监 2026-09-13 04:50 用隔离探针查出根因、并在副本里验过的改法）：
+      //   从**最新**往回找、命中即停 —— 同一分钟并列时自动取"记录顺序更靠后"的那条；
+      //   而按时间戳比（`parseCst(n.ts) > parseCst(target.ts)`）在**分钟精度**下会永远保留**最早**那条。
+      for (const n of [...notices].reverse()) {
+        const already = ((out.get(n.id) || {}).acks || {})[from];
+        if (already) continue;                          // 已经被它销过（含本轮裸回执）→ 跳过
+        const nIdx = orderIdx.get(String(n.id));
+        const after = nIdx != null && stIdx != null ? stIdx >= nIdx : parseCst(st.ts) >= parseCst(n.ts);
+        if (!after) continue;                           // 只销"在这条回执之前"的公告
+        // ★ 顺手补上主循环有、裸段漏了的守卫：**公告作者自己一句「收到」不许销掉自己的公告**（总监发现）
+        if (String(n.from || "") === from) continue;
+        target = n;
+        break;
+      }
+      if (!target) continue;
+      const info = out.get(target.id) || {};
+      info.acks = { ...(info.acks || {}), [from]: { ts: st.ts, mode: "bare", ord: stIdx != null ? stIdx : null } };
+      out.set(target.id, info);
+    }
   }
   const now = Date.now();
   return records.map((r) => {
     if (r.kind !== "notice") return r;
     const info = out.get(r.id) || {};
     const acks = info.acks || {};
-    const expected = reachable.filter((a) => a !== r.from);
+    // ★ HUB-018 D：公告只 @ 了几条线时，**回执名单也只算这几条**（老板："艾特多少人"自己选）。
+    const only = noticeRecipientsOf(r.body);
+    const expected = mustAck.filter((a) => a !== r.from && (!only.length || only.includes(a)));
     const nTs = parseCst(r.ts);
     const expired = now - nTs > NOTICE_TTL_MS;
     const supersededBy = info.supersededBy || null;
@@ -1220,7 +1347,16 @@ async function noticeNudgeTick() {
       if (done >= NOTICE_NUDGE_MAX) continue;
       const last = Number((st.noticeNudgeAt || {})[n.id + "|" + alias] || 0);
       if (now - last < NOTICE_NUDGE_MS) continue;
-      const dv = await deliverByQueue(alias, "（催办 · 公告 " + code + "）你还没回执。请在看板回一行：收到 " + code + "（或引用那条公告回「收到」）。").catch(() => ({ ok: false }));
+      const nudgeTs = fmtNow();
+      const dv = await deliverByQueue(alias, "（催办 · 公告 " + code + "）你还没回执。**回「收到」两个字即可**（走信箱回也行，系统会替你补上公告号）。", { mailboxTs: nudgeTs }).catch(() => ({ ok: false }));
+      // ★ 催办**同时落它信箱**（老板 2026-09-13 定案：不再要求组员上板回执）
+      try {
+        fs.appendFileSync(
+          path.join(MAILBOX_DIR, "pending_" + slugFor(alias) + ".ndjson"),
+          JSON.stringify({ ts: nudgeTs, from: CODEX_SERVICE, to: alias, body: "（催办 · 公告 " + code + "）你还没回执。请在**信箱里回一行**：收到（系统会替你补上公告号）。" }) + "\n",
+          "utf8"
+        );
+      } catch {}
       times[alias] = done + 1;
       nudges[n.id] = times;
       const atAll = { ...(readState().noticeNudgeAt || {}) };
@@ -1228,7 +1364,10 @@ async function noticeNudgeTick() {
       writeState({ ...readState(), noticeNudge: nudges, noticeNudgeAt: atAll });
       nudged++;
       if (times[alias] >= NOTICE_NUDGE_MAX && !dv.ok) {
-        appendBoardLine("老板", CODEX_SERVICE, "（系统：公告 " + code + " 催 " + NOTICE_NUDGE_MAX + " 次仍未收到 @" + alias + " 的回执——它可能不在场；回来后会看到信箱里的公告。）");
+        // ★ HUB-018 G（总监后补 / 老板 2026-09-13 03:4x）：**催办不许上板**。
+        //   原来这里每催满 N 次就往看板写一行"（系统：…催 N 次仍未收到…）"——正是老板说的那类噪声。
+        //   现在只留**日志**（排障用）；老板面要看进度就看公告卡片上那行"已收到 X/Y"（F 件同处）。
+        log("NOTICE NUDGE GIVEUP:", code, alias, "催满 " + NOTICE_NUDGE_MAX + " 次仍未回执（已投信箱，不再上板）");
       }
       break; // 一轮只催一条，别刷屏
     }
@@ -1730,14 +1869,15 @@ function clearHalt(by, evidence) {
   const msg = "（看板公告·恢复）老板已解除暂停：" + String(now).slice(11, 16) + "。可以继续干活了。";
   for (const alias of Object.keys(readAgents().agents || {})) {
     if (alias === "老板") continue;
+    const mts = fmtNow();
     try {
       fs.appendFileSync(
         path.join(MAILBOX_DIR, "pending_" + slugFor(alias) + ".ndjson"),
-        JSON.stringify({ ts: fmtNow(), from: "老板", to: alias, body: msg }) + "\n",
+        JSON.stringify({ ts: mts, from: "老板", to: alias, body: msg }) + "\n",
         "utf8"
       );
     } catch {}
-    deliverByQueue(alias, msg).catch(() => {});
+    deliverByQueue(alias, msg, { mailboxTs: mts }).catch(() => {});
   }
   return readHalt();
 }
@@ -2942,7 +3082,9 @@ async function respondToNewEntries() {
         const rec = dialogRecordFromBoardLine(entry.line);
         const code = rec ? noticeCode(rec.id) : "";
         const authorAlias = boardName(entry.author);
-        const lines = Object.keys(readAgents().agents || {});
+        // ★ HUB-018 D：正文开头 @ 了具体几条线 → 只投它们；没 @ → 全体（老行为不变）
+        const onlyTo = noticeRecipientsOf(entry.content);
+        const lines = onlyTo.length ? onlyTo : Object.keys(readAgents().agents || {});
         let sent = 0;
         const delivered = []; // HUB-015(b)：记下"投递给它"的时刻（回执计时起点）
         for (const alias of lines) {
@@ -2950,13 +3092,14 @@ async function respondToNewEntries() {
           if (String(agentFor(alias).status || "").toLowerCase() === "retired") continue;
           const tip =
             "【公告 " + code + "】" + entry.content +
-            "\n\n请回执：在看板回一行 `收到 " + code + "`（或点引用回复这条公告再回「收到」）。**每条公告都要单独回执**。";
+            "\n\n请回执：**回「收到」两个字即可**（直接回、或点引用这条公告再回都算；走信箱回也行）。**每条公告都要单独回执**。";
+          const tipTs = fmtNow();
           try {
-            fs.appendFileSync(path.join(MAILBOX_DIR, "pending_" + slugFor(alias) + ".ndjson"), JSON.stringify({ ts: fmtNow(), from: authorAlias, to: alias, body: tip }) + "\n", "utf8");
+            fs.appendFileSync(path.join(MAILBOX_DIR, "pending_" + slugFor(alias) + ".ndjson"), JSON.stringify({ ts: tipTs, from: authorAlias, to: alias, body: tip }) + "\n", "utf8");
             delivered.push(alias);
           } catch {}
           try {
-            const dv = await deliverByQueue(alias, "（公告 " + code + " 投递提示 · 来自 " + authorAlias + "）" + tip.slice(0, 200));
+            const dv = await deliverByQueue(alias, "（公告 " + code + " 投递提示 · 来自 " + authorAlias + "）" + tip.slice(0, 200), { mailboxTs: tipTs });
             if (dv.ok) sent++;
           } catch {}
         }
@@ -3323,6 +3466,12 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 #composer{gap:6px}
 #composerRow{display:flex;align-items:flex-end;gap:6px}
 #targetSel{flex-shrink:0;max-width:38vw;background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--dim);padding:8px 8px;font-size:var(--fs-meta)}
+/* 公告收件人（HUB-018 D）：只在"收件人=全体"时出现——一个都不勾 = 全体；勾了就只发这几条 */
+#noticePick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 2px 6px}
+#noticePick .np-lab{font-size:var(--fs-meta);color:var(--dim)}
+#noticePick .np-chip{background:var(--input-bg);color:var(--dim);border:1px solid var(--line);border-radius:999px;
+  padding:4px 10px;font-size:var(--fs-meta);cursor:pointer}
+#noticePick .np-chip.on{color:var(--accent);border-color:var(--accent);font-weight:600}
 /* 输入框：压成一行；右边那条滚动条藏掉（老板 2026-09-11 08:5x 要求）——内容照样能滚 */
 #msg{flex:1;min-width:0;min-height:36px;max-height:96px;padding:8px 11px;font-size:var(--fs-ui);border-radius:var(--r);scrollbar-width:none;-ms-overflow-style:none}
 #msg::-webkit-scrollbar{width:0;height:0;display:none}
@@ -3408,6 +3557,8 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 .notice .n-ack{display:flex;flex-wrap:wrap;gap:8px;font-size:var(--fs-meta);color:var(--dim);padding-left:4px}
 .notice .n-ack .ok{color:var(--codex)}
 .notice .n-ack .no{color:#6e7681}
+/* 回执编号（HUB-018 F）：**小灰字括号**——"数字大的就是时间靠后的"（老板 2026-09-13 04:2x） */
+.notice .n-ack .n-seq{font-size:.86em;color:var(--dim);opacity:.85;margin-left:3px}
 /* 兜底：万一 dvh/百分比高度都不认，至少让页面能滚起来，不至于"什么都没有" */
 body{min-height:100vh}
 #board{min-height:200px}
@@ -3622,6 +3773,7 @@ body{min-height:100vh}
   <div id="diag"></div>
   <div id="quote"><span></span><button id="quoteX" title="取消引用">✕</button></div>
   <div id="routeHint"></div>
+  <div id="noticePick" hidden></div>
   <div id="composerRow">
     <select id="targetSel"></select>
     <textarea id="msg" rows="1" placeholder="发消息"></textarea>
@@ -4130,7 +4282,7 @@ function renderTargets(){
   for(const t of list){
     const o=document.createElement("option");
     o.value=t;
-    o.textContent=(t==="全体")?"@全体（公告·不回复）":("@"+t);
+    o.textContent=(t==="全体")?"@全体（公告·每条线都要回「收到」）":("@"+t);
     if(t===TARGET)o.selected=true;
     sel.appendChild(o);
   }
@@ -4140,7 +4292,45 @@ function setTarget(t){
   try{localStorage.setItem("mchat_target",TARGET);}catch(e){}
   const sel=$("#targetSel");
   if(sel)sel.value=TARGET;
+  if(TARGET!=="全体"){try{NOTICE_ONLY_SET=new Set();}catch(e){}} // 离开公告模式就把勾选清掉，免得下次误发
+  if(typeof renderNoticePick==="function")renderNoticePick();
   refreshRouteHint();
+}
+// 勾选状态的安全读取：自测会把页面脚本**按函数抽出来**跑沙箱，那时 NOTICE_ONLY_SET 不存在，
+// 直接读会 ReferenceError。这里统一兜一下，抽取式自测与新函数就不打架。
+function noticeOnlyCount(){try{return NOTICE_ONLY_SET.size;}catch(e){return 0;}}
+// —— 公告收件人（HUB-018 D，老板 2026-09-13 03:4x）——
+//   "让我能够选择艾特谁，其中有个选项是艾特所有人"。**一个都不勾 = 全体**；勾了 = 只发这几条线，
+//   而且**回执也只要它们回**（服务端按正文开头的 @ 列举收窄，见 noticeRecipientsOf）。
+let NOTICE_ONLY_SET=new Set();
+function renderNoticePick(){
+  const box=$("#noticePick");
+  if(!box)return;
+  if(TARGET!=="全体"){box.hidden=true;box.innerHTML="";if(box.dataset)box.dataset.key="";return;}
+  box.hidden=false;
+  const lines=knownTargets().filter(t=>t!=="全体"&&t!=="老板");
+  const key=lines.join(",")+"|"+[...NOTICE_ONLY_SET].sort().join(",");
+  if(box.dataset&&box.dataset.key===key)return;
+  if(box.dataset)box.dataset.key=key;
+  box.innerHTML="";
+  const mk=(text,on,fn)=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="np-chip"+(on?" on":"");
+    b.textContent=text;
+    b.addEventListener("click",()=>{fn();renderNoticePick();refreshRouteHint();});
+    return b;
+  };
+  box.appendChild(mk("全体（"+lines.length+" 条线）",!NOTICE_ONLY_SET.size,()=>{NOTICE_ONLY_SET=new Set();}));
+  for(const t of lines){
+    box.appendChild(mk(t,NOTICE_ONLY_SET.has(t),()=>{
+      if(NOTICE_ONLY_SET.has(t))NOTICE_ONLY_SET.delete(t);else NOTICE_ONLY_SET.add(t);
+    }));
+  }
+  const lab=document.createElement("span");
+  lab.className="np-lab";
+  lab.textContent=NOTICE_ONLY_SET.size?("只发这 "+NOTICE_ONLY_SET.size+" 条线，回执也只要它们回"):"（不勾就发给所有线）";
+  box.appendChild(lab);
 }
 function insertMention(alias){
   const a=String(alias||"").trim();
@@ -4177,12 +4367,16 @@ function refreshRouteHint(){
   const pre=mentionPrefixOf(msgEl.value);
   if(sel)sel.classList.toggle("overridden",!!pre);
   if(pre==="全体"||(!pre&&effectiveTarget()==="全体")){
+    if(typeof renderNoticePick==="function")renderNoticePick();
     if(el){
-      el.textContent="→ 公告：所有线都会看到，但谁都不会回复（也不会唤醒任何人）";
+      const n=noticeOnlyCount();
+      el.textContent="→ 公告：发给"+(n?("勾选的 "+n+" 条线"):"所有线")+
+        "；**每条线都要回一句「收到」**（回执只在组长及以上那里催办）";
       el.style.display="block";
     }
     return;
   }
+  if(typeof renderNoticePick==="function")renderNoticePick();
   if(pre){
     if(el){
       el.textContent="→ 按前缀发给 @"+pre+"（@前缀优先，左边选的 "+"@"+TARGET+" 这次不生效）";
@@ -4243,6 +4437,15 @@ function bossFacing(r){
   const L=lvlOf(f);
   if(!L)return true;
   return L==="director"||L==="lead";
+}
+// ★ HUB-018 B 件（老板 2026-09-13 03:4x 定案）：**组员↔组长的往来不进老板面**——
+//   连"协作带"的条数都不报（老板原话："我看不出来，可读性也差"）。要看时切「全量」即可。
+//   判据：普通消息、**两头都不是老板**、且至少一头是 member。公告/门铃/进度各有各的规则，不在这里吞。
+function isMemberNoise(r){
+  const f=String((r&&r.from)||""), t=String((r&&r.to)||"");
+  if(f==="老板"||t==="老板")return false;
+  if((r&&r.kind)&&r.kind!=="message")return false;
+  return lvlOf(f)==="member"||lvlOf(t)==="member";
 }
 let HIDDEN_PROG=0;
 let HIDDEN_OLD_NOTICE=0; // 公告页签里被收起来的"已过期/已被取代"条数
@@ -4564,8 +4767,11 @@ function renderDialog(records){
   HIDDEN_OLD_NOTICE=0;
   const shown0=(records||[]).filter(pass);
   // 老板面过滤（v1）：BOSS_VIEW 开着且没点开协作区时，主屏只留 bossFacing 的
-  const collabList=BOSS_VIEW?shown0.filter(r=>!bossFacing(r)):[];
-  const shown=(BOSS_VIEW&&!SHOW_COLLAB)?shown0.filter(bossFacing):shown0;
+  // v2（HUB-018 B）：**组员↔组长往来整段摘掉**——不进协作带、条数也不报，只有「全量」看得见。
+  const noiseList=BOSS_VIEW?shown0.filter(isMemberNoise):[];
+  const bossList=noiseList.length?shown0.filter(r=>!isMemberNoise(r)):shown0;
+  const collabList=BOSS_VIEW?bossList.filter(r=>!bossFacing(r)):[];
+  const shown=BOSS_VIEW?(SHOW_COLLAB?bossList:bossList.filter(bossFacing)):shown0;
   if(BOSS_VIEW&&collabList.length){
     // 协作/通报区：折成一条带子（**默认折叠、带条数**，点开/再点收起）——组员往来、系统、代答、进度都在这里
     const band=document.createElement("div");
@@ -4583,8 +4789,10 @@ function renderDialog(records){
     // 空列表必须说清"为什么空"，否则看起来就是"啥也没有"
     e.textContent=(BOSS_VIEW&&!SHOW_COLLAB&&collabList.length)
       ? ("老板面暂无新内容——组员/协作往来 "+collabList.length+" 条已折叠在上面那条带子里（点它展开）")
+      : (BOSS_VIEW&&noiseList.length)
+      ? ("老板面暂无新内容——另有 "+noiseList.length+" 条组员往来已按新口径收起（要看就把右上角切「全量」）")
       : (FILTER.mode==="notice")
-      ? "还没有公告（发公告：收件人下拉选「@全体（公告·不回复）」）"
+      ? "还没有公告（发公告：收件人下拉选「@全体（公告…）」，发之前能勾选只给哪几条线）"
       : (records&&records.length)
       ? "没有符合当前筛选的记录（共 "+(records.length-((records||[]).filter(r=>r.kind==="progress").length))+" 条对话，当前筛选："+
         (FILTER.mode==="all"?"全部":FILTER.mode==="todo"?"待办":FILTER.mode==="unread"?"未读":"公告")+(FILTER.alias?" · 只看 "+FILTER.alias:"")+
@@ -4652,18 +4860,32 @@ function renderDialog(records){
         ack.className="n-ack";
         const acks=refs.acks||{};
         const okN=expected.filter(a=>acks[a]).length;
+        // ★ HUB-018 F（老板 2026-09-13 04:2x 定）：**回执带编号**——"数字大的就是时间靠后的"。
+        //   为什么需要：看板行是**分钟精度**，同一分钟里几条回执的时间看着一模一样，分不出先后。
+        //   编号 = 按**记录顺序**（服务端给的 ord；没有就退回时间）排出来的位次，1 = 最早。
+        //   显示成**小灰字括号**（.n-seq），不抢正文的注意力。
+        const ranked=expected.filter(b=>acks[b]).slice().sort((x,y)=>{
+          const ox=Number(acks[x].ord),oy=Number(acks[y].ord);
+          if(Number.isFinite(ox)&&Number.isFinite(oy)&&ox!==oy)return ox-oy;
+          return String(acks[x].ts).localeCompare(String(acks[y].ts));
+        });
+        const rankOf={};ranked.forEach((b,i)=>{rankOf[b]=i+1;});
         const head=document.createElement("span");
         const allOk=okN===expected.length;
         head.textContent="已收到 "+okN+"/"+expected.length+(allOk?"（齐）":"（缺 "+String(expected.length-okN)+"）")+"：";
-        head.title="回执写法：收到 "+noticeCode(r.id)+"（或引用这条公告回「收到」）";
+        head.title="回执写法：直接回「收到」两个字（或引用这条公告回）。括号里的数字是**回执先后**，数字大的在后。";
         ack.appendChild(head);
         for(const a of expected){
           const tag=document.createElement("span");
           if(acks[a]){
             tag.className="ok";
             const m=acks[a].mode;
-            tag.textContent="✓ "+a+" "+String(acks[a].ts).slice(5,16).replace("T"," ")+(m==="quote"?"（引用）":m==="code"?"（短号）":"（点名时间）");
-            tag.title=m==="quote"?"引用回复这条公告":m==="code"?"回了短号":"按时间点名回执";
+            tag.textContent="✓ "+a+" "+String(acks[a].ts).slice(5,16).replace("T"," ");
+            const sq=document.createElement("span");
+            sq.className="n-seq";
+            sq.textContent="（"+rankOf[a]+"）";
+            sq.title=m==="quote"?"引用回复这条公告":m==="code"?"回了短号":m==="mail"?"走信箱回执":"只回了「收到」两个字";
+            tag.appendChild(sq);
           }else{
             tag.className="no";
             tag.textContent="○ "+a+" 未收到";
@@ -4875,7 +5097,7 @@ async function load(){
     updateJump();
     firstLoad=false;
     // 状态行**写明当前模式**（不骗人）：老板面 → 顺带报协作区条数；关掉就是"全量"
-    const collabN=(CACHE||[]).filter(r=>!bossFacing(r)).length;
+    const collabN=(CACHE||[]).filter(r=>!bossFacing(r)&&!isMemberNoise(r)).length;
     statusEl.textContent=(p.busy?"Codex 回复中…":"已同步 "+(j.updatedAt||""))+" · v"+PAGE_VER.split(".").pop()+
       (BOSS_VIEW?(" · 老板面"+(collabN?(" · 协作 "+collabN+" 条"):"")):" · 全量");
     const violFresh=freshViolations(CACHE_VIOL).length;
@@ -4899,10 +5121,12 @@ sendEl.addEventListener("click",async()=>{
     //   （卡面："老板用手机发=署「老板」"）。别的线要发言请走 POST /api/post（同样要求显式 author）。
     const body={target,message,author:"老板"};
     if(QUOTE)body.quoteId=QUOTE.id;
+    // HUB-018 D：公告只发勾选的那几条线（服务端把名单写成正文开头的 @ 列举）
+    if(target==="全体"&&NOTICE_ONLY_SET.size)body.only=[...NOTICE_ONLY_SET];
     const r=await fetchT("/api/send",{method:"POST",headers:{"Content-Type":"application/json","x-mchat-token":token},body:JSON.stringify(body)},20000);
     const j=await r.json();
     if(r.status===401){askToken();return;}
-    if(j.ok)clearQuote();
+    if(j.ok){clearQuote();if(target==="全体"){NOTICE_ONLY_SET=new Set();renderNoticePick();refreshRouteHint();}}
     statusEl.textContent=j.ok?"已发送，等待回复":"发送失败："+(j.error||"");
     if(j.ok)jumpToBottom();
     setTimeout(load,1200);
@@ -4958,7 +5182,7 @@ $("#warnX").addEventListener("click",()=>{
     setDiag();
     // 状态行**立刻**跟着变（不能等下一次 30 秒轮询，否则用户/自测都看到旧模式）
     (function(){
-      const collabN=(CACHE||[]).filter(r=>!bossFacing(r)).length;
+      const collabN=(CACHE||[]).filter(r=>!bossFacing(r)&&!isMemberNoise(r)).length;
       const base=String(statusEl.textContent||"").replace(/ · (老板面|全量).*$/,"");
       statusEl.textContent=base+(BOSS_VIEW?(" · 老板面"+(collabN?(" · 协作 "+collabN+" 条"):"")):" · 全量");
     })();
@@ -5794,6 +6018,18 @@ async function main() {
         });
         return;
       }
+      // ★ HUB-018 H（总监 2026-09-13 04:01 后补）：**组员（level=member）不在看板发言**——直接 400。
+      //   目的：把"组员不上板"从**规矩**变成**闸门**（老板定案："组员级的没有必要在里面发言"）。
+      //   **fail-open**：拿不到 level（名册缺字段）就放行，绝不因为缺数据把发言全堵死。
+      //   **系统事实行不受影响**：Hub 自己发的系统行走 appendBoardLine（内部路径），不经这个 API。
+      const authorLevel = String(((cfg[alias] || {}).level) || "").toLowerCase();
+      if (authorLevel === "member") {
+        sendJson(res, 400, {
+          error: "组员不在看板发言（HUB-018）：请把话投给组长信箱——派活/回话/进度/回执一律走信箱。",
+          hint: "组长：codex-总监 · codex-套件 · codex-修复 · codex-人事 · codex-看板编辑",
+        });
+        return;
+      }
       const target = resolveTarget(String(payload.target || "老板").trim()) || "老板";
       appendBoardLine(target, alias, body);
       scheduleCheck();
@@ -5833,7 +6069,8 @@ async function main() {
         });
         return;
       }
-      queueForThread(to, { target: to.toLowerCase(), time: fmtNow(), author: from, content: body });
+      const mailTs = fmtNow();
+      queueForThread(to, { target: to.toLowerCase(), time: mailTs, author: from, content: body });
       // 默认**只投不唤醒**（I3：投递与唤醒分离；对方上线自读）。
       // 但"投了等于没投"是真实痛点（老板 2026-09-12 当场指出：发完没叫醒总监）。
       // 所以给一个**显式开关** `wake:true`：投完顺手走一次"投递即唤醒"（queue 优先，带冷却/上限）。
@@ -5842,7 +6079,7 @@ async function main() {
       let deduped = false;
       if (payload.wake === true) {
         try {
-          const dv = await deliverByQueue(to, "（看板信箱来信提示 · 来自 " + from + "）你信箱里有一条：" + body.slice(0, 120) + "　请读 outputs/dialog/pending_" + slugFor(to) + ".ndjson 后回一句。");
+          const dv = await deliverByQueue(to, "（看板信箱来信提示 · 来自 " + from + "）你信箱里有一条：" + body.slice(0, 120) + "　请读 outputs/dialog/pending_" + slugFor(to) + ".ndjson 后回一句。", { mailboxTs: mailTs });
           deduped = dv.how === "dup-skip";
           woke = !!dv.ok && !deduped;
           if (!woke && !deduped) {
@@ -6032,6 +6269,17 @@ async function main() {
             "↩ 回复 " + String(src.from || "") + " " + String(src.ts || "").slice(5, 16).replace("T", " ") +
             "：「" + clip(src.body, 50) + "」\n" + message;
         }
+      }
+      // ★ HUB-018 D：公告只发给勾选的几条线（老板 2026-09-13 03:4x："让我能够选择艾特谁"）。
+      //   看板行的收件人仍写 `@全体`（那一列只有一格），名单写成**正文开头的 @ 列举**——
+      //   公告摄取（投给谁）与回执名单（谁要回）都读它。没勾 = 全体 = 不加前缀（行为不变）。
+      const onlyPick = Array.isArray(payload.only)
+        ? [...new Set(payload.only.map((x) => boardName(String(x || "").trim())).filter(Boolean))]
+        : [];
+      if (target === "全体" && onlyPick.length) {
+        const reg = Object.keys(readAgents().agents || {});
+        const kept = onlyPick.filter((a) => a !== "老板" && reg.includes(a));
+        if (kept.length && kept.length < reg.length) content = kept.map((a) => "@" + a).join(" ") + " " + content;
       }
       appendBoardLine(target, sender, content, quoteRefs ? { quote: quoteRefs } : null);
       scheduleCheck();
