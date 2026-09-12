@@ -1,5 +1,8 @@
 # PROJECT_RULES — 量化交易软件（Quant_Alpha_System）项目专属规矩
 
+> 🔖 **按级别读**：先跑 `node tools/mobile_chat/whoami.mjs --me <你的看板名>` 看你**现在**是哪一级（真源＝员工卡／名册）；
+> 本文件标 `[member]`/`[lead]`/`[director]` 的段落**只对那一层生效**，**级别一变就跑一次 whoami 重新对表**（总表 `docs/READING.md`）。
+
 > **通用规矩在 `AGENTS.md`**（所有线、所有项目都读那份）；**本文件只写这个项目专属的东西**。
 > 换项目 = 换这份文件，`AGENTS.md` 不动。
 

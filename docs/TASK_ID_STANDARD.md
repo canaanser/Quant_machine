@@ -1,5 +1,8 @@
 # 任务单命名标准（本仓引用）
 
+> 🔖 **按级别读**：先跑 `node tools/mobile_chat/whoami.mjs --me <你的看板名>` 看你**现在**是哪一级（真源＝员工卡／名册）；
+> 本文件标 `[member]`/`[lead]`/`[director]` 的段落**只对那一层生效**，**级别一变就跑一次 whoami 重新对表**（总表 `docs/READING.md`）。
+
 > **标准真源**：`D:\agent_crew_kits\docs\task-id.md`（跨产品登记表也在那里）。
 > 本文只写**本仓（量化系统）怎么用**，避免两边各写一份标准最后打架。
 

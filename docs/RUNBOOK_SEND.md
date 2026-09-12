@@ -1,5 +1,8 @@
 # 发送不被吞：发板 / 投信的**唯一安全入口**
 
+> 🔖 **按级别读**：先跑 `node tools/mobile_chat/whoami.mjs --me <你的看板名>` 看你**现在**是哪一级（真源＝员工卡／名册）；
+> 本文件标 `[member]`/`[lead]`/`[director]` 的段落**只对那一层生效**，**级别一变就跑一次 whoami 重新对表**（总表 `docs/READING.md`）。
+
 > 起因（老板 2026-09-13）："你要解决的是怎么不被吞"。现场抓到两起**静默**事故——
 > 一条交活里的短 hash `a37bbd9` 落盘成了 `37bbd9`，另一条的 `feature/...` 落盘成了 `eature/...`。
 > 根因是我自己发消息时的 shell 转义：**PowerShell 双引号里，反引号是转义符**——
@@ -18,14 +21,18 @@
 
 ```powershell
 # 发看板（单行）
-node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --to 老板
+node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --card HUB-018 --to 老板
 
 # 投对方信箱 + 敲门铃（线间互通一律走这条）
-node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --to codex-总监 --mail --wake
+node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --card HUB-018 --to codex-总监 --mail --wake
 
 # 只看不发的预检（打印字数与 sha256）
-node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --dry
+node tools/mobile_chat/say.mjs --file run/outbox/msg.txt --author codex-看板编辑 --card HUB-018 --dry
 ```
+
+**`--card` 是必填的**（老板 2026-09-13 05:1x 定："以后信要给我带……把你正在干的相关的事的那个编号带上。
+然后再带个时间戳。"）：工具会在正文最前面拼 `【卡号 · 时间戳】`；**确实无卡**就显式写 `--card -`（印成「无卡」）。
+缺这个参数**直接拒绝发送**（不许静默发一封老板分不清归属的信）。信头参与 `--max` 计数与回读逐字节校验。
 
 正文文件建议放 `run/outbox/`（`run/` 已自忽略，不进 git）。
 
