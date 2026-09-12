@@ -4,7 +4,9 @@
 // 临时路径，端口 8799 绑 127.0.0.1），喂已知时间线的一组夹具，然后断言 /api/dialog 里的归一
 // 记录与状态。全程不动仓库里的运行态数据。
 //
-// 用法：node tools/mobile_chat/selftest_v2.mjs
+// 用法：node tools/mobile_chat/selftest_v2.mjs [--tmp <目录>]
+//   --tmp：指定临时根目录（跨环境一致性用）。默认**项目内** run/selftest-tmp，
+//          不再默认用系统 TEMP —— 见下面关于 libuv fs.watch 短名崩溃的说明。
 
 import fs from "node:fs";
 import os from "node:os";
@@ -20,10 +22,35 @@ const PORT = Number(process.env.SELFTEST_PORT || (8800 + Math.floor(Math.random(
 const HOST = "127.0.0.1";
 const TIMEOUT_MS = 5 * 60 * 1000;
 // Windows 的 libuv fs.watch 有个坑（src\win\fs-event.c:72 断言崩溃 → "临时服务起不来"的偶发失败）：
-// 只要**监听目录本身带 8.3 短名别名**（长目录名会被系统生成 `CONVTO~1` 这类别名），
-// 事件里的文件名和监听路径就对不上，直接断言失败。
-// 两条一起用：① realpath 展开 tmpdir 的长名；② 临时目录名保持 8.3 兼容（≤8 字符）。
-const ROOT = path.join(fs.realpathSync(os.tmpdir()), "ct2" + Date.now().toString(36).slice(-4));
+// 只要**监听目录本身带 8.3 短名别名**（`C:\Users\ADMINI~1\...` 这类），事件里的文件名和监听
+// 路径就对不上，直接断言失败。**2026-09-13 补**：`fs.realpathSync()`（JS 版）**不展开** 8.3 短名，
+// 必须用 `fs.realpathSync.native()`（走 GetFinalPathNameByHandle）才拿得到长名——这也解释了
+// codex-总监 那边为什么会在门禁里崩（他跑的两遍都挂在同一个断言上）。
+// 三道一起用：
+//   ① 临时根目录**默认放项目内** `run/selftest-tmp`（躲开 %TEMP% 的短名/权限差异），可用 `--tmp` 改；
+//   ② 拿到长名再往下拼（native realpath，拿不到就退回原值）；
+//   ③ 每轮的子目录名保持 8.3 兼容（≤8 字符）。
+const REPO_ROOT = path.resolve(__dirname, "..", "..");
+const tmpArgIdx = process.argv.indexOf("--tmp");
+const TMP_BASE = path.resolve(
+  (tmpArgIdx >= 0 && process.argv[tmpArgIdx + 1]) || process.env.SELFTEST_TMP || path.join(REPO_ROOT, "run", "selftest-tmp")
+);
+function longPath(p) {
+  try {
+    fs.mkdirSync(p, { recursive: true });
+    return fs.realpathSync.native(p);
+  } catch {
+    try { return fs.realpathSync(p); } catch { return p; }
+  }
+}
+// 让 run/ 永远不出现在 git status 里（不碰共享的 .gitignore：那里压着别人未提交的改动）
+try {
+  const baseDir = path.dirname(TMP_BASE);
+  fs.mkdirSync(baseDir, { recursive: true }); // 先建目录：否则写 .gitignore 会 ENOENT 被吞掉（踩过）
+  const gi = path.join(baseDir, ".gitignore");
+  if (!fs.existsSync(gi)) fs.writeFileSync(gi, "*\n", "utf8");
+} catch {}
+const ROOT = path.join(longPath(TMP_BASE), "ct2" + Date.now().toString(36).slice(-4));
 
 const pad = (n) => String(n).padStart(2, "0");
 function cst(date) {
@@ -642,6 +669,13 @@ function testPageMention(js) {
 }
 
 async function main() {
+  // 把环境事实写在最前面：跨环境排查"起不来/崩溃"时，先比这几行（总监 2026-09-13 门禁崩过）
+  const shortName = /(^|[\\/])[^\\/]*~[0-9]/.test(TMP_BASE);
+  process.stdout.write(
+    "环境：node " + process.version + " · 临时根=" + TMP_BASE +
+    (shortName ? " · ⚠️ 路径里仍含 8.3 短名（libuv fs.watch 会崩，建议 --tmp 指到别的盘）" : "") +
+    "\n      本轮=" + ROOT + "\n"
+  );
   setup();
   const child = spawn(process.execPath, [BOARD_MJS], {
     cwd: __dirname,
