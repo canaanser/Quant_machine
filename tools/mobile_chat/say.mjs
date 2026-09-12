@@ -26,6 +26,8 @@
 //   --flatten         仅发板：看板是**行式存储**（一条一行），多行正文会被 Hub 压成一行。
 //                     默认多行**直接拒绝**（不许静默丢格式）；加这个参数=你明确接受压缩，
 //                     工具会先按 Hub 同一口径压好再发、再拿压好的文本去校验。
+//   --max <字数>      长度闸（按**字符数**算）：超了**直接拒绝发送**并非零退出。
+//                     用途：门铃/看板回执有"≤200 字"的约定，靠人肉数是数不住的（我自己连超两次）。
 //   环境变量：MCHAT_BASE（默认取 100.64.75.72:8788）、MCHAT_TOKEN_FILE、MCHAT_MAILBOX_DIR、
 //             MCHAT_DIALOG_FILE、MCHAT_WORKSPACE（默认 E:\stockgate\Quant_Alpha_System）。
 
@@ -56,6 +58,7 @@ const wake = has("--wake");
 const dry = has("--dry");
 const asJson = has("--json");
 const flatten = has("--flatten");
+const max = Number(arg("--max", 0)) || 0;
 
 if (!file || !author || (useMail && !to)) {
   process.stderr.write(
@@ -71,6 +74,14 @@ const sha = (s) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
 if (!body) {
   process.stderr.write("空正文，不发。\n");
   process.exit(2);
+}
+if (max > 0 && [...body].length > max) {
+  // 长度闸：不许把超长正文发出去（"别再靠人肉数"——写进工具，跟回读校验一个路子）
+  process.stderr.write(
+    "拒绝发送：正文 " + [...body].length + " 字，超过 --max " + max + " 字（超 " + ([...body].length - max) + " 字）。\n" +
+      "要么压短，要么明确把 --max 调大（别默认放过）。\n"
+  );
+  process.exit(3);
 }
 // 看板行式存储：Hub 的 appendBoardLine 会做 `\s*\n\s*` → " "。这里对齐同一口径，
 // 免得"我发的是多行、落盘变成一行"被当成别人改了内容（2026-09-13 首次联调就撞上）。

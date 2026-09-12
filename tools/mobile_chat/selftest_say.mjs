@@ -187,6 +187,14 @@ try {
   );
   ck("④ 回读找不到落盘记录 → 报错并非零退出（不假装成功）", r4.code === 1 && /失败/.test(r4.err), "exit=" + r4.code);
 
+  // ⑤ 长度闸（--max）：超长直接拒绝，不发送（门铃/回执有"≤200 字"的约定，别靠人肉数）
+  const longFile = path.join(ROOT, "long.txt");
+  fs.writeFileSync(longFile, "字".repeat(50), "utf8");
+  const r5 = say(["--file", longFile, "--author", author, "--to", "老板", "--max", "10"], env);
+  ck("⑤ 超长正文被 --max 拦住（非零退出 + 报字数）", r5.code === 3 && /超过 --max 10 字/.test(r5.err), "exit=" + r5.code + " " + r5.err.split("\n")[0]);
+  const r5b = say(["--file", longFile, "--author", author, "--to", "老板", "--max", "200"], env);
+  ck("⑤ 长度达标就照常发（没有误杀）", r5b.code === 0 && /回读逐字节一致/.test(r5b.out), "exit=" + r5b.code);
+
   const failed = results.filter((x) => !x).length;
   process.stdout.write("\nsay 自测结果：" + (results.length - failed) + "/" + results.length + " 通过\n");
   if (failed && childLog) process.stdout.write("--- 实例日志尾部 ---\n" + childLog.slice(-600) + "\n");
