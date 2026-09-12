@@ -20,6 +20,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -40,7 +41,18 @@ const arg = (n, d) => {
 const has = (n) => process.argv.includes(n);
 
 const name = String(arg("--name", "")).trim().replace(/^@/, "");
-const slug = String(arg("--slug", "")).trim().toLowerCase();
+const slugArg = String(arg("--slug", "")).trim().toLowerCase();
+// 没给工号 → 按跨系统契约兜底派生（唯一规范：套件仓 docs/slug.md）
+//   显式优先 → 兜底 side + '-' + sha1(看板名,UTF-8)[0:6]（side = 名 '-' 前那段，只认 dsh/codex，其余 x）
+//   → 唯一特例 老板 = boss
+const deriveSlug = (n) => {
+  const s = String(n || "");
+  if (s === "老板") return "boss";
+  const seg = s.split("-")[0].toLowerCase();
+  const side = seg === "dsh" || seg === "codex" ? seg : "x";
+  return side + "-" + crypto.createHash("sha1").update(s, "utf8").digest("hex").slice(0, 6);
+};
+const slug = slugArg || deriveSlug(name);
 const threadId = String(arg("--thread", "")).trim();
 const by = String(arg("--by", "")).trim().replace(/^@/, "");
 const approval = String(arg("--approval", "")).trim();
@@ -50,12 +62,14 @@ const level = String(arg("--level", "")).trim();
 const dry = has("--dry");
 const ring = !has("--no-ring");
 
-if (!name || !slug || !by || !approval) {
+if (!name || !by || !approval) {
   process.stderr.write(
-    "用法：node tools/mobile_chat/onboard.mjs --name <看板名> --slug <工号> --by <办事的看板名> --approval \"<谁批的>\" [--thread <会话id>] [--title …] [--note …] [--dry] [--no-ring]\n"
+    "用法：node tools/mobile_chat/onboard.mjs --name <看板名> [--slug <工号>] --by <办事的看板名> --approval \"<谁批的>\" [--thread <会话id>] [--title …] [--note …] [--dry] [--no-ring]\n" +
+      "      （--slug 不给就按跨系统契约派生：套件仓 docs/slug.md）\n"
   );
   process.exit(2);
 }
+if (!slugArg) process.stdout.write("工号未显式给 → 按契约派生：" + name + " → " + slug + "\n");
 
 const token = (() => {
   try {

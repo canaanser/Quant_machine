@@ -48,5 +48,31 @@ node tools/mobile_chat/onboard.mjs --name codex-修复 --slug codex-fix `
 
 - **自动触发**（新线一露面就登记）**故意不做**：与"发牌要有人批准"冲突。要自动化，也应该是
   "老板/总监一键批准"这一层自动化。
-- `slug` 兜底算法与套件侧（`side + '-' + sha1(name).slice(0,6)`）尚未对齐——本仓目前都是显式给工号。
 - 退役（B 段）已由 `scripts/crew_succession.mjs` + 退役条目展示覆盖，不在本次范围。
+
+## 五、slug 跨系统契约（2026-09-13 对齐）
+
+唯一规范：套件仓 `docs/slug.md`。本仓已按它改齐 `makeSlug()`：
+
+| 口径 | 规则 |
+| --- | --- |
+| ① 显式优先 | 名册/员工卡里已有的 slug **原样用、永不重算**（slug 是路由键与文件名，改 slug = 换人） |
+| ② 兜底 | `side = 看板名 '-' 前那段，只认 dsh / codex，其余一律 x`；`slug = side + '-' + sha1(看板名, UTF-8)[0:6]` |
+| ③ 唯一特例 | `老板` → `boss` |
+
+**不许再发明第二套**（对不齐就会出现"同一个人的信箱分叉成两个文件"那种事故）。
+`--slug` 不给时按②派生（`onboard.mjs` 与 Hub 的 `/api/onboard` 同一套）。
+
+对齐锚点挂在 `GET /api/meta` 的 `slugContract.anchors` 上，谁改了算法都能一眼看出来：
+
+| 看板名 | slug |
+| --- | --- |
+| `codex-套件` | `codex-9bb7a0` |
+| `dsh-老员工` | `dsh-e18b10` |
+| `codex-甲` | `codex-d0e43b` |
+| `codex-乙` | `codex-a3162a` |
+| `老板` | `boss` |
+
+> 本次对齐修掉了两处偏离：① 旧实现给"纯 ASCII 名字"开了"直用名字当 slug"的分支（契约没有这条，
+> `codex-kit` 兜底应为 `codex-456032`）；② side 用"前缀匹配"而不是"`-` 前那段"。
+> 现役线的 slug 都是**显式写在名册里**的，故本次改动不影响任何现役信箱文件名。
