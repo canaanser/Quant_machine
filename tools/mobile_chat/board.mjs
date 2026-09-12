@@ -122,7 +122,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.53"; // .53：HUB-018 B 老板面剔组员↔组长往来（不进协作带、条数也不报，只在「全量」可见）
+const PAGE_VER = "2026-09-10.54"; // .54：PLT-005 裁决阶梯——"待老板"必须写清「已判到哪级 + 为什么判不了」才进老板面
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -1387,6 +1387,17 @@ async function noticeNudgeTick() {
 // ══════════════════════════════════════════════════════════════
 const BOSS_EVENT_FILE = path.join(STATE_DIR, "boss_events.ndjson");
 const BOSS_KINDS = { accept: "待验收", decide: "需拍板", incident: "故障" };
+// ★ PLT-005 · 裁决阶梯（老板 2026-09-13 06:2x 定死）：
+//   组员拿不准 → 组长批；组长批不下来 → 总监批；**总监批不下来 → 才上老板面**。
+//   所以每条"待老板"必须写清两件：① **已判到**哪一级 ② **为什么判不了**（缺信息 / 越权）。
+//   **没有这两项的，不进老板面**——这正是老板反复要的"别看非必要的东西"。
+//   但它们**不丢**：仍入 boss_events、仍上板（HUB-003 ①），只在置顶条里被挡在门外并**单独计数**。
+//   例外只有紧急故障（正在丢数据/重复下单/服务已死）——先止血后补流程，不用先爬梯子。
+function bossGate(ev) {
+  const judgedTo = String((ev && (ev.judgedTo || ev.judged_to)) || "").trim();
+  const whyNot = String((ev && (ev.whyNot || ev.why_not)) || "").trim();
+  return { ok: !!judgedTo && !!whyNot, judgedTo, whyNot };
+}
 const BOSS_THROTTLE_MS = Number(process.env.MCHAT_BOSS_THROTTLE_MS || 10 * 60 * 1000);
 const BOSS_DAILY_MAX = Number(process.env.MCHAT_BOSS_DAILY_MAX || 20);
 
@@ -3336,6 +3347,8 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 #bossList.on{display:block}
 #bossList .row{padding:6px 0;border-top:1px solid var(--line)}
 #bossList .k{color:#f0b45a;font-weight:600}
+/* PLT-005 裁决阶梯：摊开"已判到哪级 + 为什么判不了"——小灰字，不抢"要你做什么" */
+#bossList .gate{color:var(--dim);font-size:var(--fs-meta);margin-top:2px}
 #agents::-webkit-scrollbar{display:none}
 .chip{display:flex;gap:5px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 10px;color:var(--dim);font-size:var(--fs-ui);white-space:nowrap;flex-shrink:0;cursor:pointer;background:var(--input-bg)}
 .chip b{font-weight:600}
@@ -4491,7 +4504,7 @@ function countTodo(records){
 // —— HUB-003 置顶「待老板：N 条」——
 // 只推三类事件（待验收/需拍板/故障），每条都必须带"要你做什么"；
 // 页面内提醒**只在你开着本页面时有效**——这句话必须出现在界面上，不许含糊成"已通知你"。
-let BOSS={count:0,muted:false,items:[],note:""};let BOSS_SEEN_N=null;
+let BOSS={count:0,blocked:0,muted:false,items:[],note:""};let BOSS_SEEN_N=null;
 // —— HUB-006 暂停闸条 ——
 // 暂停中：红条「已暂停 · 等老板」+ 原因；恢复后 6 小时内显示绿条「已恢复 · 老板 <时间>」。
 // 这一条比推送可靠：**不依赖任何通道**，打开页面就一定看到。
@@ -4529,15 +4542,20 @@ function bossRender(){
   const bar=$("#bossBar"),list=$("#bossList");
   if(!bar)return;
   const n=Number(BOSS.count||0);
-  if(!n){bar.className="off";list.className="";list.innerHTML="";return;}
+  // ★ PLT-005 裁决阶梯：没过门槛的不算进 N 条，但要**说出来**（"另有 M 条未过门槛"），
+  //   否则"被挡在门外"看起来就像"没人提过"——那是另一种骗人。
+  const blk=Number(BOSS.blocked||0);
+  if(!n&&!blk){bar.className="off";list.className="";list.innerHTML="";return;}
   const top=(BOSS.items||[])[BOSS.items.length-1]||{};
-  bar.className=BOSS.muted?"muted":"";
+  bar.className=(BOSS.muted||!n)?"muted":"";
   bar.innerHTML="";
   const b=document.createElement("b");
-  b.textContent=(BOSS.muted?"（提醒已静音）":"🔔 ")+"待老板："+n+" 条";
+  b.textContent=(BOSS.muted?"（提醒已静音）":"🔔 ")+"待老板："+n+" 条"+(blk?("（另有 "+blk+" 条未过门槛）"):"");
   const g=document.createElement("div");
   g.className="grow";
-  g.textContent=(top.kindLabel?("["+top.kindLabel+"] "):"")+String(top.needAction||"");
+  g.textContent=n
+    ? ((top.kindLabel?("["+top.kindLabel+"] "):"")+String(top.needAction||""))
+    : ("这 "+blk+" 条没写「已判到哪级 + 为什么判不了」——按裁决阶梯，先找组长/总监；它们已留档、已上板，只是不占你的置顶条。");
   const det=document.createElement("button");
   det.textContent="详情";
   det.addEventListener("click",()=>{list.className=list.className==="on"?"":"on";});
@@ -4563,7 +4581,11 @@ function bossRender(){
     k.textContent="["+(it.kindLabel||it.kind)+"] "+(it.task?it.task+" · ":"")+String(it.from||"")+" · "+String(it.ts||"").slice(5,16).replace("T"," ");
     const a=document.createElement("div");
     a.textContent="要你做什么："+String(it.needAction||"");
-    r.appendChild(k);r.appendChild(a);list.appendChild(r);
+    // 上门槛那两格：页面把"判到哪、为什么判不了"直接摊开，省得你再问一遍
+    const q=document.createElement("div");
+    q.className="gate";
+    q.textContent="已判到："+String(it.judgedTo||"")+" ｜ 为什么判不了："+String(it.whyNot||"");
+    r.appendChild(k);r.appendChild(a);r.appendChild(q);list.appendChild(r);
   }
   // 新事件才提醒一次：标题闪烁（页面开着才看得到——见上面的说明）
   if(BOSS_SEEN_N===null)BOSS_SEEN_N=n;
@@ -5949,11 +5971,24 @@ async function main() {
         kind: kind,
         task: task,
         needAction: needAction,
+        // ★ PLT-005 / 裁决阶梯：这两格决定它**进不进老板面**（缺了照样收、照样上板，只是不进置顶条）
+        judgedTo: String(payload.judgedTo || payload.judged_to || "").trim().slice(0, 20),
+        whyNot: String(payload.whyNot || payload.why_not || "").trim().slice(0, 200),
         key: key,
         // 记下"创建这一刻"老板最后一次发言的标记（见 bossPending 注释）
         ackMark: lastBossRecordId(readDialog(1000)),
       };
       appendBossEvent(ev);
+      // 没过门槛不拒收（fail-open，宁放勿堵）——但要**留一条 warn**，免得"上面没看到"被当成"没人管"
+      if (!bossGate(ev).ok) {
+        log(
+          "BOSS GATE WARN: 缺「已判到/为什么判不了」→ 不进老板面（仍已记录+上板）。请按裁决阶梯先找组长/总监",
+          kind,
+          from,
+          "judgedTo=" + (ev.judgedTo || "(空)"),
+          "whyNot=" + (ev.whyNot || "(空)")
+        );
+      }
       // ① 一律上板并 @老板：不许只压在某条线的信箱里
       appendBoardLine("老板", from, "【待老板·" + BOSS_KINDS[kind] + "】" + (task ? task + "：" : "") + needAction);
       log("BOSS EVENT:", kind, from, task, needAction.slice(0, 50));
@@ -6172,18 +6207,30 @@ async function main() {
         boss: (() => {
           const evs = readBossEvents();
           const pend = bossPending(evs, all);
+          // ★ PLT-005 裁决阶梯：**只有"总监也判不了"的才进老板面**。
+          //   没过门槛的**照旧留档、照旧上板**，只是不进 N 条、不进 items——单独报一个 blocked 数，绝不静默吞掉。
+          const gated = [];
+          let blocked = 0;
+          for (const e of pend) {
+            const g = bossGate(e);
+            if (g.ok) gated.push({ ...e, judgedTo: g.judgedTo, whyNot: g.whyNot });
+            else blocked++;
+          }
           return {
-            count: pend.length,
+            count: gated.length,
+            blocked: blocked,
             muted: !!readState().bossMuted,
             today: bossTodayCount(evs),
             limit: BOSS_DAILY_MAX,
-            items: pend.slice(-8).map((e) => ({
+            items: gated.slice(-8).map((e) => ({
               ts: e.ts,
               from: e.from,
               kind: e.kind,
               kindLabel: BOSS_KINDS[e.kind] || e.kind,
               task: e.task || "",
               needAction: e.needAction || "",
+              judgedTo: e.judgedTo || "",
+              whyNot: e.whyNot || "",
             })),
             // 诚实口径：页面内提醒只在你开着页面时有效；系统推送是将来项（见 HUB-003 卡）
             note: "页面内提醒只在你开着本页面时有效；系统推送列为将来项（HUB-003）",
