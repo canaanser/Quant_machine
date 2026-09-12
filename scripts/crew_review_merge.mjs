@@ -127,6 +127,14 @@ function applyMerge() {
   if (!r.ok) return console.log("申请未过门禁，不合。");
   const head = git(r.repo, "rev-parse", r.branch);
   if (head !== r.head) return console.log("分支已变动（审阅后有人提交），**不合**，请重跑 --check：" + head);
+  // ★ 0) 已经合过就**直接归档**，不重复合入、也不白跑一遍回归（2026-09-13 07:5x 实测：会多造一个"空合并提交"）
+  const baseName = r.base || "main";
+  try {
+    execFileSync("git", ["-C", r.repo, "merge-base", "--is-ancestor", r.head, baseName], { stdio: "ignore" });
+    console.log(`ℹ 这条分支（${r.branch.split("/").pop()}）已经在 ${baseName} 里了 → 直接归档申请（不重复合入、不重跑回归）`);
+    fs.renameSync(REQ, REQ.replace(/\.json$/, `.superseded-${Date.now()}.json`));
+    return;
+  } catch {}
   // apply 在**沙箱外**执行 → 回归命令在这里真跑一遍（check 阶段可能因沙箱写不了而跳过）
   const tcmd = r.tests || "npm test";
   try {
@@ -159,8 +167,24 @@ function applyMerge() {
   const body = `自动合入（不碰工作树）：tree=${tree}；门禁 ${r.gates.filter((g) => g.ok).length}/${r.gates.length} 全绿，审阅人 ${r.by}，申请时间 ${r.ts}。`;
   const commit = String(execFileSync("git", ["-C", r.repo, "-c", `user.name=${whoName}`, "-c", `user.email=${whoMail}`,
     "commit-tree", tree, "-p", baseBefore, "-p", r.head, "-m", msg, "-m", body], { encoding: "utf8" })).trim();
-  execFileSync("git", ["-C", r.repo, "update-ref", `refs/heads/${base}`, commit, baseBefore], { encoding: "utf8" }); // CAS：base 没被别人推动才生效
-  execFileSync("git", ["-C", r.repo, "push", "origin", base], { encoding: "utf8" });
+  // CAS：base 没被别人推动才生效。**推不动就说明"别人已经合过了/基线动了"** → 归档申请、别再空转
+  // （2026-09-13 07:4x：我手工合完之后小工又跑了一次，这句抛未捕获异常，日志只剩一坨 Node 栈 —— 现在包起来说人话）
+  try {
+    execFileSync("git", ["-C", r.repo, "update-ref", `refs/heads/${base}`, commit, baseBefore], { encoding: "utf8" });
+  } catch (e) {
+    const now = git(r.repo, "rev-parse", base);
+    const already = (() => { try { execFileSync("git", ["-C", r.repo, "merge-base", "--is-ancestor", r.head, base], { stdio: "ignore" }); return true; } catch { return false; } })();
+    console.log(`ℹ 放弃合入（${already ? "这条分支**已经在 base 里**了" : "base 被别人推进"}）：base=${now} 期望旧值=${baseBefore}`);
+    try { fs.renameSync(REQ, REQ.replace(/\.json$/, `.superseded-${Date.now()}.json`)); } catch {}
+    return;
+  }
+  try {
+    execFileSync("git", ["-C", r.repo, "push", "origin", base], { encoding: "utf8" });
+  } catch (e) {
+    console.log("✗ push 失败（本地已合、远端未更新；**保留申请**，下一拍会重试）：\n" + String(e.stdout || e.message).split("\n").slice(-6).join("\n"));
+    process.exitCode = 1;
+    return;
+  }
 
   // ② 只同步"本来干净"的文件：工作树里对该路径**没有本地改动**才覆盖；有本地改动的一律跳过（绝不覆盖别人）。
   const changed = git(r.repo, "diff", "--name-only", baseBefore, commit).split("\n").filter(Boolean);
