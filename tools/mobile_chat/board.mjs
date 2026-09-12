@@ -1172,13 +1172,23 @@ const ACK_RE = new RegExp("(?:^|\\n)\\s*" + ACK_WORDS + "\\s*[:：]?\\s*(N-[0-9A
 function noticeCode(id) {
   return "N-" + String(id || "").slice(0, 4).toUpperCase();
 }
+// ★ 工具前缀（`say.mjs` 的 `【卡号 · 时间戳】`）是**机器加的元数据**，不是正文。
+//   它挡在行首会让所有"行首锚定"的判据失效——公告回执就是这样被吃掉的
+//   （`codex-修复` 2026-09-13 07:21 实证：N-A5EB 的 5 条回执里 **4 条被前缀挡掉**，
+//    公告卡片"已收到 X/Y"假性偏低 → 线以为没回成功 → 再回一次 → 正是老板在治的那类重复噪声）。
+//   所以判据一律**先剥前缀再匹配**。**只剥我们自己那一款固定格式**（`【…】`、单行、不含换行），
+//   不放宽成"任意前缀"——否则"正文里随口提一句"又会被误认成回执。
+function stripToolPrefix(s) {
+  return String(s == null ? "" : s).replace(/^\s*【[^】\n]{0,80}】\s*/, "");
+}
 // ★ HUB-018 D（老板 2026-09-13 03:4x）：**公告可以只 @ 指定几条线**（"让我能够选择艾特谁，
 //   其中有个选项是艾特所有人"）。看板行的收件人列只有一格，所以名单写在**正文开头的 @ 列举**里：
 //   一个 @ 都没有 = 全体；有 @ 列举 = 只发这几条（谁收到、谁要回执，都按它收窄）。
 //   **只认开头连续的那一串** @，免得正文里随口提一句 @某人 就被当成收件人名单。
 function noticeRecipientsOf(content) {
   const out = [];
-  const m = String(content || "").match(/^\s*(?:@[A-Za-z0-9_\u4e00-\u9fa5-]{1,32}\s*)+/);
+  // 同样先剥工具前缀，再找**开头连续的那一串 @**（名单是正文的一部分，前缀不是）
+  const m = stripToolPrefix(content).match(/^\s*(?:@[A-Za-z0-9_\u4e00-\u9fa5-]{1,32}\s*)+/);
   if (!m) return out;
   for (const x of m[0].matchAll(/@([A-Za-z0-9_\u4e00-\u9fa5-]{1,32})/g)) {
     const a = boardName(x[1]);
@@ -1278,7 +1288,8 @@ function applyNoticeAcks(records) {
       // ① 引用回复这条公告 → 直接算回执（最自然："点引用 → 回收到"）
       const quoted = r.refs && r.refs.quote && String(r.refs.quote.id || "") === String(n.id);
       // ② 正文里出现 `收到 <短号>` 或 `收到 <时间>`（**必须带指向**，裸词不算）
-      const body = String(r.body || "");
+      //    先剥掉工具前缀（`【卡号 · 时间戳】`）——它是元数据，挡在行首会让"行首锚定"整条失效
+      const body = stripToolPrefix(r.body);
       // ★ HUB-018：**〔代答〕不算本尊回执**——值守分线顶着本线的名摘旧话，不能替人认账
       //   （老板 2026-09-13 04:5x 前后两次抓到；口径由本线定，总监已提示）。
       if (/^\s*〔代答〕/.test(body)) continue;
@@ -1305,7 +1316,7 @@ function applyNoticeAcks(records) {
     // 注意：回执**记录**对全体员工线都认（与上面按短号认账同一口径）；
     // 只有"**必须回执的名单**"（expected/pendingAck）才收窄到组长及以上（I 那件）。
     if (!agents.includes(from)) continue;
-    const body = String((r && r.body) || "");
+    const body = stripToolPrefix(r && r.body);
     if (!/(收到|已阅|回执)/.test(body)) continue;
     if (/^\s*〔代答〕/.test(body)) continue;            // ★ 代答不算本尊回执（同主循环）
     if (/N-[0-9A-Z]{4}/.test(body)) continue;          // 带短号 → 走精确匹配
