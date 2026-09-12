@@ -352,6 +352,29 @@ def main():
         pg.click("#taskCancel")
         pg.wait_for_timeout(200)
         ck("派单：派单页能关掉（不挡主界面）", not pg.is_visible("#taskPage"), "closed")
+        # 老板面（HUB-017 v1）：默认开 + 菜单开关 + 状态行写明模式
+        ck(
+            "老板面：默认是「开」（状态行写明当前模式）",
+            "老板面" in pg.inner_text("#status"),
+            pg.inner_text("#status"),
+        )
+        if not menu_visible():
+            pg.click("#menuBtn")
+            pg.wait_for_timeout(300)
+        ck("老板面：菜单里有开关", pg.eval_on_selector("#menuBossView", "e=>!!e"), "menuBossView")
+        pg.click("#menuBossView")
+        pg.wait_for_timeout(500)
+        ck(
+            "老板面：点一下切到「全量」（状态行跟着变）",
+            "全量" in pg.inner_text("#status"),
+            pg.inner_text("#status"),
+        )
+        if not menu_visible():
+            pg.click("#menuBtn")
+            pg.wait_for_timeout(300)
+        pg.click("#menuBossView")
+        pg.wait_for_timeout(500)
+        ck("老板面：再点一下回到「开」", "老板面" in pg.inner_text("#status"), pg.inner_text("#status"))
         # 顺带钉住一个真 bug：点标题也能弹出菜单。
         # 原来 #titleBtn 自己有 toggle，但事件冒泡到"点空白处收起菜单"那段时不在允许列表里，
         # 于是**先开、再被同一击关掉** —— 点 ⋯ 能开、点标题永远打不开（2026-09-13 抓到）。
