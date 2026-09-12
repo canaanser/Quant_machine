@@ -57,6 +57,8 @@ def run(tmp, state):
     ch.LOG = os.path.join(tmp, "crew_host_log.txt")
     ch.PUSHED_LEDGER = os.path.join(tmp, "pushed.ndjson")     # 共用记账（两条通道合一）
     ch.HUB_PUSHED = {}
+    ch.HUB_PUSHED_CNT = {}
+    ch.SESSIONS_DIR = os.path.join(tmp, "sessions")           # 会话账本目录（判"它动过没有"）
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         ch.worker_doorbell_queue(state, False, None)
@@ -87,9 +89,9 @@ order, text = run(tmp, state)
 check("场景1：P0 两条排在最前", order[:2] in (["s-p1", "s-p2"], ["s-p2", "s-p1"]), order)
 check("场景1：P0 两条都被敲（不吃普通单轮 2 条的上限）", "s-p1" in order and "s-p2" in order, order)
 check("场景1：普通线被单轮上限压到 2 条", len([s for s in order if s.startswith("s-n")]) == ch.MAX_RING_PER_RUN, order)
-check("场景1：提示语带【老板·优先｜先办这条】", "【老板·优先｜先办这条】" in text)
+check("场景1：P0 铃在日志里标 [P0]", "[P0]" in text, text[:200])
 check("场景1：每条线只敲一次（P0 不被普通轮重复敲）", len(order) == len(set(order)), order)
-check("场景1：门铃提示带**级别标签**（级别一变，提示自己会变）", "【信箱·member】" in text, text[:200])
+check("场景1：门铃日志带**级别字段**（级别一变，日志自己会变）", "lvl=member" in text, text[:200])
 
 # 场景 2：同一状态再跑一遍 → P0 处于 120 秒冷却，不该被连敲
 order2, _ = run(tmp, state)
@@ -131,7 +133,7 @@ with io.open(os.path.join(tmp5, "pending_s-mem.ndjson"), "a", encoding="utf-8") 
     f.write(json.dumps({"ts": ts_ago(0), "from": "codex-套件", "body": "第二封"}, ensure_ascii=False) + "\n")
 o5c, t5c = run(tmp5, st5)
 check("场景6：新信到达 → 再推一次", o5c == ["s-mem"], o5c)
-check("场景6：只数新信（提示里是 1 条，不是 2 条）", "你有 1 条待读" in t5c, t5c[-200:])
+check("场景6：只数新信（日志里 n=1，不是 2）", "n=1 " in t5c, t5c[-200:])
 
 # 场景 7：投递失败 → 不抬水位 → 下次还会重试（"叫不醒"仍能被发现）
 tmp7 = build([("组员乙", "s-fail", [{"ts": ts_ago(5), "from": "codex-套件", "body": "派活"}])])
@@ -161,7 +163,7 @@ st10 = {}
 o10a, _ = run(tmp10, st10)
 st10["poked"]["s-poke"]["lastAt"] -= 31 * 60 * 1000          # 假装首触已过 31 分钟
 o10b, t10b = run(tmp10, st10)
-check("场景10：31 分钟无动作 → 兜一次（带「还没动静」）", o10b == ["s-poke"] and "还没动静" in t10b, (o10a, o10b))
+check("场景10：31 分钟无动作 → 兜一次（日志标 [兜底]）", o10b == ["s-poke"] and "[兜底]" in t10b, (o10a, o10b))
 # 本人投过一封信（组员不上板，投信也算"有动作"）→ 不再兜
 with io.open(os.path.join(tmp10, "pending_s-组外.ndjson"), "w", encoding="utf-8") as f:
     f.write(json.dumps({"ts": ts_ago(1), "from": "组员戊", "to": "codex-看板编辑", "body": "回话"}, ensure_ascii=False) + "\n")
@@ -189,7 +191,7 @@ with io.open(os.path.join(tmp12, "pushed.ndjson"), "a", encoding="utf-8") as f:
                         "to": "s-min", "mailbox_ts": _same_min}, ensure_ascii=False) + "\n")
 o12, t12 = run(tmp12, {})
 check("场景12：同分钟只推过一封 → 另一封仍被叫", o12 == ["s-min"], o12)
-check("场景12：而且只报 1 条（不是把两封都算未读）", "你有 1 条待读" in t12, t12[-160:])
+check("场景12：而且只报 1 条（日志 n=1，不是 2）", "n=1 " in t12, t12[-160:])
 
 # 场景 13：`mailbox_ts` 为空的记账行**不许抬水位**（否则会吞掉同一分钟的真信）
 tmp13 = build([("组员辛", "s-empty", [{"ts": ts_ago(6), "from": "codex-套件", "body": "真信"}])])
@@ -198,6 +200,39 @@ with io.open(os.path.join(tmp13, "pushed.ndjson"), "a", encoding="utf-8") as f:
                         "to": "s-empty", "mailbox_ts": ""}, ensure_ascii=False) + "\n")
 o13, _ = run(tmp13, {})
 check("场景13：mailbox_ts 为空的记账行不抬水位（真信照叫）", o13 == ["s-empty"], o13)
+
+# 场景 14：账本被"另写新文件 + 替换"的瞬间读到 0 行 → **沿用上次水位**，不许当成归零全员重叫
+tmp14 = build([("组员壬", "s-ledger", [{"ts": ts_ago(4), "from": "codex-套件", "body": "派活"}])])
+_led = os.path.join(tmp14, "pushed.ndjson")
+with io.open(_led, "a", encoding="utf-8") as f:
+    f.write(json.dumps({"ts": ts_ago(3), "ts_ms": int(time.time() * 1000), "by": "hub",
+                        "to": "s-ledger", "mailbox_ts": ts_ago(4)}, ensure_ascii=False) + "\n")
+st14 = {}
+o14a, _ = run(tmp14, st14)
+check("场景14：账本有记录时正常（不该叫）", o14a == [], o14a)
+os.remove(_led)                      # 模拟"替换瞬间文件不在"
+o14b, _ = run(tmp14, st14)
+check("场景14：账本瞬间缺失 → 沿用上次水位（不许全员重叫）", o14b == [], o14b)
+
+# 场景 15：**键空间归一**——Hub 账本行写的是**看板名**，小工用 slug 查也必须匹配上（不许再各推一次）
+tmp15 = build([("组员癸", "s-keyspace", [{"ts": ts_ago(4), "from": "codex-套件", "body": "派活"}])])
+with io.open(os.path.join(tmp15, "pushed.ndjson"), "a", encoding="utf-8") as f:
+    f.write(json.dumps({"ts": ts_ago(3), "ts_ms": int(time.time() * 1000), "by": "hub",
+                        "to": "组员癸", "mailbox_ts": ts_ago(4)}, ensure_ascii=False) + "\n")
+o15, _ = run(tmp15, {})
+check("场景15：Hub 写看板名 → 小工（slug）也认账，不再各推一次", o15 == [], o15)
+
+# 场景 16：**只在对话框里回话**也算"有动作" → 不许再被慢速兜底追（量化总监 05:54 报的假阳性）
+tmp16 = build([("组员子", "s-sess", [{"ts": ts_ago(40), "from": "codex-套件", "body": "派活"}])])
+st16 = {}
+run(tmp16, st16)                                   # 首触
+sd = os.path.join(tmp16, "sessions", "2026", "09", "13")
+os.makedirs(sd, exist_ok=True)
+with io.open(os.path.join(sd, "rollout-2026-09-13T05-00-00-tid-s-sess.jsonl"), "w", encoding="utf-8") as f:
+    f.write("{}")
+st16["poked"]["s-sess"]["lastAt"] -= 31 * 60 * 1000     # 假装首触已过 31 分钟
+o16, _ = run(tmp16, st16)
+check("场景16：会话里刚起过回合 → 不再兜底（不追已处理的线）", o16 == [], o16)
 
 print("\n结果：" + ("全部通过" if not FAILS else "失败 %d 项 -> %s" % (len(FAILS), FAILS)))
 raise SystemExit(1 if FAILS else 0)

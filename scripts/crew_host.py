@@ -23,6 +23,7 @@
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -165,9 +166,13 @@ PUSHED_LEDGER = os.path.join(DIALOG, "pushed.ndjson")
 POKE_LADDER_MS = [30 * 60 * 1000, 2 * 60 * 60 * 1000]
 HUB_PUSHED = {}          # 每轮刷新：slug -> 该线最后一次"被 Hub 成功推送"的 ms
 HUB_PUSHED_CNT = {}      # 每轮刷新：(slug, 分钟) -> 该分钟被推过几封（防"同分钟吞信"）
+# 会话账本目录（判"它动过没有"用；可用环境变量指到别处，自测靠它做隔离）
+SESSIONS_DIR = os.environ.get("MCHAT_SESSIONS_DIR") or os.path.join(os.path.expanduser("~"), ".codex", "sessions")
+SESSION_TURN_CACHE = {}  # 每轮刷新：threadId -> 该会话账本最后写入 ms
+SLUG_TID = {}            # 每轮刷新：slug -> threadId
 
 
-def refresh_hub_pushed():
+def refresh_hub_pushed(state=None, alias2slug=None):
     """读共用记账 → `(每线被推那封信的 ms, 每「线+分钟」被推了几封)`。
 
     两条硬口径（看板编辑 05:20 提的两点，我核对后采纳）：
@@ -177,20 +182,42 @@ def refresh_hub_pushed():
         所以额外记"这一分钟被推过几封"，按**分钟 + 条数**判（第 3 条见 unread 侧）。
     """
     mx, cnt = {}, {}
-    if not os.path.exists(PUSHED_LEDGER):
-        return mx, cnt
-    for row in read_ndjson(PUSHED_LEDGER):
-        to = str(row.get("to") or "")
-        mts = str(row.get("mailbox_ts") or "").strip()
-        if not to or not mts:
-            continue
-        ms = ts_ms(mts)
-        if not ms:
-            continue
-        if ms > mx.get(to, 0):
-            mx[to] = ms
-        key = (to, mts[:16])
-        cnt[key] = cnt.get(key, 0) + 1
+    # ★ 键空间归一（2026-09-13 05:47 `codex-看板编辑` 抓到的根因，**是我的错**）：
+    #   账本的 `to` 按我的需求定义是**看板名**（Hub 照定义写的），而**我自己的小工写的是 slug** →
+    #   两边键对不上 → "另一条通道看到账就不再叫"永远匹配不上 → 同一封信被**两个通道各推一次**
+    #   （铁证：`05:45:15 by=hub to=codex-看板编辑` / `05:45:16 by=crew_host to=codex-convtool`，同一封、差 1 秒）。
+    #   修法：**写入统一看板名**；**读取一律归一到 slug**（历史行不用改写）。
+    a2s = alias2slug or {}
+    if os.path.exists(PUSHED_LEDGER):
+        for row in read_ndjson(PUSHED_LEDGER):
+            to_raw = str(row.get("to") or "")
+            to = a2s.get(to_raw, to_raw)
+            mts = str(row.get("mailbox_ts") or "").strip()
+            if not to or not mts:
+                continue
+            ms = ts_ms(mts)
+            if not ms:
+                continue
+            if ms > mx.get(to, 0):
+                mx[to] = ms
+            key = (to, mts[:16])
+            cnt[key] = cnt.get(key, 0) + 1
+    # ★ 读取侧防护（看板编辑 05:45 建议，我采纳）：账本**缺失 / 读到 0 行**时**沿用上次水位**，
+    #   绝不当成"归零"。理由：这份账本有多个写方，一次"另写新文件 + 替换"的瞬间（或任何外部重排）
+    #   都会让读方看到空文件——那时若按"归零"判，就是**全员被重叫一次**（我 05:41 那次多叫就是这么来的）。
+    if not mx and state is not None:
+        prev = state.get("hubPushedCache") or {}
+        pmx = {k: int(v) for k, v in (prev.get("mx") or {}).items()}
+        pcnt = {}
+        for k, v in (prev.get("cnt") or {}).items():
+            a, _sep, b = str(k).partition("|")
+            if a and _sep:
+                pcnt[(a, b)] = int(v)
+        if pmx:
+            return pmx, pcnt
+    if state is not None and mx:
+        state["hubPushedCache"] = {"mx": {k: int(v) for k, v in mx.items()},
+                                   "cnt": {"%s|%s" % (k[0], k[1]): int(v) for k, v in cnt.items()}}
     return mx, cnt
 
 
@@ -227,13 +254,16 @@ def split_unread(rows, slug, spoken, state):
     return unread
 
 
-def record_push(slug, mailbox_ts, by="crew_host"):
-    """把"这条信已经推给这条线"记进共用账本（append-only；失败静默，不影响叫醒）。"""
+def record_push(to_name, mailbox_ts, by="crew_host"):
+    """把"这条信已经推给这条线"记进共用账本（append-only；失败静默，不影响叫醒）。
+
+    ★ `to_name` 一律传**看板名**（与需求定义、与 Hub 侧一致）——传 slug 会让两边对不上账。
+    """
     try:
         with open(PUSHED_LEDGER, "a", encoding="utf-8") as f:
             f.write(json.dumps({"ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "ts_ms": int(time.time() * 1000), "by": by,
-                                "to": slug, "mailbox_ts": mailbox_ts}, ensure_ascii=False) + "\n")
+                                "to": to_name, "mailbox_ts": mailbox_ts}, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -261,9 +291,36 @@ def outbound_last_ms(agents):
 
 
 def acted_since(slug, since_ms, spoken, outbound):
-    """本人自那封信之后有没有**动作**：上过板，或投出过一封新信（组员不上板，所以两个都认）。"""
+    """本人自那封信之后有没有**动作**。
+
+    三种都算动作（2026-09-13 05:54 `codex-量化总监` 报的假阳性，我采纳）：
+      ① 上过板；② 投出过信；③ **会话里起过回合**。
+    ★ ③ 是必须的：新规矩"回执走信箱、组员不上板"之后，**只在对话框里回话**（最正常的处理方式）
+      在旧判据里等于"装死" → 被慢速兜底追着叫。会话账本（rollout）的写入时刻就是"它动过"的证据。
+    """
     since_ms = int(since_ms or 0)
-    return int(spoken.get(slug, 0) or 0) > since_ms or int(outbound.get(slug, 0) or 0) > since_ms
+    if int(spoken.get(slug, 0) or 0) > since_ms:
+        return True
+    if int(outbound.get(slug, 0) or 0) > since_ms:
+        return True
+    tid = (SLUG_TID or {}).get(slug)
+    return bool(tid) and session_turn_ms(tid) > since_ms
+
+
+def session_turn_ms(tid):
+    """本线会话账本最后写入的时刻（≈ 它最近起过一次回合）。取不到返回 0。每轮缓存。"""
+    if not tid:
+        return 0
+    if tid in SESSION_TURN_CACHE:
+        return SESSION_TURN_CACHE[tid]
+    ts = 0
+    try:
+        for p in glob.glob(os.path.join(SESSIONS_DIR, "**", "rollout-*%s*.jsonl" % tid), recursive=True):
+            ts = max(ts, int(os.path.getmtime(p) * 1000))
+    except Exception:
+        ts = 0
+    SESSION_TURN_CACHE[tid] = ts
+    return ts
 
 
 def poke_due(state, slug, now_ms, spoken, outbound):
@@ -291,6 +348,16 @@ def mark_poked(state, slug, mailbox_ts, now_ms):
                 "lastAt": int(now_ms)}
     # ★ 水位：记"被推那封信的 ts"（不是推送时刻）——同一分钟内到达的新信不能被吞（自测抓到）
     state.setdefault("pushedWm", {})[slug] = ts_ms(mailbox_ts)
+
+
+def msg_hash(msg):
+    """铃内容短哈希（8 位）——日志里用来判"两条铃到底是不是同一条"。
+
+    ★ 2026-09-13 05:46 `codex-看板编辑` 报的真缺陷：日志原来写 `msg[:60]`（P0 是 `[:70]`），
+      铃正文约 190 字 → **恰好把末尾的【最新一条 <ts>】截掉**，而那是判"新信 / 补送 / 重复"的**唯一判据字段**。
+      所以日志改成记**判据字段**：`ts=`（最新一条）/ `n=`（条数）/ `lvl=`（级别）/ `h=`（内容哈希）。
+    """
+    return hashlib.sha1(str(msg).encode("utf-8")).hexdigest()[:8]
 
 
 BOARD_URL = "http://100.64.75.72:8788/api/post"
@@ -551,7 +618,8 @@ def ring_priority(state, dry, exe, cfg, spoken, now):
                "请看工位 .private\\%s\\inbox.md，处理后回看板一行即可（≤200 字）。"
                "【最新一条 %s】—— crew_host P0 doorbell"
                % ("·" + lvl if lvl else "", len(unread), "、".join(senders), slug, newest))
-        log("doorbell-queue → %s (%s)[P0]：%s" % (slug, str(tid)[:8], msg[:70]), dry)
+        log("doorbell-queue → %s (%s)[P0]：ts=%s n=%d lvl=%s h=%s"
+            % (slug, str(tid)[:8], newest, len(unread), lvl or "-", msg_hash(msg)), dry)
         if dry:
             continue
         try:
@@ -566,7 +634,7 @@ def ring_priority(state, dry, exe, cfg, spoken, now):
                 state["hourHits"][slug] = hh[-50:]
                 mark_poked(state, slug, newest, now * 1000)   # ★ 触达记账（兜底阶梯用）
                 for _r in unread:                             # ★ 一封一行：同分钟多封才不会被吞
-                    record_push(slug, _r.get("ts"))
+                    record_push(name, _r.get("ts"))          # ★ 写**看板名**（键空间统一）
                 log("doorbell-queue: %s 投递OK via %s（P0 第 %d 次）"
                     % (slug, chan, state["attempts"][slug][1]), dry)
             else:
@@ -598,7 +666,14 @@ def worker_doorbell_queue(state, dry, args):
     # ★ 两条通道合一：先把"Hub 已经推过谁"的账本读进来（没有这个文件就按老行为跑）
     global HUB_PUSHED
     global HUB_PUSHED_CNT
-    HUB_PUSHED, HUB_PUSHED_CNT = refresh_hub_pushed()
+    _a2s = {}
+    for _n, _m in agents.items():
+        if (_m or {}).get("slug"):
+            _a2s[_n] = _m["slug"]
+    global SLUG_TID, SESSION_TURN_CACHE
+    SLUG_TID = {(_m or {}).get("slug"): (_m or {}).get("threadId") for _m in agents.values() if (_m or {}).get("slug")}
+    SESSION_TURN_CACHE = {}          # 每轮重算"它最近动过没有"
+    HUB_PUSHED, HUB_PUSHED_CNT = refresh_hub_pushed(state, _a2s)   # ★ 读取归一到 slug
     # ★ 老状态迁移（2026-09-13 05:1x）：换水位来源前，"最后成功推送的那封信"记在
     #   `attempts[slug][0]`（就是那封信的 ts）。不补这一步，刚上线时**每条线会各多叫一次**
     #   （实测现场：hr / render / adapter / config 各被多叫一次——适配线、配置线当场报了案）。
@@ -642,10 +717,11 @@ def worker_doorbell_queue(state, dry, args):
                     continue
                 if fired >= MAX_RING_PER_RUN:
                     break
-                msg = ("【还没动静】这条信我 %s 前就推给你了，你既没回信也没上板。"
-                       "请看工位 .private\\%s\\inbox.md 后回一句（这封信我只再兜这一次）——"
+                msg = ("【还没动静】这条信我 %s 前就推给你了，你既没回信、没上板、会话也没动静。"
+                       "请看工位 .private\\%s\\inbox.md 后回一句；**若你其实已经处理过，忽略这条即可**——"
                        " crew_host doorbell" % (int(POKE_LADDER_MS[min(int((state.get('poked') or {}).get(slug, {}).get('times', 1)) - 1, len(POKE_LADDER_MS) - 1)] / 60000), slug))
-                log("doorbell-queue[兜底] → %s (%s)：%s" % (slug, str(tid)[:8], msg[:70]), dry)
+                log("doorbell-queue[兜底] → %s (%s)：ts=%s n=1 lvl=%s h=%s"
+                    % (slug, str(tid)[:8], newest_pk, str(meta.get("level") or "").lower() or "-", msg_hash(msg)), dry)
                 if not dry:
                     try:
                         code, err, chan = run_codex_wake(exe, tid, msg)
@@ -657,7 +733,7 @@ def worker_doorbell_queue(state, dry, args):
                             hh.append(now)
                             state["hourHits"][slug] = hh[-50:]
                             mark_poked(state, slug, newest_pk, now * 1000)
-                            record_push(slug, newest_pk)
+                            record_push(name, newest_pk)     # ★ 写**看板名**
                             log("doorbell-queue: %s 兜底投递OK via %s" % (slug, chan), dry)
                         else:
                             log("doorbell-queue: %s 兜底失败(code=%s, %s)" % (slug, code, err), dry)
@@ -687,7 +763,8 @@ def worker_doorbell_queue(state, dry, args):
         msg = ("【信箱%s】你有 %d 条待读留言（来自 %s）。请看工位 .private\\%s\\inbox.md，"
                "处理后回看板一行即可（≤200 字）。【最新一条 %s】——crew_host doorbell"
                % ("·" + lvl if lvl else "", len(unread), "、".join(senders), slug, newest))
-        log("doorbell-queue → %s (%s)：%s" % (slug, str(tid)[:8], msg[:60]), dry)
+        log("doorbell-queue → %s (%s)：ts=%s n=%d lvl=%s h=%s"
+            % (slug, str(tid)[:8], newest, len(unread), lvl or "-", msg_hash(msg)), dry)
         if dry:
             continue
         try:
@@ -702,7 +779,7 @@ def worker_doorbell_queue(state, dry, args):
                 state["hourHits"][slug] = hh[-50:]
                 mark_poked(state, slug, newest, now * 1000)   # ★ 触达记账（兜底阶梯用）
                 for _r in unread:                             # ★ 一封一行：同分钟多封才不会被吞
-                    record_push(slug, _r.get("ts"))
+                    record_push(name, _r.get("ts"))          # ★ 写**看板名**
                 log("doorbell-queue: %s 投递OK via %s（第 %d 次）"
                     % (slug, chan, state["attempts"][slug][1]), dry)
             else:
