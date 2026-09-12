@@ -703,6 +703,8 @@ async function main() {
         MCHAT_DUTY_POLL_MS: "3000",
         // 补投扫描周期调到 3 秒：让"退避到点必须被扫到"能在自测里几秒内验完（默认 60s）
         MCHAT_WAKE_RETRY_MS: "3000",
+        // 公告 TTL 调到 9 秒（生产 24h）：才能把"入职晚于发布仍要回执"压缩进自测时限
+        MCHAT_NOTICE_TTL_MS: "9000",
         // 用例里代答条数多，别被每小时限流干扰（生产仍是 10）
         MCHAT_DUTY_MAX_PER_HOUR: "50",
         // 队列硬冷却在用例里几乎关掉（生产 90s）；"同一条不重复投"仍生效，另有专门用例
@@ -1925,6 +1927,55 @@ async function main() {
     "公告回执：未收到的线在 pendingAck 里（界面据此显示「未收到」）",
     Array.isArray(n2.refs.pendingAck) && !n2.refs.pendingAck.includes("codex-测无会话"),
     "pending=" + JSON.stringify(n2.refs.pendingAck || [])
+  );
+
+  // ㉑ HUB-015 公告"送到"补全（`codex-修复` 2026-09-13 01:54 反馈；总监派单）
+  //   ① 入职时补投**生效公告正文**；② 回执窗口从**投递时刻**起算（入职晚于发布也要回执）；
+  //   ③ 在册但没 threadId 的条目不进 pendingAck（不再空催 + 不再上板噪声）
+  //   TTL 已在本轮启动时调到 9 秒（见 spawn env），才能把"入职晚于发布"压缩进自测时限。
+  const notice15 = "- @全体 " + boardStamp(new Date()) + " 老板：自测HUB015：这条专门用来验回执窗口";
+  fs.appendFileSync(BOARD_FILE, notice15 + "\n", "utf8");
+  await new Promise((r) => setTimeout(r, 2500)); // 等入库 + 扇出（投信箱并记下投递时刻）
+  const d15 = await (await fetch(base + "/api/dialog?limit=500", { headers: hdr })).json();
+  const n15 = (d15.records || []).filter((r) => r.kind === "notice" && /自测HUB015/.test(String(r.body || ""))).pop();
+  const code15 = n15 ? "N-" + String(n15.id).slice(0, 4).toUpperCase() : "";
+  check("HUB-015①：公告已入库", !!n15 && !!code15, code15);
+  // 入职一条**晚于发布**的新线（此刻公告还"生效中"：TTL 9s，刚过 2.5s）
+  const ob15 = await onboard({
+    by: "codex-看板编辑",
+    approval: "老板 自测口述",
+    name: "codex-测补投",
+    slug: "codex-backfill",
+    threadId: "01a04444-0000-7000-8000-000000000009",
+  });
+  const ob15Body = await ob15.json().catch(() => ({}));
+  const bfMailFile = path.join(dirs.mailbox, "pending_codex-backfill.ndjson");
+  const bfMail = fs.existsSync(bfMailFile) ? fs.readFileSync(bfMailFile, "utf8") : "";
+  check(
+    "HUB-015①：入职时把生效公告的**正文**补投进新线信箱",
+    ob15.status === 200 && Number(ob15Body.noticesDelivered || 0) >= 1 && bfMail.includes("【公告 " + code15) && bfMail.includes("验回执窗口"),
+    "noticesDelivered=" + ob15Body.noticesDelivered
+  );
+  // 等到公告**全局过期**（TTL 9s，发布后约 10.5s）再看：老线窗口已关，新线窗口还开着
+  await new Promise((r) => setTimeout(r, 8000));
+  const d15b = await (await fetch(base + "/api/dialog?limit=500", { headers: hdr })).json();
+  const n15b = (d15b.records || []).filter((r) => r.kind === "notice" && /自测HUB015/.test(String(r.body || ""))).pop();
+  const pend15 = (n15b && n15b.refs && n15b.refs.pendingAck) || [];
+  check("HUB-015②：这条公告对全局已过期（expired=true）", !!n15b && n15b.refs.expired === true, JSON.stringify(n15b && n15b.refs.expired));
+  check(
+    "HUB-015②：**入职晚于发布**的新线仍在待回执里（窗口从投递给它的时刻起算）",
+    pend15.includes("codex-测补投") && n15b.refs.active === true,
+    "pending=" + JSON.stringify(pend15)
+  );
+  check(
+    "HUB-015②：发布时就收到的老线，窗口已关（不再挂着）",
+    !pend15.includes("codex-测窗口"),
+    "pending=" + JSON.stringify(pend15)
+  );
+  check(
+    "HUB-015③：在册但**没 threadId** 的条目不进 pendingAck（dsh-老员工/测无会话不再空催）",
+    !pend15.includes("dsh-老员工") && !pend15.includes("codex-测无会话"),
+    "pending=" + JSON.stringify(pend15)
   );
 
   child.kill();

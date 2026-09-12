@@ -1058,16 +1058,48 @@ function noticeCode(id) {
 }
 // 公告有效期：过期就不再要求回执（"有些公告已经失效了，自然不必存在"）。默认 24 小时。
 const NOTICE_TTL_MS = Number(process.env.MCHAT_NOTICE_TTL_MS || 24 * 3600 * 1000);
+// ── 公告"送到"的记账（HUB-015，`codex-修复` 2026-09-13 01:54 反馈）────────────────
+//   每条线对每条公告的**投递时刻**：回执计时从"投递给它的那一刻"起算，而不是从公告发布时间起算。
+//   为什么：新号入职后**仍要**对生效公告回执（老板已定性的好特性），但它的 24h 窗口应该是
+//   "从它收到那一刻"开始——否则"入职晚于发布"就成了事实豁免，等于新人天然不用回执。
+function noticeDeliveryMap() {
+  try {
+    return readState().noticeDeliveredAt || {};
+  } catch {
+    return {};
+  }
+}
+function markNoticeDelivered(id, aliases) {
+  const list = (Array.isArray(aliases) ? aliases : [aliases]).filter(Boolean);
+  if (!id || !list.length) return 0;
+  try {
+    const st = readState();
+    const map = { ...(st.noticeDeliveredAt || {}) };
+    const now = Date.now();
+    for (const a of list) map[String(id) + "|" + a] = now;
+    writeState({ ...readState(), noticeDeliveredAt: map });
+    return list.length;
+  } catch {
+    return 0;
+  }
+}
 function applyNoticeAcks(records) {
   // 谁**必须**回执？= 在册的员工线。剔除三类"不是员工"的条目：
   //   ① 退役档案条目（`·退役` / status=retired）② 系统角色 codex-看板服务 ③ 自测身份 codex-看板助理
   //   （它们要么没有会话、要么不是人，列在"未收到"里是永久噪声）
   const NON_EMPLOYEE = new Set([CODEX_SERVICE, "codex-看板助理"]);
-  const agents = Object.keys(readAgents().agents || {}).filter((a) => {
+  const allAgents = readAgents().agents || {};
+  const agents = Object.keys(allAgents).filter((a) => {
     if (NON_EMPLOYEE.has(a) || /·退役$/.test(a)) return false;
-    const m = (readAgents().agents || {})[a] || {};
+    const m = allAgents[a] || {};
     return String(m.status || "").toLowerCase() !== "retired";
   });
+  // HUB-015(c)：**在册但没 threadId** 的条目不进"该回执"名单——它们本来就收不到
+  // （投递按名册寻址，没 threadId 直接 no-thread），列进去只会每次公告固定产生 2 次空催 + 1 行噪声
+  // （现场：dsh-老员工 / dsh-quant，板上 09-12 23:17、23:27 那两行）。它们**仍可回执、仍会被记账**。
+  const reachable = agents.filter((a) => !!(allAgents[a] || {}).threadId);
+  // 每条线对每条公告的投递时刻（HUB-015(b)）
+  const deliveredMap = noticeDeliveryMap();
   const notices = records.filter((r) => r.kind === "notice").sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
   if (!notices.length) return records;
   // "回执在这条公告之后" 用**记录顺序**判，不用时间戳：看板行是**分钟精度**，
@@ -1114,17 +1146,25 @@ function applyNoticeAcks(records) {
     if (r.kind !== "notice") return r;
     const info = out.get(r.id) || {};
     const acks = info.acks || {};
-    const expected = agents.filter((a) => a !== r.from);
-    const expired = now - parseCst(r.ts) > NOTICE_TTL_MS;
+    const expected = reachable.filter((a) => a !== r.from);
+    const nTs = parseCst(r.ts);
+    const expired = now - nTs > NOTICE_TTL_MS;
     const supersededBy = info.supersededBy || null;
-    const active = !expired && !supersededBy;
+    // HUB-015(b)：逐线窗口——起点 = **投递给它的时刻**，没记到就退回公告发布时间
+    const windowOk = (a) => {
+      const base = Number(deliveredMap[String(r.id) + "|" + a] || 0) || nTs;
+      return now - base <= NOTICE_TTL_MS;
+    };
+    const pendingAck = supersededBy ? [] : expected.filter((a) => !acks[a] && windowOk(a));
+    // 显示口径：公告本身没过期，**或者**它虽然全局过期、但还有线在"自己的窗口"里（刚入职的新号）
+    const active = !supersededBy && (!expired || pendingAck.length > 0);
     return {
       ...r,
       refs: {
         ...(r.refs || {}),
         acks,
         expected,
-        pendingAck: active ? expected.filter((a) => !acks[a]) : [],
+        pendingAck,
         expired,
         supersededBy,
         active,
@@ -2884,6 +2924,7 @@ async function respondToNewEntries() {
         const authorAlias = boardName(entry.author);
         const lines = Object.keys(readAgents().agents || {});
         let sent = 0;
+        const delivered = []; // HUB-015(b)：记下"投递给它"的时刻（回执计时起点）
         for (const alias of lines) {
           if (alias === authorAlias || alias === "老板") continue;
           if (String(agentFor(alias).status || "").toLowerCase() === "retired") continue;
@@ -2892,12 +2933,14 @@ async function respondToNewEntries() {
             "\n\n请回执：在看板回一行 `收到 " + code + "`（或点引用回复这条公告再回「收到」）。**每条公告都要单独回执**。";
           try {
             fs.appendFileSync(path.join(MAILBOX_DIR, "pending_" + slugFor(alias) + ".ndjson"), JSON.stringify({ ts: fmtNow(), from: authorAlias, to: alias, body: tip }) + "\n", "utf8");
+            delivered.push(alias);
           } catch {}
           try {
             const dv = await deliverByQueue(alias, "（公告 " + code + " 投递提示 · 来自 " + authorAlias + "）" + tip.slice(0, 200));
             if (dv.ok) sent++;
           } catch {}
         }
+        if (rec && rec.id) markNoticeDelivered(rec.id, delivered);
         log("NOTICE INGESTED:", authorAlias, code, "投信箱=" + (lines.length - 1) + " 叫醒=" + sent);
         continue;
       }
@@ -5111,6 +5154,31 @@ async function main() {
         { backup: true }
       );
       if (!wr.ok) return sendJson(res, 409, { error: "名册正被其他进程修改，本次未写入（请重试）", detail: wr });
+      // ★ HUB-015(a)：入职时把**当前生效中的公告正文**补投给新线（走既有信箱口）。
+      //   口径不变（d）：仍是"当前名册 × 生效公告"，新人对生效公告**照样要回执**；
+      //   补的只是"送到"这半步——它得先收到正文，才谈得上回执。同时记下投递时刻，
+      //   让它对每条公告的 24h 回执窗口从**自己收到那一刻**起算（(b)）。
+      let noticesGiven = 0;
+      try {
+        const stillActive = applyNoticeAcks(readDialog(600).map(normalizeRecordNames))
+          .filter((r) => r.kind === "notice" && r.refs && r.refs.active);
+        for (const n of stillActive) {
+          const code = noticeCode(n.id);
+          const tip =
+            "【公告 " + code + "（补投 · 你入职时仍在生效）】" + String(n.body || "") +
+            "\n\n请回执：在看板回一行 `收到 " + code + "`（或点引用回复那条公告再回「收到」）。**每条公告都要单独回执**。";
+          try {
+            fs.appendFileSync(
+              path.join(MAILBOX_DIR, "pending_" + slugFor(name) + ".ndjson"),
+              JSON.stringify({ ts: fmtNow(), from: CODEX_SERVICE, to: name, body: tip }) + "\n",
+              "utf8"
+            );
+            markNoticeDelivered(n.id, name);
+            noticesGiven++;
+          } catch {}
+        }
+      } catch {}
+      if (noticesGiven) log("ONBOARD NOTICE BACKFILL:", name, "公告=" + noticesGiven);
       appendBoardLine(
         "老板",
         CODEX_SERVICE,
@@ -5118,7 +5186,7 @@ async function main() {
           (tid ? "，会话 " + tid.slice(0, 8) + "…" : "，未绑会话") + "）"
       );
       log("ONBOARD:", name, "slug=" + finalSlug, "by=" + by, tid ? "thread=" + tid.slice(0, 8) : "no-thread");
-      sendJson(res, 200, { ok: true, name: name, slug: finalSlug, threadId: tid || null, by: by, slugDerived: !slug });
+      sendJson(res, 200, { ok: true, name: name, slug: finalSlug, threadId: tid || null, by: by, slugDerived: !slug, noticesDelivered: noticesGiven });
       return;
     }
 
