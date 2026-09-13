@@ -53,6 +53,8 @@ def main():
     ap.add_argument("--date", default=None)
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--cash", type=float, default=None)
+    ap.add_argument("--force-empty", action="store_true",
+                    help="确实要写空计划时才加；默认**空计划不覆盖已有计划**（防补跑清掉人工计划）")
     a = ap.parse_args()
     date = a.date or latest_date()
     cash, nav = read_cash(date)
@@ -118,6 +120,16 @@ def main():
     if not a.write:
         print("(预览模式, 未写文件; --write 才写 next_plan.csv)")
         return
+    # ★ 空计划不覆盖：2026-09-14 事故——补跑（0 卖 0 买）把人工手写的计划清成了空表头。
+    if not sells and not buys and not a.force_empty:
+        prev = ROOT / "outputs" / "next_plan.csv"
+        try:
+            kept = [l for l in prev.read_text(encoding="utf-8-sig").splitlines() if l.strip()]
+        except Exception:
+            kept = []
+        if len(kept) > 1:
+            print("0 卖 0 买：**保留已有计划、不覆盖**（%d 行）；确实要写空计划请加 --force-empty" % (len(kept) - 1))
+            return
     with open(ROOT / "outputs" / "next_plan.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["code", "side", "shares", "price", "name"])
