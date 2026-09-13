@@ -7,5 +7,7 @@
     "test": "node --test",
     "sync": "node scripts/sync-shared.mjs",
     "demo": "node scripts/demo.mjs"
+    ,
+    "preview": "node scripts/preview.mjs"
   }
 }

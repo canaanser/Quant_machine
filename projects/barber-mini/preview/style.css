@@ -1,0 +1,38 @@
+:root { --ink:#2B2B2B; --gold:#C9A227; --free:#1FA84C; --busy:#E8A600; --rest:#D93A3A; --bg:#F5F5F5; }
+* { box-sizing: border-box; }
+body { margin:0; background:#202124; color:#eee; font-family:-apple-system,"PingFang SC",system-ui,sans-serif; }
+.wrap { display:flex; gap:32px; justify-content:center; padding:32px; flex-wrap:wrap; }
+.phone { width:390px; background:#111; border-radius:38px; padding:14px; box-shadow:0 12px 40px rgba(0,0,0,.5); }
+.notch { color:#ddd; text-align:center; font-size:14px; padding:8px 0 12px; }
+.screen { background:var(--bg); color:var(--ink); border-radius:26px; min-height:620px; padding:16px; overflow:auto; }
+.tabbar { display:flex; gap:8px; padding:10px 4px 2px; }
+.tab { flex:1; background:#2a2a2a; color:#ddd; border:1px solid #3a3a3a; border-radius:12px; padding:10px; font-size:14px; cursor:pointer; }
+.tab.on { background:var(--gold); color:#fff; border-color:var(--gold); }
+.side { max-width:420px; color:#ccc; font-size:14px; line-height:1.7; }
+.side h3 { color:#fff; margin:0 0 8px; }
+.muted { color:#999; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin:0 4px 0 10px; }
+.dot.free { background:var(--free); } .dot.busy { background:var(--busy); } .dot.rest { background:var(--rest); }
+
+/* 小程序页面样式（与 app.wxss 同口径：深灰+金，字号≥14px，按钮≥48px） */
+.card { background:#fff; border-radius:16px; padding:16px; margin-bottom:14px; box-shadow:0 1px 6px rgba(0,0,0,.06); }
+.row { display:flex; align-items:center; justify-content:space-between; }
+.title { font-size:18px; font-weight:600; }
+.sub { color:#888; font-size:14px; }
+.status { border-radius:18px; padding:26px 18px; color:#fff; text-align:center; margin-bottom:14px; }
+.status.free { background:var(--free); } .status.busy { background:var(--busy); } .status.rest { background:var(--rest); }
+.status .big { font-size:22px; font-weight:700; }
+.status .small { font-size:14px; opacity:.9; margin-top:6px; }
+.btn { height:48px; line-height:48px; border-radius:12px; text-align:center; font-size:16px; cursor:pointer; border:none; width:100%; margin-top:10px; }
+.btn.primary { background:var(--gold); color:#fff; }
+.btn.ghost { background:#fff; border:1px solid var(--ink); color:var(--ink); }
+.btn.sm { height:40px; line-height:40px; font-size:14px; }
+.chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.chip { padding:10px 14px; border-radius:10px; background:#F0EFEA; font-size:15px; cursor:pointer; }
+.chip.on { background:var(--gold); color:#fff; }
+.slot { padding:10px 14px; border-radius:10px; font-size:15px; cursor:pointer; }
+.slot.free { background:#E3F5E7; color:#12743A; }
+.slot.busy { background:#ECECEC; color:#8A8A8A; }
+.slot.on { outline:2px solid var(--gold); }
+.item { display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid #f0f0f0; font-size:15px; }
+.pill { font-size:13px; padding:3px 10px; border-radius:8px; background:#F6EFD6; color:#8A6D12; }

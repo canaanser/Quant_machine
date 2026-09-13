@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>理发师接单小程序 · 界面预览（本地 mock）</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="wrap">
+    <div class="phone">
+      <div class="notch">阿明理发</div>
+      <div class="screen" id="screen"></div>
+      <div class="tabbar">
+        <button class="tab" data-tab="customer">看排队（顾客）</button>
+        <button class="tab" data-tab="barber">工作台（理发师）</button>
+      </div>
+    </div>
+    <div class="side">
+      <h3>这是本地预览</h3>
+      <p>· 无云环境、无开发者工具，<b>同一份业务逻辑</b>（<code>shared/orders.js</code>）在浏览器里跑。</p>
+      <p>· 点「立即预约」「加入排队」、工作台里「开始服务 / 完成本单 / 切状态」，界面会实时变。</p>
+      <p>· 状态色：<span class="dot free"></span>空闲 <span class="dot busy"></span>服务中 <span class="dot rest"></span>休息</p>
+      <p class="muted">真机/上云：装微信开发者工具导入本目录，开通云开发后填环境 ID。</p>
+    </div>
+  </div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
