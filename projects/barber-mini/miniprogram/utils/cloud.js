@@ -1,5 +1,10 @@
 // 云函数调用封装：**客户端唯一写入口**（契约：不直写 orders/barbers）。
-import { PRIORITY } from "../../shared/priority.js";
+//
+// ⚠️ 2026-09-14 踩坑：这里原来 import 了 `../../shared/priority.js` ——
+//   那个文件在 `miniprogramRoot`（miniprogram/）**之外**，小程序打包不允许，运行时报
+//   `can not find module : require args is ../../shared/priority.js` → **整页白屏**。
+//   修法：客户端**不引外部逻辑**（真正的计算都在云端 `shared/` 一份），这里只留**展示用常量**。
+const PRIORITY = { PREPAID: 0, RESERVED: 1, WALKIN: 2 };
 
 export function call(name, data) {
   return new Promise((resolve, reject) => {
