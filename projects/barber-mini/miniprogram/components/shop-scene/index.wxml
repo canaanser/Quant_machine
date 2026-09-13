@@ -1,0 +1,18 @@
+<!-- 理发店场景（有角度的俯视）：理发师在剪、客人在椅子上、后面排队的人在玩手机/看书 -->
+<view class="sc">
+  <view class="sc__room">
+    <view class="sc__mirror"></view>
+    <view class="sc__chair">
+      <text class="sc__seated">🧑</text>
+      <text class="sc__cape"></text>
+    </view>
+    <view class="sc__barber"><text class="sc__scissors">✂️</text></view>
+    <view class="sc__row">
+      <text class="sc__wait sc__wait--1">📱</text>
+      <text class="sc__wait sc__wait--2">🧒</text>
+      <text class="sc__wait sc__wait--3">📖</text>
+      <text class="sc__wait sc__wait--4">🧓</text>
+    </view>
+  </view>
+  <view class="sc__cap">{{text || '正在理发 · 后面还有人等着'}}</view>
+</view>

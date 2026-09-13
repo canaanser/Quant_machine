@@ -3,12 +3,17 @@
   padding: 24rpx 26rpx; margin-bottom: 24rpx; box-shadow: var(--shadow);
   backdrop-filter: blur(20rpx); -webkit-backdrop-filter: blur(20rpx); }
 .tl24__head { display: flex; justify-content: space-between; margin-bottom: 14rpx; }
-.tl24__track { position: relative; height: 78rpx; border-radius: 20rpx; background: rgba(20,22,26,.06); overflow: hidden; }
-.tl24__rest { position: absolute; left: 0; top: 0; bottom: 0;
-  background: linear-gradient(90deg, rgba(201,162,39,.18), rgba(201,162,39,.40)); }
-.tl24__now { position: absolute; top: 0; bottom: 0; width: 4rpx; background: var(--gold); }
-.tl24__dot { position: absolute; top: 6rpx; transform: translateX(-50%); }
-.tl24__face { font-size: 42rpx; }
+.tlbar { display: flex; align-items: stretch; height: 64rpx; border-radius: 18rpx;
+  background: rgba(20,22,26,.06); overflow: hidden; }
+.tlbar__pad { width: 10rpx; flex: 0 0 auto; }              /* 最左留一点空余，看着舒服 */
+.tlbar__seg { display: flex; align-items: center; justify-content: center; margin-right: 6rpx;
+  border-radius: 14rpx; min-width: 56rpx; }
+.tlbar__seg--serving { background: linear-gradient(135deg, #F7C25A, #F0A020); color: #3A2A00; }
+.tlbar__seg--queuing { background: linear-gradient(135deg, #F6E7B4, #E8C766); color: #5A4600; }
+.tlbar__seg--reserved { background: linear-gradient(135deg, #D6E4FF, #9FC2FF); color: #1E3A6E; }
+.tlbar__t { font-size: 22rpx; font-weight: 700; }
+.tlbar__rest { flex: 1 1 auto; margin-right: 6rpx; border-radius: 14rpx;
+  background: repeating-linear-gradient(45deg, rgba(20,22,26,.05) 0 10rpx, rgba(20,22,26,.09) 10rpx 20rpx); }
 .tl24__foot { display: flex; justify-content: space-between; margin-top: 10rpx; }
 
 /* 类型/项目选择 */

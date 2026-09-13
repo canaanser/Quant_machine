@@ -26,7 +26,7 @@
       </view>
 
       <!-- 现在这位：头像 + 名字 + 项目，一扫就看到 -->
-      <view class="now">
+      <view class="now" id="dropNow">
         <view class="now__ava">{{currentFace}}</view>
         <view class="grow">
           <view class="now__name">{{currentName}}</view>
@@ -65,7 +65,7 @@
         <view class="relay__row">
           <view class="relay__card" id="relayCard"
                 style="transform: translateY({{relay.dragY}}rpx);"
-                bindtouchstart="relayStart" bindtouchmove="relayMove" bindtouchend="relayEnd">
+                bindtouchstart="relayStart" catchtouchmove="relayMove" bindtouchend="relayEnd">
             <view class="relay__ava">{{relay.next.face}}</view>
             <view class="grow">
               <view class="item__t">{{relay.next.name}}</view>
@@ -112,10 +112,11 @@
           <text class="h2">接单状态</text>
           <text class="muted">顾客端会立刻看到</text>
         </view>
+        <!-- 顺序按老板定的：左→右 = 忙 / 空闲 / 打烊 -->
         <view class="seg mt16">
-          <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" id="stIdle" data-s="idle" bindtap="setStatus">空闲</view>
           <view class="seg__i {{status === 'busy' ? 'seg__i--on' : ''}}" id="stBusy" data-s="busy" bindtap="setStatus">忙</view>
-          <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" id="stRest" data-s="rest" bindtap="setStatus">休息</view>
+          <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" id="stIdle" data-s="idle" bindtap="setStatus">空闲</view>
+          <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" id="stRest" data-s="rest" bindtap="setStatus">打烊</view>
         </view>
       </view>
 

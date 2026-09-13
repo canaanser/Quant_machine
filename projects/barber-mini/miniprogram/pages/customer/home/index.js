@@ -27,7 +27,8 @@ Page({
     ],
     pickedType: "man", pickedItem: "s1",
     nowText: "--:--", openTime: "09:00", closeTime: "21:00",
-    restPct: 100, nowPct: 0, marks: [], behindCount: 0,
+    segs: [], behindCount: 0, cntQueuing: 0, cntReserved: 0,
+    sceneText: "",
   },
   onLoad() { this.refreshAll(); },
   onShow() { this.refreshAll(); },
@@ -72,13 +73,18 @@ Page({
     const mine = list.find((o) => o.customerOpenid === "me" && o.status !== "serving");
     const ahead = mine ? list.findIndex((o) => o._id === mine._id) : list.filter((o) => o.status === "queuing").length;
 
-    const marks = list.filter((o) => o.status !== "serving").map((o, i) => {
-      const t = Number(o.appointmentTime || 0) || (now + (i + 1) * 10 * 60e3);
-      return { i, pct: Math.min(97, Math.max(nowPct, ((t - open) / span) * 100)), face: FACE[o.customerType] || "🧑" };
-    });
+    // 色条：正在服务(橙) 固定在最左；其后按顺序是排队(金) / 预约(蓝)
+    const serving = list.find((o) => o.status === "serving");
+    const rest = list.filter((o) => o.status !== "serving");
+    const segs = [];
+    if (serving) segs.push({ i: "s", k: "serving", w: 3, t: "正在" });
+    rest.forEach((o, i) => segs.push({ i, k: o.status === "reserved" ? "reserved" : "queuing",
+      w: o.status === "reserved" ? 2 : 2, t: o.status === "reserved" ? "约" : "排" }));
+    const cntQueuing = list.filter((o) => o.status === "queuing").length;
+    const cntReserved = list.filter((o) => o.status === "reserved").length;
     this.setData({
       nowText: hhmm(now), openTime: openText, closeTime: closeText,
-      nowPct, restPct: Math.max(0, 100 - nowPct), marks, behindCount: marks.length,
+      segs, behindCount: rest.length, cntQueuing, cntReserved,
       waiting: Math.max(0, ahead), etaMin: Math.max(0, ahead) * 10,
       mine: mine ? {
         tag: ["预付款", "已预约", "现场"][mine.priority] || "现场",
@@ -86,6 +92,7 @@ Page({
         eta: mine.appointmentTime ? hhmm(mine.appointmentTime) : "等待叫号",
         progress: Math.min(100, Math.max(10, 100 - Math.max(0, ahead) * 15)),
       } : null,
+      sceneText: "前面还有 " + Math.max(0, ahead) + " 位 · 我在队里等着",
     });
   },
   async loadStats() {
@@ -93,6 +100,7 @@ Page({
     catch (e) { /* 未就绪 */ }
   },
   pickType(e) { this.setData({ pickedType: e.currentTarget.dataset.k }); },
+  goProgress() { wx.navigateTo({ url: "/pages/customer/progress/index" }); },
   pickItem(e) { this.setData({ pickedItem: e.currentTarget.dataset.id }); },
   goBook() { wx.navigateTo({ url: "/pages/customer/book/index?item=" + this.data.pickedItem + "&type=" + this.data.pickedType }); },
   // 立即排队：**秒开**（本地待提交单先带过去，云端后台建单）

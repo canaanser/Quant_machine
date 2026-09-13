@@ -74,8 +74,11 @@
     </view>
   </view>
 
-  <view class="grid2">
-    <view class="btn btn--ghost" id="backBtn" bindtap="back">返回首页</view>
-    <view class="btn btn--gold" id="cancelBtn" bindtap="cancel">取消排队</view>
+  <!-- 按钮固定在底部（排队页不占主屏） -->
+  <view class="stickbar">
+    <view class="grid2">
+      <view class="btn btn--ghost" id="backBtn" bindtap="back">返回首页</view>
+      <view class="btn btn--gold" id="cancelBtn" bindtap="cancel">取消排队</view>
+    </view>
   </view>
 </view>

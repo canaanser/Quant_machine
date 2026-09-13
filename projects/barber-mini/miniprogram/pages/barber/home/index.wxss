@@ -6,7 +6,8 @@
   box-shadow: 0 12rpx 34rpx rgba(20,22,26,.22); }
 .hero--free { background: linear-gradient(135deg, #1FC777, #17B26A); }
 .hero--busy { background: linear-gradient(135deg, #F5B740, #F0A020); }
-.hero--rest { background: linear-gradient(135deg, #EE5A5E, #E5484D); }
+.hero--rest { background: linear-gradient(135deg, #3FBF93, #2FA37A); }
+.status--rest { background: linear-gradient(135deg, #3FBF93, #2FA37A); }
 .hero__k { font-size: 24rpx; opacity: .85; }
 .hero__n { font-size: 96rpx; font-weight: 800; line-height: 1; }
 .hero__u { font-size: 30rpx; opacity: .9; margin: 0 0 14rpx 10rpx; }

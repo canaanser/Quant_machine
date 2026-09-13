@@ -8,9 +8,9 @@ page {
   --ink-3: #7C838E;
   --gold: #C9A227;
   --gold-2: #E8C766;
-  --free: #17B26A;
-  --busy: #F0A020;
-  --rest: #E5484D;
+  --free: #17B26A;      /* 空闲 = 绿 */
+  --busy: #F0A020;      /* 忙/服务中 = 橙 */
+  --rest: #2FA37A;      /* 休息/打烊 = **绿**（老板 2026-09-14：不要红色） */
   --glass: rgba(255, 255, 255, 0.58);
   --glass-2: rgba(255, 255, 255, 0.42);
   --glass-line: rgba(255, 255, 255, 0.75);
@@ -98,7 +98,7 @@ page {
 .pill--gold { background: linear-gradient(135deg, #F6E7B4, #E8C766); color: #6B5210; font-weight: 600; }
 .pill--free { background: rgba(23,178,106,0.14); color: #0E7A48; }
 .pill--busy { background: rgba(240,160,32,0.22); color: #7A4E00; font-weight: 600; }
-.pill--rest { background: rgba(229,72,77,0.14); color: #9B2A2E; }
+.pill--rest { background: rgba(47,163,122,0.16); color: #14654A; }
 
 /* ── 统一线性图标（替代 emoji，风格一致；颜色跟金色系）── */
 .ico { background-repeat: no-repeat; background-position: center; background-size: 46rpx 46rpx; }

@@ -3,7 +3,7 @@
 import { api, priorityLabel } from "../../../utils/cloud.js";
 
 const TONE = { idle: "free", busy: "busy", rest: "rest" };
-const TEXT = { idle: "空闲", busy: "服务中", rest: "休息" };
+const TEXT = { idle: "空闲", busy: "服务中", rest: "已打烊" };
 const STATUS_TEXT = { reserved: "已预约", queuing: "排队中", serving: "服务中" };
 const TAG_CLASS = { 0: "pill--gold", 1: "pill--busy", 2: "" };
 // 物化头像：男女老少小孩一眼分得清（老板 2026-09-14：「用物化的头像告诉我男女老少」）
@@ -124,7 +124,11 @@ Page({
     const y0 = this._relayY0; this._relayY0 = null;
     const dy = y0 == null ? 0 : (e.changedTouches[0].clientY - y0);
     this.setData({ "relay.dragY": 0 });
-    if (dy < -40) {                                                   // 往上一拖并松手 = 继续
+    if (dy >= -40) return;                                            // 没往上拖够 → 交给 1 秒计时（进休息）
+    // ★ 老板要求：必须**拖到「现在这位」卡片上、且覆盖 ≥50%**才算继续
+    const ok = await this.droppedOnNow(e.changedTouches[0].clientY);
+    if (!ok) { wx.showToast({ title: "要拖到「现在这位」上松手才算", icon: "none" }); return; }
+    {                                                 // 往上一拖并落在目标框上 = 继续
       if (this._rt) { clearInterval(this._rt); this._rt = null; }
       const next = (this.data.queue || []).find((o) => o.status !== "serving");
       if (!next) return this.relayToRest();
@@ -137,6 +141,18 @@ Page({
         wx.showToast({ title: "继续：" + next.name, icon: "success" });
       } catch (err) { wx.showModal({ title: "接不上", content: String((err && (err.errMsg || err.message)) || err).slice(0, 100), showCancel: false }); }
     }
+  },
+  /** 拖动卡与「现在这位」卡片的重叠比例 ≥ 50% 才算落位 */
+  droppedOnNow(clientY) {
+    return new Promise((resolve) => {
+      wx.createSelectorQuery().in(this).select("#dropNow").boundingClientRect((r) => {
+        if (!r) return resolve(false);
+        const cardH = 110;                                     // 拖动卡高度（px 近似）
+        const top = clientY - cardH / 2, bottom = clientY + cardH / 2;
+        const overlap = Math.max(0, Math.min(r.bottom, bottom) - Math.max(r.top, top));
+        resolve(overlap / cardH >= 0.5);
+      }).exec();
+    });
   },
   relayToRest() {
     this.setData({ "relay.counting": false, "relay.pct": 100 });
