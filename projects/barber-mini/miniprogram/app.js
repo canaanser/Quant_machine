@@ -2,8 +2,10 @@
 const ENV_ID = "cloud1-d2g4axdnz488a6d75";   // 云环境 ID（老板 2026-09-14 建）
 
 App({
-  globalData: { barberId: "b1", envId: ENV_ID, autoFlow: false, theme: "glass" },
+  // ★ 默认外观 = **极简版 V1**（老板 2026-09-14：先把极简这套摆到手机那条线上，复杂版挪一边当备份）
+  globalData: { barberId: "b1", envId: ENV_ID, autoFlow: false, theme: "minimal" },
   onLaunch() {
+    // 只有用户**主动切过**才用他的选择；没切过的一律走默认（极简 V1）
     try { const t = wx.getStorageSync("theme"); if (t) this.globalData.theme = t; } catch (e) {}
     if (!wx.cloud) {
       console.error("请使用 2.2.3+ 基础库以使用云能力");
