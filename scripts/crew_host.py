@@ -897,8 +897,38 @@ def worker_auto_merge(state, dry, args):
 
 
 
+def worker_rebirth_watch(state, dry, args):
+    """★「该不该重生」体检（老板 2026-09-13 09:3x 交办）：**静默接线**。
+
+    接在**本小工已有的 30 秒节拍**上（**不新建计划任务**——今晚刚删掉一个吵人的巡检器）；
+    脚本内部自带 10 分钟闸 + "命中才说话"，所以这里：
+      · 平时**零输出**（不写日志、不回板、不发信）；
+      · 只有**命中判据**时，`rebirth_watch.mjs` 自己会给那条线 + 总监各投一封信并写它自己的日志；
+      · 我这边**只在它非 0 退出**时记一行错误（免得静默失败没人知道）。
+    数据与判据全在 `scripts/rebirth_watch.mjs`（只读 rollout/名册；**只报不动**）。
+    """
+    if dry:
+        return 0
+    script = os.path.join(ROOT, "scripts", "rebirth_watch.mjs")
+    if not os.path.exists(script):
+        return 0
+    try:
+        env = dict(os.environ)
+        extra = [d for d in (find_git_dir(), r"C:\Program Files\nodejs", os.path.dirname(find_codex_exe() or "")) if d]
+        env["PATH"] = ";".join(extra + [env.get("PATH", "")])
+        p = subprocess.run(["node", script, "--tick"], cwd=ROOT, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=180, env=env)
+        if p.returncode != 0:
+            tail = ((p.stderr or "").strip().splitlines() or ["(无输出)"])[-1][:200]
+            log("rebirth-watch: 退出码 %s | %s" % (p.returncode, tail))
+    except Exception as e:
+        log("rebirth-watch: 异常 %r" % (e,))
+    return 0
+
+
 WORKERS = {"mirror-mailbox": worker_mirror_mailbox, "heartbeat": worker_heartbeat,
-           "doorbell-queue": worker_doorbell_queue, "auto-merge": worker_auto_merge}
+           "doorbell-queue": worker_doorbell_queue, "auto-merge": worker_auto_merge,
+           "rebirth-watch": worker_rebirth_watch}
 
 
 def self_guard():
