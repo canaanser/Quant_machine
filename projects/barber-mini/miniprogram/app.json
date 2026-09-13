@@ -8,6 +8,8 @@
     "pages/barber/stats/index"
     ,"pages/barber/ledger/index"
     ,"pages/barber/items/index"
+    ,"pages/barber/settings/index"
+    ,"pages/barber/board/index"
   ],
   "window": {
     "navigationBarTitleText": "阿明理发",

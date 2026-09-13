@@ -1,5 +1,6 @@
 // 排队进度：读云端排队序算"我的位置 + 前面的人 + 预计等待"；倒计时用前端定时器（契约：不为它加长连接）。
 import { api, priorityLabel } from "../../../utils/cloud.js";
+import { hhmm } from "../../../utils/time.js";
 
 const MIN = 60 * 1000;
 const TAG_CLASS = { 0: "pill--gold", 1: "pill--busy", 2: "" };
@@ -61,7 +62,7 @@ Page({
       })),
       ahead, etaMin, etaText, leftMin: etaMin,
       progressPct: list.length ? Math.round(((idx + 1) / list.length) * 100) : 8,
-      updated: new Date().toTimeString().slice(0, 5),
+      updated: hhmm(Date.now()),
       loading: false,
       me: {
         initial: (mine && mine.customerName ? mine.customerName.slice(0, 1) : "我"),

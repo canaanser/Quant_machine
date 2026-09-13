@@ -1,6 +1,7 @@
 // 顾客端首页：先出内容（mock 兜底），云环境就绪后用 watch 覆盖 → 永不白屏。
 import { watchBarber } from "../../../utils/watch.js";
 import { api } from "../../../utils/cloud.js";
+import { hhmm, SLOT_MS } from "../../../utils/time.js";
 
 const TONE = { idle: "free", busy: "busy", rest: "rest" };
 const TEXT = { idle: "空闲中", busy: "正在服务", rest: "休息中" };
@@ -21,7 +22,7 @@ Page({
     ],
   },
   onLoad() {
-    this.setData({ updated: new Date().toTimeString().slice(0, 5) });
+    this.setData({ updated: hhmm(Date.now()) });
     this.buildSlots();
     this.loadStats();
     try {
@@ -33,8 +34,8 @@ Page({
     const base = new Date(); base.setMinutes(0, 0, 0);
     const slots = [];
     for (let i = 1; i <= 6; i++) {
-      const ts = base.getTime() + i * 40 * 60000;
-      slots.push({ ts, label: new Date(ts).toTimeString().slice(0, 5), busy: false, state: i === 1 ? "now" : "free" });
+      const ts = base.getTime() + i * SLOT_MS;
+      slots.push({ ts, label: hhmm(ts), busy: false, state: i === 1 ? "now" : "free" });
     }
     this.setData({ slots });
   },
@@ -45,7 +46,7 @@ Page({
       statusText: TEXT[b.status] || "休息中",
       statusSub: SUB[b.status] || "",
       progress: b.status === "busy" ? 55 : b.status === "idle" ? 12 : 100,
-      updated: new Date().toTimeString().slice(0, 5),
+      updated: hhmm(Date.now()),
     });
   },
   async loadStats() {

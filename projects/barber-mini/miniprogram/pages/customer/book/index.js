@@ -1,5 +1,6 @@
 // 预约三步：选时间 → 选项目 → 选客人属性 → 确认。写操作只走云函数。
 import { api } from "../../../utils/cloud.js";
+import { hhmm, SLOT_MS } from "../../../utils/time.js";
 
 const MIN = 60 * 1000;
 const TYPES = [
@@ -21,8 +22,8 @@ Page({
     const base = new Date(); base.setMinutes(0, 0, 0);
     const slots = [];
     for (let i = 1; i <= 8; i++) {
-      const ts = base.getTime() + i * 40 * MIN;
-      slots.push({ ts, label: new Date(ts).toTimeString().slice(0, 5), busy: false });
+      const ts = base.getTime() + i * SLOT_MS;      // ★ 半小时一格（原来 40 分钟，太怪）
+      slots.push({ ts, label: hhmm(ts), busy: false });
     }
     this.setData({
       slots,

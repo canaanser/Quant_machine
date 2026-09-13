@@ -18,10 +18,39 @@
     </view>
   </view>
 
+  <!-- ① 顾客端同款状态卡（经营者也一眼看到"现在多少人"） -->
+  <view class="status status--{{tone}}">
+    <view class="row row--between">
+      <view>
+        <view class="lbl" style="color:rgba(255,255,255,.72)">顾客看到的状态</view>
+        <view class="status__big">{{statusText}}</view>
+        <view class="lbl" style="color:rgba(255,255,255,.85)">当前共 {{queue.length}} 位在队/在服务</view>
+      </view>
+      <view class="center">
+        <view class="num" style="color:#fff">{{queue.length}}</view>
+        <view class="lbl" style="color:rgba(255,255,255,.72)">位</view>
+      </view>
+    </view>
+  </view>
+
   <view class="tiles">
     <view class="tile"><view class="tile__k">今日单数</view><view class="tile__v">{{today}}<text class="tile__u">单</text></view></view>
-    <view class="tile"><view class="tile__k">今日收入</view><view class="tile__v">{{revenue}}<text class="tile__u">元</text></view></view>
+    <view class="tile"><view class="tile__k">今日收入</view><view class="tile__v">{{hideMoney ? '∗∗∗' : revenue}}<text class="tile__u">元</text></view></view>
     <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMin}}<text class="tile__u">分</text></view></view>
+  </view>
+
+  <!-- ② 排队与积压（第一眼要看的就是这个） -->
+  <view class="glass mt24">
+    <view class="row row--between">
+      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">排队与积压</text></view>
+      <view class="pill">{{queue.length}} 位在队</view>
+    </view>
+    <view class="tiles mt16">
+      <view class="tile"><view class="tile__k">等待中</view><view class="tile__v">{{waitingCount}}<text class="tile__u">位</text></view></view>
+      <view class="tile"><view class="tile__k">服务中</view><view class="tile__v">{{servingId ? 1 : 0}}<text class="tile__u">位</text></view></view>
+      <view class="tile"><view class="tile__k">已预约</view><view class="tile__v">{{reservedCount}}<text class="tile__u">位</text></view></view>
+    </view>
+    <view class="muted mt12">{{queue.length > 3 ? '积压偏多，加把劲 💪' : (queue.length ? '队伍正常，稳住节奏' : '现在没人排队，休息一下')}}</view>
   </view>
 
   <!-- 今日目标：给自己一个进度条（要的就是"有干劲"） -->
@@ -29,15 +58,17 @@
     <view class="row row--between">
       <view class="row row--gap">
         <view class="sec__bar"></view>
-        <text class="item__t">今日目标 ¥{{goal}}</text>
+        <text class="item__t">今日目标 ¥{{hideMoney ? '∗∗∗' : goal}}</text>
       </view>
-      <text class="muted">{{goalPct}}% · 还差 ¥{{goalLeft}}</text>
+      <view class="row row--gap">
+        <text class="muted">{{goalPct}}% · 还差 {{hideMoney ? '∗∗∗' : ('¥' + goalLeft)}}</text>
+        <view class="pill" id="eyeBtn" bindtap="toggleEye">{{hideMoney ? '显示' : '隐藏'}}</view>
+      </view>
     </view>
     <view class="bar mt16"><view class="bar__in" style="width:{{goalPct}}%"></view></view>
     <view class="row row--gap mt16">
-      <view class="btn btn--ghost btn--sm grow" id="ledgerBtn" bindtap="goLedger">今日流水</view>
-      <view class="btn btn--ghost btn--sm grow" id="itemsBtn" bindtap="goItems">服务项目</view>
-      <view class="btn btn--ghost btn--sm grow" id="goalBtn" bindtap="setGoal">改目标</view>
+      <view class="btn btn--ghost btn--sm grow" id="boardBtn" bindtap="goBoard">数据看板</view>
+      <view class="btn btn--ghost btn--sm grow" id="settingsBtn" bindtap="goSettings">设置</view>
     </view>
   </view>
 

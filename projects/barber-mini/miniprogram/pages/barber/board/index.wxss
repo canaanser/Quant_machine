@@ -1,0 +1,14 @@
+.chip { padding: 14rpx 24rpx; border-radius: 999rpx; background: rgba(255,255,255,.6); font-size: 26rpx; }
+.chip--on { background: linear-gradient(135deg, var(--gold-2), var(--gold)); color: #2A2205; font-weight: 600; }
+.rank { width: 52rpx; height: 52rpx; line-height: 52rpx; text-align: center; border-radius: 16rpx;
+  background: rgba(20,22,26,.06); color: var(--ink-3); font-weight: 700; font-size: 26rpx; }
+.rank--on { background: linear-gradient(135deg, var(--gold-2), var(--gold)); color: #2A2205; }
+.detail { background: rgba(255,255,255,.55); border: 1rpx solid var(--glass-line); border-radius: 20rpx; padding: 22rpx; margin: 8rpx 0 16rpx; }
+.chart__row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; }
+.chart__k { width: 110rpx; font-size: 26rpx; color: var(--ink-2); }
+.chart__track { flex: 1; height: 22rpx; border-radius: 999rpx; background: rgba(20,22,26,.07); overflow: hidden; }
+.chart__bar { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
+.chart__v { width: 210rpx; text-align: right; font-size: 22rpx; color: var(--ink-3); }
+.bars { display: flex; align-items: flex-end; gap: 10rpx; height: 190rpx; }
+.bars__i { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 8rpx; }
+.bars__b { width: 100%; border-radius: 10rpx 10rpx 6rpx 6rpx; background: linear-gradient(180deg, var(--gold-2), var(--gold)); min-height: 10rpx; }

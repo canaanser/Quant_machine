@@ -14,6 +14,7 @@ Page({
     overtime: 0, servingStartAt: 0, servingPlanMin: 0,
     autoFlow: false,
     goal: 300, goalPct: 0, goalLeft: 300,
+    hideMoney: false, waitingCount: 0, reservedCount: 0,
     currentName: "暂无客人", currentItem: "—",
     picked: null, itemPicked: null, clickCount: 0, queue: [],
     types: [
@@ -35,7 +36,8 @@ Page({
     else if (this._f) { clearInterval(this._f); this._f = null; }
   },
   async flowTick() {
-    try { await api.debugTick({ barberId: "b1" }); await this.refresh(); }
+    // keepMin=4：队列少于 4 位就自动补一位现场客 → **不会出现"空单"**（滚动测试专用）
+    try { await api.debugTick({ barberId: "b1", keepMin: 4 }); await this.refresh(); }
     catch (err) { /* 调试函数未部署时静默 */ }
   },
   startTick() {
@@ -68,6 +70,8 @@ Page({
         goalPct: Math.min(100, Math.round(((s.revenue || 0) / Math.max(1, this.data.goal)) * 100)),
         goalLeft: Math.max(0, this.data.goal - (s.revenue || 0)),
         queue: list,
+        waitingCount: (q.list || []).filter((o) => o.status === "queuing").length,
+        reservedCount: (q.list || []).filter((o) => o.status === "reserved").length,
         currentName: q.serving ? (q.serving.customerName || "顾客") : "暂无客人",
         currentItem: q.serving ? q.serving.serviceName : "—",
         servingId: q.serving ? q.serving._id : null,
@@ -97,6 +101,9 @@ Page({
   },
   goLedger() { wx.navigateTo({ url: "/pages/barber/ledger/index" }); },
   goItems() { wx.navigateTo({ url: "/pages/barber/items/index" }); },
+  goBoard() { wx.navigateTo({ url: "/pages/barber/board/index" }); },
+  goSettings() { wx.navigateTo({ url: "/pages/barber/settings/index" }); },
+  toggleEye() { this.setData({ hideMoney: !this.data.hideMoney }); },
   pickType(e) { this.setData({ picked: e.currentTarget.dataset.k, clickCount: this.data.clickCount + 1 }); },
   pickItem(e) { this.setData({ itemPicked: e.currentTarget.dataset.id, clickCount: this.data.clickCount + 1 }); },
   async start() {
