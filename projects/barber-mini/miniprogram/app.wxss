@@ -11,9 +11,10 @@ page {
      状态只用深浅区分：空闲=墨、忙=中灰、休息=浅灰。**没有彩色**。 */
   --gold: #1D1D1F;      /* 主色 = 墨（按钮描边/强调文字） */
   --gold-2: #3A3A3C;
-  --free: #1D1D1F;      /* 空闲 = 墨 */
-  --busy: #6E6E73;      /* 忙/服务中 = 中灰 */
-  --rest: #C7C7CC;      /* 休息/打烊 = 浅灰 */
+  /* ★ 2026-09-14 老板定稿：面板保持灰阶，但**状态三色**要能一眼分（空闲绿 / 忙黄 / 休息灰） */
+  --free: #34C759;      /* 空闲 = 绿 */
+  --busy: #F5C518;      /* 忙/服务中 = 黄 */
+  --rest: #C7C7CC;      /* 休息/打烊 = 灰 */
   --glass: rgba(255, 255, 255, 0.86);
   --glass-2: rgba(255, 255, 255, 0.72);
   --glass-line: rgba(29, 29, 31, 0.08);
@@ -102,9 +103,9 @@ page {
 .pill { display: inline-flex; align-items: center; gap: 8rpx; padding: 8rpx 18rpx;
   border-radius: 999rpx; font-size: 22rpx; background: rgba(20,22,26,0.06); color: var(--ink-2); }
 .pill--gold { background: linear-gradient(135deg, #F6E7B4, #E8C766); color: #6B5210; font-weight: 600; }
-.pill--free { background: rgba(23,178,106,0.14); color: #0E7A48; }
-.pill--busy { background: rgba(240,160,32,0.22); color: #7A4E00; font-weight: 600; }
-.pill--rest { background: rgba(47,163,122,0.16); color: #14654A; }
+.pill--free { background: rgba(52,199,89,0.16); color: #1D7A38; }
+.pill--busy { background: rgba(245,197,24,0.22); color: #7A6200; font-weight: 600; }
+.pill--rest { background: rgba(199,199,204,0.35); color: #55555A; }
 
 /* ── 统一线性图标（替代 emoji，风格一致；颜色跟金色系）── */
 .ico { background-repeat: no-repeat; background-position: center; background-size: 46rpx 46rpx; }
@@ -124,7 +125,7 @@ page {
   font-size: 32rpx; font-weight: 600; letter-spacing: 1rpx; }
 .btn--gold { background: #FFFFFF; color: var(--ink); border: 2rpx solid var(--ink); box-shadow: none; }
 .btn--dark { background: #FFFFFF; color: var(--ink); border: 2rpx solid var(--ink); }
-.btn--ghost { background: var(--glass-2); border: 1rpx solid var(--glass-line); color: var(--ink); }
+.btn--ghost { background: transparent; border: none; color: var(--ink-2); }   /* 老板：旁边的按钮不要把线框出来 */
 .btn--disabled { opacity: .45; }
 .btn--sm { height: 72rpx; line-height: 72rpx; font-size: 26rpx; border-radius: 18rpx; }
 
