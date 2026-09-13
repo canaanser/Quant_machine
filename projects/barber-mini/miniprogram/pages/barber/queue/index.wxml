@@ -1,0 +1,7 @@
+<view class="card" wx:for="{{list}}" wx:key="_id">
+  <view class="row">
+    <view class="title">{{item.customerName}} · {{item.serviceName}}</view>
+    <view class="tag">{{item.tag}}</view>
+  </view>
+  <view class="muted" style="margin-top:8rpx">{{item.status}}</view>
+</view>

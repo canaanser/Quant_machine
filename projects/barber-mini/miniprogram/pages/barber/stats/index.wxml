@@ -1,0 +1,9 @@
+<view class="card" wx:if="{{s}}">
+  <view class="title">今日概览</view>
+  <view class="row" style="margin-top:16rpx"><text>已完成</text><text>{{s.completedCount}} 单</text></view>
+  <view class="row" style="margin-top:12rpx"><text>收入</text><text>¥{{s.revenue}}</text></view>
+  <view class="row" style="margin-top:12rpx"><text>平均耗时</text><text>{{s.avgServiceMs}} ms</text></view>
+  <view class="muted" style="margin-top:16rpx">按项目：{{s.byServiceCount}}</view>
+  <view class="muted">按客人：{{s.byCustomerType}}</view>
+</view>
+<view class="card" wx:else><view class="muted">统计要连上云环境才有数据；本地先用 mock 也能看到布局。</view></view>

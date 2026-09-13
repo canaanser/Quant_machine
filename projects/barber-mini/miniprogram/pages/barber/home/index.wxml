@@ -1,0 +1,30 @@
+<view class="card">
+  <view class="row">
+    <view class="title">当前服务</view>
+    <view class="muted">{{barber.status === 'busy' ? '服务中' : (barber.status === 'idle' ? '空闲' : '休息')}}</view>
+  </view>
+  <view wx:if="{{barber.currentOrderId}}" class="muted" style="margin-top:12rpx">已用 {{elapsedMin}} 分钟</view>
+  <view wx:else class="muted" style="margin-top:12rpx">现在没有在服务的客人</view>
+  <view class="btn btn-primary" bindtap="finish" style="margin-top:24rpx">完成本单</view>
+</view>
+
+<view class="card">
+  <view class="title">一键状态</view>
+  <view class="row" style="margin-top:20rpx">
+    <view class="btn btn-ghost" style="flex:1;margin-right:12rpx" bindtap="setStatus" data-s="idle">空闲</view>
+    <view class="btn btn-ghost" style="flex:1;margin-right:12rpx" bindtap="setStatus" data-s="busy">忙</view>
+    <view class="btn btn-ghost" style="flex:1" bindtap="setStatus" data-s="rest">休息</view>
+  </view>
+</view>
+
+<view class="card">
+  <view class="title">快捷接单（最多 3 击）</view>
+  <view class="muted" style="margin-top:8rpx">1 选客人 → 2 选项目 → 3 开始</view>
+  <view class="row" style="flex-wrap:wrap;margin-top:16rpx">
+    <view wx:for="{{types}}" wx:key="key" class="chip {{picked === item.key ? 'chip-on' : ''}}" bindtap="pickType" data-key="{{item.key}}">{{item.icon}} {{item.label}}</view>
+  </view>
+  <view class="row" style="flex-wrap:wrap;margin-top:12rpx">
+    <view wx:for="{{items}}" wx:key="_id" class="chip {{itemPicked === item._id ? 'chip-on' : ''}}" bindtap="pickItem" data-id="{{item._id}}">{{item.name}} ¥{{item.price}}</view>
+  </view>
+  <view class="btn btn-primary" style="margin-top:24rpx" bindtap="confirmStart">开始服务</view>
+</view>

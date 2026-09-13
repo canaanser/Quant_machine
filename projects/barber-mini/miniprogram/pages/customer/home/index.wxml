@@ -1,0 +1,8 @@
+<view class="card" style="padding:0">
+  <status-card barber="{{barber}}" waiting="{{waiting}}" etaMin="{{etaMin}}" />
+</view>
+<view class="card">
+  <view class="btn btn-primary" bindtap="goBook">立即预约</view>
+  <view class="btn btn-ghost" style="margin-top:20rpx" bindtap="joinQueue">加入排队</view>
+</view>
+<view class="card muted">说明：预付款用户**仅在同一时间段内**优先排单，不跨时段插队。</view>

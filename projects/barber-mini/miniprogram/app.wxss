@@ -1,0 +1,21 @@
+/* 设计令牌（契约：主色深灰+金；状态色 绿/黄/红；字号≥14px；按钮高≥48px） */
+page {
+  --ink: #2B2B2B;
+  --gold: #C9A227;
+  --free: #1FA84C;
+  --busy: #E8A600;
+  --rest: #D93A3A;
+  --bg: #F5F5F5;
+  --card: #FFFFFF;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 30rpx;           /* ≈15px，≥14px */
+  font-family: -apple-system, "PingFang SC", sans-serif;
+}
+.card { background: var(--card); border-radius: 20rpx; padding: 28rpx; margin: 20rpx; box-shadow: 0 2rpx 12rpx rgba(0,0,0,.06); }
+.btn { height: 96rpx; line-height: 96rpx; border-radius: 16rpx; text-align: center; font-size: 32rpx; } /* ≥48px */
+.btn-primary { background: var(--gold); color: #fff; }
+.btn-ghost { background: #fff; border: 2rpx solid var(--ink); color: var(--ink); }
+.muted { color: #8A8A8A; font-size: 26rpx; }
+.row { display: flex; align-items: center; justify-content: space-between; }
+.title { font-size: 36rpx; font-weight: 600; }
