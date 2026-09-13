@@ -17,6 +17,7 @@ export const api = {
   transition: (d) => call("orderTransition", d),
   setBarberStatus: (d) => call("barberStatusSet", d),
   stats: (d) => call("statsAggregate", d),
+  queue: (d) => call("queueView", d),
 };
 
 export { PRIORITY };

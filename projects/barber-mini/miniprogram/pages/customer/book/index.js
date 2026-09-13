@@ -52,15 +52,19 @@ Page({
     });
   },
   async submit() {
-    const { pickedSlot, pickedItem, pickedType, canSubmit } = this.data;
-    if (!canSubmit) return wx.showToast({ title: "还有没选的", icon: "none" });
+    const { pickedSlot, pickedItem, pickedType } = this.data;
+    // 不依赖派生标志（canSubmit 可能因为渲染时序没同步），直接判三要素
+    if (pickedSlot == null || !pickedItem || !pickedType) {
+      return wx.showToast({ title: "还有没选的", icon: "none" });
+    }
     try {
       await api.createOrder({ barberId: "b1", serviceItemId: pickedItem, customerType: pickedType,
         customerOpenid: "me", customerName: "我", appointmentTime: pickedSlot });
       wx.showToast({ title: "预约成功", icon: "success" });
-      setTimeout(() => wx.switchTab({ url: "/pages/customer/home/index" }), 900);
+      setTimeout(() => wx.switchTab({ url: "/pages/customer/home/index" }), 1200);
     } catch (e) {
-      wx.showToast({ title: "云端未就绪或时段被占", icon: "none" });
+      const msg = String((e && (e.errMsg || e.message)) || e);
+      wx.showModal({ title: "预约失败", content: msg.slice(0, 120), showCancel: false });
     }
   },
 });

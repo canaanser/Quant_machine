@@ -1,7 +1,5 @@
-import { aggregateStats } from "./_shared/orders.js";
-import { cloudStore } from "./cloudstore.js";
+const { aggregateStats } = require("./orders.js");
+const { cloudStore } = require("./cloudstore.js");
+exports.main = async (event) => aggregateStats(cloudStore(), event);
 
-export async function main(event) {
-  const store = cloudStore(event);
-  return aggregateStats(store, event);
-}
+

@@ -25,9 +25,24 @@ Page({
   onShow() { this.refresh(); },
   async refresh() {
     try {
-      const s = await api.stats({ barberId: "b1", fromTs: 0, toTs: 0 });
-      this.setData({ today: s.completedCount || 0, revenue: s.revenue || 0, avgMin: Math.round((s.avgServiceMs || 0) / 60000) });
-    } catch (e) { /* 云端未就绪：保持 0，界面不空 */ }
+      const [s, q] = await Promise.all([
+        api.stats({ barberId: "b1", fromTs: 0, toTs: 0 }),
+        api.queue({ barberId: "b1" }),
+      ]);
+      const list = (q.list || []).map((o) => ({
+        _id: o._id, name: o.customerName || "顾客", serviceName: o.serviceName,
+        statusText: STATUS_TEXT[o.status] || o.status, status: o.status,
+        tag: priorityLabel(o.priority), tagClass: TAG_CLASS[o.priority] || "",
+      }));
+      this.setData({
+        today: s.completedCount || 0, revenue: s.revenue || 0, avgMin: Math.round((s.avgServiceMs || 0) / 60000),
+        queue: list,
+        currentName: q.serving ? (q.serving.customerName || "顾客") : "暂无客人",
+        currentItem: q.serving ? q.serving.serviceName : "—",
+        servingId: q.serving ? q.serving._id : null,
+      });
+      if (q.serving) this.applyStatus("busy");
+    } catch (e) { /* 云端未就绪：保持占位，界面不空 */ }
   },
   pickType(e) { this.setData({ picked: e.currentTarget.dataset.k, clickCount: this.data.clickCount + 1 }); },
   pickItem(e) { this.setData({ itemPicked: e.currentTarget.dataset.id, clickCount: this.data.clickCount + 1 }); },
@@ -45,11 +60,14 @@ Page({
   },
   async finish() {
     try {
-      const s = await api.stats({ barberId: "b1", fromTs: 0, toTs: 0 });   // 触发一次云端交互（保持接口活性）
-      this.setData({ today: (s.completedCount || 0) + 1, revenue: (s.revenue || 0) + 38 });
+      const id = this.data.servingId || ((this.data.queue || []).find((o) => o.status === "serving") || {})._id;
+      if (!id) return wx.showToast({ title: "当前没有在服务的单", icon: "none" });
+      await api.transition({ orderId: id, to: "completed" });
+      this.setData({ servingId: null });
       this.applyStatus("idle");
+      await this.refresh();
       wx.showToast({ title: "本单完成", icon: "success" });
-    } catch (e) { wx.showToast({ title: "云端未就绪", icon: "none" }); }
+    } catch (e) { wx.showToast({ title: "完成失败：" + String(e.errMsg || e).slice(0, 18), icon: "none" }); }
   },
   async setStatus(e) {
     const s = e.currentTarget.dataset.s;

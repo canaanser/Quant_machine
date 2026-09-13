@@ -36,7 +36,7 @@
         <view class="lbl" style="color:rgba(255,255,255,.62)">分钟</view>
       </view>
     </view>
-    <view class="btn btn--gold mt20" bindtap="finish">完成本单</view>
+    <view class="btn btn--gold mt20" id="finishBtn" bindtap="finish">完成本单</view>
   </view>
 
   <view class="glass">
@@ -45,9 +45,9 @@
       <text class="muted">顾客端会立刻看到</text>
     </view>
     <view class="seg mt16">
-      <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" data-s="idle" bindtap="setStatus">空闲</view>
-      <view class="seg__i {{status === 'busy' ? 'seg__i--on' : ''}}" data-s="busy" bindtap="setStatus">忙</view>
-      <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" data-s="rest" bindtap="setStatus">休息</view>
+      <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" id="stIdle" data-s="idle" bindtap="setStatus">空闲</view>
+      <view class="seg__i {{status === 'busy' ? 'seg__i--on' : ''}}" id="stBusy" data-s="busy" bindtap="setStatus">忙</view>
+      <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" id="stRest" data-s="rest" bindtap="setStatus">休息</view>
     </view>
   </view>
 
@@ -58,20 +58,20 @@
     </view>
     <view class="muted mt8">选客人 → 选项目 → 开始服务</view>
     <view class="grid4 mt16">
-      <view wx:for="{{types}}" wx:key="k" class="type {{picked === item.k ? 'type--on' : ''}}"
+      <view wx:for="{{types}}" wx:key="k" id="type-{{item.k}}" class="type {{picked === item.k ? 'type--on' : ''}}"
             data-k="{{item.k}}" bindtap="pickType">
         <view class="type__ico">{{item.ico}}</view>
         <view class="type__t">{{item.label}}</view>
       </view>
     </view>
     <view class="grid3 mt16">
-      <view wx:for="{{items}}" wx:key="_id" class="type {{itemPicked === item._id ? 'type--on' : ''}}"
+      <view wx:for="{{items}}" wx:key="_id" id="item-{{item._id}}" class="type {{itemPicked === item._id ? 'type--on' : ''}}"
             data-id="{{item._id}}" bindtap="pickItem">
         <view class="type__t" style="font-size:28rpx;font-weight:600">{{item.name}}</view>
         <view class="type__t">¥{{item.price}}</view>
       </view>
     </view>
-    <view class="btn btn--gold mt20" bindtap="start">开始服务</view>
+    <view class="btn btn--gold mt20" id="startBtn" bindtap="start">开始服务</view>
   </view>
 
   <view class="glass">

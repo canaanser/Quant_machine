@@ -1,7 +1,5 @@
-import { setBarberStatus } from "./_shared/orders.js";
-import { cloudStore } from "./cloudstore.js";
+const { setBarberStatus } = require("./orders.js");
+const { cloudStore } = require("./cloudstore.js");
+exports.main = async (event) => setBarberStatus(cloudStore(), event);
 
-export async function main(event) {
-  const store = cloudStore(event);
-  return setBarberStatus(store, event);
-}
+

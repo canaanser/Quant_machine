@@ -30,7 +30,7 @@
       <text class="muted">绿=可约 · 灰=已约</text>
     </view>
     <view class="slots mt20">
-      <view wx:for="{{slots}}" wx:key="ts"
+      <view wx:for="{{slots}}" wx:key="ts" id="slot-{{index}}"
             class="slot {{item.busy ? 'slot--busy' : 'slot--free'}} {{pickedSlot === item.ts ? 'slot--on' : ''}}"
             data-ts="{{item.ts}}" bindtap="pickSlot">{{item.label}}</view>
     </view>
@@ -43,7 +43,7 @@
       <text class="muted">按项目时长自动锁时段</text>
     </view>
     <view class="items mt16">
-      <view wx:for="{{items}}" wx:key="_id"
+      <view wx:for="{{items}}" wx:key="_id" id="item-{{item._id}}"
             class="cardx {{pickedItem === item._id ? 'cardx--on' : ''}}"
             data-id="{{item._id}}" bindtap="pickItem">
         <view class="item__ico ico ico--{{item.icon}}"></view>
@@ -63,7 +63,7 @@
       <text class="muted">用于统计</text>
     </view>
     <view class="grid4 mt20">
-      <view wx:for="{{types}}" wx:key="k"
+      <view wx:for="{{types}}" wx:key="k" id="type-{{item.k}}"
             class="type {{pickedType === item.k ? 'type--on' : ''}}"
             data-k="{{item.k}}" bindtap="pickType">
         <view class="type__ico">{{item.ico}}</view>
@@ -83,6 +83,6 @@
   </view>
 
   <view class="stick">
-    <view class="btn {{canSubmit ? 'btn--gold' : 'btn--gold btn--disabled'}}" bindtap="submit">确认预约</view>
+    <view class="btn {{canSubmit ? 'btn--gold' : 'btn--gold btn--disabled'}}" id="submitBtn" bindtap="submit">确认预约</view>
   </view>
 </view>
