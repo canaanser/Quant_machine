@@ -20,8 +20,15 @@ for (const fn of fns) {
   fs.mkdirSync(dest, { recursive: true });
   for (const f of sharedFiles) { fs.copyFileSync(path.join(SHARED, f), path.join(dest, f)); n++; }
   for (const f of commonFiles) { fs.copyFileSync(path.join(COMMON, f), path.join(fd, f)); n++; }   // 适配层也各函数一份
-  // 每函数一份 package.json：声明 ESM，Node 侧才能 import（微信云函数 Node16+ 支持 ESM）
+  // 每函数一份 package.json：声明 ESM + 依赖（部署时用 --remote-npm-install 在云端装依赖）
   const pj = path.join(fd, "package.json");
-  if (!fs.existsSync(pj)) { fs.writeFileSync(pj, JSON.stringify({ name: fn, version: "1.0.0", type: "module" }, null, 2) + "\n", "utf8"); n++; }
+  const manifest = {
+    name: fn,
+    version: "1.0.0",
+    type: "module",
+    main: "index.js",
+    dependencies: { "wx-server-sdk": "~2.6.3" },
+  };
+  fs.writeFileSync(pj, JSON.stringify(manifest, null, 2) + "\n", "utf8"); n++;
 }
 console.log(`synced ${sharedFiles.length} shared + ${commonFiles.length} common -> ${fns.length} cloudfunctions (${n} copies)`);

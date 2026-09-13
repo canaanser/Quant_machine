@@ -1,5 +1,5 @@
 // 云开发初始化。ENV_ID 留桩：云环境 ID 到手后填这里（或走 DYNAMIC_CURRENT_ENV）。
-const ENV_ID = "";   // TODO: 云环境 ID（例 cloud1-xxxxxxxx）
+const ENV_ID = "cloud1-d2g4axdnz488a6d75";   // 云环境 ID（老板 2026-09-14 建）
 
 App({
   globalData: { barberId: "b1", envId: ENV_ID },
