@@ -5,6 +5,7 @@
   "description": "理发师智能接单与预约排队小程序（微信云开发）——纯逻辑与单测层",
   "scripts": {
     "test": "node --test",
-    "sync": "node scripts/sync-shared.mjs"
+    "sync": "node scripts/sync-shared.mjs",
+    "demo": "node scripts/demo.mjs"
   }
 }
