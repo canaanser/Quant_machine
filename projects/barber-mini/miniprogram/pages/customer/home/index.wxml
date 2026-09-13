@@ -5,17 +5,39 @@
 </view>
 
 <view class="page">
+  <!-- 店头 -->
   <view class="head">
     <view class="head__ava">明</view>
     <view class="grow">
       <view class="head__name">阿明理发</view>
-      <view class="head__sub">今天营业中 · 更新 {{updated}}</view>
+      <view class="head__sub">今天营业 {{openTime}}–{{closeTime}} · 更新 {{nowText}}</view>
     </view>
     <view class="pill pill--{{tone}}">
       <view class="dot dot--{{tone}} dot--pulse"></view>{{statusText}}
     </view>
   </view>
 
+  <!-- ① 24 小时时间轴：从现在到打烊，后面每一位都在轴上（排队+预约合计） -->
+  <view class="tl24">
+    <view class="tl24__head">
+      <text class="lbl">现在 {{nowText}}</text>
+      <text class="lbl">后面还有 {{behindCount}} 位（含预约）</text>
+    </view>
+    <view class="tl24__track">
+      <view class="tl24__rest" style="width:{{restPct}}%"></view>
+      <view class="tl24__now" style="left:{{nowPct}}%"></view>
+      <view class="tl24__dot" wx:for="{{marks}}" wx:key="i" style="left:{{item.pct}}%">
+        <text class="tl24__face">{{item.face}}</text>
+      </view>
+    </view>
+    <view class="tl24__foot">
+      <text class="lbl">{{openTime}}</text>
+      <text class="lbl">越往右越晚</text>
+      <text class="lbl">{{closeTime}} 打烊</text>
+    </view>
+  </view>
+
+  <!-- ② 状态卡：现在忙不忙、要等多久 -->
   <view class="glass glass--dark">
     <view class="row row--between">
       <view class="grow">
@@ -33,49 +55,38 @@
     </view>
     <view class="row row--between mt12">
       <text class="muted" style="color:rgba(255,255,255,.72)">前面 {{waiting}} 位</text>
-      <text class="muted" style="color:rgba(255,255,255,.72)">更新于 {{updated}}</text>
+      <text class="muted" style="color:rgba(255,255,255,.72)">今日已服务 {{done}} 单</text>
     </view>
-    <view class="row row--between mt16">
-      <view class="faces">
-        <view class="face" wx:for="{{faces}}" wx:key="*this">{{item}}</view>
+  </view>
+
+  <!-- ③ 先选"我是谁 / 做什么"，再决定排队还是预约 -->
+  <view class="glass">
+    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">我是谁</text></view>
+    <view class="grid4">
+      <view wx:for="{{types}}" wx:key="k" id="ctype-{{item.k}}" class="pick {{pickedType === item.k ? 'pick--on' : ''}}"
+            data-k="{{item.k}}" bindtap="pickType">
+        <view class="pick__ico">{{item.ico}}</view>
+        <view class="pick__t">{{item.label}}</view>
       </view>
-      <text class="muted" style="color:rgba(255,255,255,.72)">在排队</text>
+    </view>
+    <view class="sec mt24"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">做什么</text></view>
+    <view class="grid4">
+      <view wx:for="{{items}}" wx:key="_id" id="citem-{{item._id}}" class="pick {{pickedItem === item._id ? 'pick--on' : ''}}"
+            data-id="{{item._id}}" bindtap="pickItem">
+        <view class="pick__ico ico ico--{{item.icon}}"></view>
+        <view class="pick__t">{{item.name}}</view>
+        <view class="pick__s">{{item.min}}分 ¥{{item.price}}</view>
+      </view>
     </view>
   </view>
 
-  <view class="tiles">
-    <view class="tile">
-      <view class="tile__k">等位</view>
-      <view class="tile__v">{{waiting}}<text class="tile__u">位</text></view>
-    </view>
-    <view class="tile">
-      <view class="tile__k">预计等待</view>
-      <view class="tile__v">{{etaMin}}<text class="tile__u">分钟</text></view>
-    </view>
-    <view class="tile">
-      <view class="tile__k">今日已服务</view>
-      <view class="tile__v">{{done}}<text class="tile__u">单</text></view>
-    </view>
+  <!-- ④ 两个动作：**排队在左（主）**，预约在右（提前预约） -->
+  <view class="grid2">
+    <view class="btn btn--gold" id="joinBtn" bindtap="joinQueue">立即排队</view>
+    <view class="btn btn--ghost" id="bookBtn" bindtap="goBook">提前预约</view>
   </view>
 
-  <view class="grid2 mt24">
-    <view class="btn btn--gold" id="bookBtn" bindtap="goBook">立即预约</view>
-    <view class="btn btn--ghost" id="joinBtn" bindtap="joinQueue">加入排队</view>
-  </view>
-
-  <view class="glass mt24">
-    <view class="sec">
-      <view class="sec__bar"></view>
-      <text class="sec__t" style="font-size:30rpx">今天接着可约</text>
-      <text class="muted grow" style="text-align:right">点一下去预约</text>
-    </view>
-    <view class="tl">
-      <view wx:for="{{slots}}" wx:key="ts"
-            class="tl__i {{item.state === 'now' ? 'tl__i--now' : (item.busy ? 'tl__i--busy' : 'tl__i--free')}}"
-            bindtap="goBook">{{item.label}}</view>
-    </view>
-  </view>
-
+  <!-- 我的单 -->
   <view class="glass mt24" wx:if="{{mine}}">
     <view class="row row--between">
       <text class="h2">我的单</text>
@@ -89,17 +100,6 @@
       <view class="num--sm">{{mine.eta}}</view>
     </view>
     <view class="bar mt16"><view class="bar__in" style="width:{{mine.progress}}%"></view></view>
-  </view>
-
-  <!-- 服务与价格完整清单在「预约」页（这里只放入口，保持首页干净） -->
-  <view class="glass glass--tight">
-    <view class="row row--between" id="bookEntry" bindtap="goBook">
-      <view>
-        <view class="item__t">服务与价格</view>
-        <view class="item__s">剪发 ¥38 · 烫发 ¥288 · 染发 ¥258 · 护理 ¥128</view>
-      </view>
-      <text class="muted">去预约 ›</text>
-    </view>
   </view>
 
   <view class="glass glass--tight center">

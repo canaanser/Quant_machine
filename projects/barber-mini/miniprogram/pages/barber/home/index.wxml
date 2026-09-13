@@ -57,7 +57,28 @@
       <view class="btn btn--gold thumbbtn {{servingId ? '' : 'btn--disabled'}}" id="finishBtn" bindtap="finish">
         {{servingId ? '完成本单' : '当前没有在服务的单'}}
       </view>
-      <view class="muted center mt8">忙的时候只需要这一个键；其他都在右边一屏 →</view>
+      <view class="muted center mt8" wx:if="{{!relay.show}}">忙的时候只需要这一个键；接单在右边一屏 →</view>
+
+      <!-- 接力条：完成本单后滑出。往上拖松手=继续；1 秒不动=休息 -->
+      <view class="relay {{relay.show ? 'relay--in' : ''}}" wx:if="{{relay.show}}">
+        <view class="relay__bar"><view class="relay__fill" style="width:{{relay.pct}}%"></view></view>
+        <view class="relay__row">
+          <view class="relay__card" id="relayCard"
+                style="transform: translateY({{relay.dragY}}rpx);"
+                bindtouchstart="relayStart" bindtouchmove="relayMove" bindtouchend="relayEnd">
+            <view class="relay__ava">{{relay.next.face}}</view>
+            <view class="grow">
+              <view class="item__t">{{relay.next.name}}</view>
+              <view class="item__s">{{relay.next.serviceName}} · {{relay.next.tag}}</view>
+            </view>
+            <view class="relay__hint">↑ 拖我 = 继续</view>
+          </view>
+        </view>
+        <view class="relay__foot">
+          <text class="muted">{{relay.counting ? '松手= 接下一位；' + relay.left + ' 秒后自动进入休息' : '已进入休息'}}</text>
+          <view class="pill" wx:if="{{!relay.counting}}" id="resumeBtn" bindtap="resumeWork">继续接单</view>
+        </view>
+      </view>
     </view>
   </swiper-item>
 

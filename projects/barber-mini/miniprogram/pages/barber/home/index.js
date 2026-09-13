@@ -17,6 +17,7 @@ Page({
     servingId: null, servingStartAt: 0, servingPlanMin: 0,
     picked: null, itemPicked: null, clickCount: 0,
     queue: [], queueTop: [], autoFlow: false,
+    relay: { show: false, counting: false, left: 1, pct: 0, dragY: 0, next: { name: "", face: "🧑", serviceName: "", tag: "" } },
     page: 0, currentFace: "🧑", currentTypeText: "", currentTag: "",
     types: [
       { k: "woman", label: "女士", ico: "👩" }, { k: "man", label: "男士", ico: "👨" },
@@ -90,8 +91,62 @@ Page({
       await api.transition({ orderId: id, to: "completed" });
       this.applyStatus("idle");
       await this.refresh();
-      wx.showToast({ title: "本单完成", icon: "success" });
+      this.startRelay();                                  // ★ 完成 → 进入"接力/休息"决策
     } catch (e) { wx.showModal({ title: "完成失败", content: String((e && (e.errMsg || e.message)) || e).slice(0, 110), showCancel: false }); }
+  },
+  // ★ 接力决策：拖这张卡向上一松手 = 继续接这位；1 秒内不动 = 休息（防误触）
+  startRelay() {
+    const next = (this.data.queue || []).find((o) => o.status !== "serving");
+    if (!next) {
+      wx.showToast({ title: "没人排队，先歇会儿", icon: "none" });
+      this.setData({ "relay.show": false });
+      return;
+    }
+    this._relayY0 = null; this._relayLeft = 1.0;
+    this.setData({
+      relay: { show: true, counting: true, left: 1, pct: 0, dragY: 0,
+               next: { name: next.name, face: next.face, serviceName: next.serviceName, tag: next.tag } },
+    });
+    if (this._rt) clearInterval(this._rt);
+    this._rt = setInterval(() => {
+      this._relayLeft = Math.max(0, this._relayLeft - 0.1);
+      this.setData({ "relay.left": Math.ceil(this._relayLeft), "relay.pct": Math.round((1 - this._relayLeft) * 100) });
+      if (this._relayLeft <= 0) { clearInterval(this._rt); this._rt = null; this.relayToRest(); }
+    }, 100);
+  },
+  relayStart(e) { this._relayY0 = e.touches[0].clientY; },
+  relayMove(e) {
+    if (this._relayY0 == null) return;
+    const dy = Math.min(0, e.touches[0].clientY - this._relayY0);     // 只允许往上拖
+    this.setData({ "relay.dragY": dy });                              // px→rpx 近似即可（视觉反馈）
+  },
+  async relayEnd(e) {
+    const y0 = this._relayY0; this._relayY0 = null;
+    const dy = y0 == null ? 0 : (e.changedTouches[0].clientY - y0);
+    this.setData({ "relay.dragY": 0 });
+    if (dy < -40) {                                                   // 往上一拖并松手 = 继续
+      if (this._rt) { clearInterval(this._rt); this._rt = null; }
+      const next = (this.data.queue || []).find((o) => o.status !== "serving");
+      if (!next) return this.relayToRest();
+      try {
+        if (next.status === "reserved") await api.transition({ orderId: next._id, to: "queuing" });
+        await api.transition({ orderId: next._id, to: "serving" });
+        this.setData({ "relay.show": false });
+        this.applyStatus("busy");
+        this.refresh();
+        wx.showToast({ title: "继续：" + next.name, icon: "success" });
+      } catch (err) { wx.showModal({ title: "接不上", content: String((err && (err.errMsg || err.message)) || err).slice(0, 100), showCancel: false }); }
+    }
+  },
+  relayToRest() {
+    this.setData({ "relay.counting": false, "relay.pct": 100 });
+    this.applyStatus("rest");
+    api.setBarberStatus({ barberId: "b1", status: "rest" }).catch(() => {});
+  },
+  async resumeWork() {
+    this.setData({ "relay.show": false });
+    try { await api.setBarberStatus({ barberId: "b1", status: "idle" }); this.applyStatus("idle"); } catch (e) {}
+    this.refresh();
   },
   async setStatus(e) {
     const s = e.currentTarget.dataset.s;
