@@ -17,8 +17,13 @@ projects/barber-mini/
 
 ```
 cd projects/barber-mini
-npm test
+node --test          # 推荐：完全不过 PowerShell/npm
 ```
+
+> ⚠️ **Windows 上别直接敲 `npm test`**：PowerShell 的脚本执行策略会挡 `npm.ps1`
+> （报 `UnauthorizedAccess / about_Execution_Policies`）。两条替代：
+> ① `npm.cmd test`（`.cmd` 不受该策略限制）；② 直接 `node --test`（连 npm 都不用）。
+> 想一劳永逸：`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`（**不需要管理员**）。
 
 ## 三条硬约束（违反即打回）
 
