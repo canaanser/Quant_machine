@@ -56,6 +56,33 @@ def held_codes():
         return []
 
 
+def data_probe(codes, asof, n=5):
+    """取数探针（老板 2026-09-14 交办背景）：
+
+    `scan()` 对"**取不到数**"和"**没买点**"都返回 None —— 于是"触发买点 0 只"这句话
+    分不清是哪种。这里在 **0 候选时**额外探 5 只票，把两种情形分开：
+      返回 (探针数, 取不到日线数, 取到日线但缺 asof 当日K线数)
+    """
+    from core.data_loader.freestockdb import fetch_daily_qfq_single
+    want = list(codes[:n])
+    nodata = noasof = 0
+    for c in want:
+        try:
+            df = fetch_daily_qfq_single(c, "2025-01-01", "2026-12-31")
+        except Exception:
+            df = None
+        if df is None or len(df) < 250:
+            nodata += 1
+            continue
+        try:
+            ds = set(str(d.date()).replace("-", "") for d in df.index)
+            if asof not in ds:
+                noasof += 1
+        except Exception:
+            noasof += 1
+    return len(want), nodata, noasof
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser()
@@ -91,8 +118,17 @@ def main():
         print(f"候选缓存已存 {jp.name} ({len(sigs)} 只)")
     print(f"\n触发买点 {len(sigs)} 只")
     if not sigs:
+        n, nodata, noasof = data_probe(big, asof, 5)
+        if n and nodata == n:
+            print(f"[DATA-UNAVAILABLE] 探针 {n} 只**全部取不到日线**（asof={asof}）"
+                  f" → 这不是'0 买点'，是数据链断了；请先查数据同步/取数，再谈选股")
+            return 3
+        if n and noasof == n:
+            print(f"[DATA-STALE] 探针 {n} 只都取到日线、但**没有 {asof} 当日K线**"
+                  f" → 扫描早于当日数据落库（时序问题，不是选股问题）")
+            return 4
         print("无候选 -> 明日不补买(engine 执行段自动判定卖)")
-        return
+        return 0
     # 分片: 每片上限 per, 100股整手; 逐步吃预算
     budget = a.cash * 0.96
     plan, rest = [], budget
@@ -138,4 +174,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)          # ★ 退出码要给出去：0=正常（含"确实没买点"）；3=数据取不到；4=当日K线还没落库
