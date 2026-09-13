@@ -24,8 +24,9 @@ node tools/mobile_chat/wake.mjs --me codex-看板编辑 --msg "【门铃】请�
 1. **你点一次**：Codex 里 **新建一个对话框**；
 2. **你亲手把这一句粘进新窗**（把名字换成要重生的线）：
    ```
-   读 docs/reports/REBIRTH_codex-director_202609130819.md，跑 node tools/mobile_chat/whoami.mjs --me codex-总监，清空自己信箱，然后回看板一行现状。
+   读 docs/reports/REBIRTH_codex-director_202609130819.md，跑 node tools/mobile_chat/whoami.mjs --me codex-总监；然后把信箱读完、该办的办完、回看板一行现状。注意 pending_*.ndjson 是只追加真源——不删、不搬、不归档。
    ```
+   （**别写"清空信箱"**：那四个字会被读成"删掉信箱文件"。正确意思是"读完、办完、回一行"，文件一个字不许动。）
 3. **绑定**（回本窗/PowerShell 跑；`<新窗的 threadId>` 从新窗或账本拿）：
    ```powershell
    cd E:\stockgate\Quant_Alpha_System

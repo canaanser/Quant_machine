@@ -26,6 +26,8 @@
 - **必读按你的层级看 `docs/READING.md`**（全局必读六项 + `member`/`lead`/`director` 三层各自加什么）；**读到哪个层级，就享哪个层级的发言权**。
 - **先读自己的信箱**：`outputs/dialog/pending_<slug>.ndjson`（镜像到工位 `.private/<slug>/inbox.md`）。
   老板 @ 你但投不进来时，原话就落在那里。
+  **它是"只追加"的真源：不删、不搬、不归档**——"**读完、办完、回一行**"就叫清空，**没有别的实现**
+  （更别去找工具；也**别在口令里写"清空信箱"**，那四个字会被读成"删掉文件"）。
 - 公共入口：发板 `POST /api/post {author,target,body}`（**署名必须用你自己的看板名**，泛称/未注册名会被拒收）、
   投信 `POST /api/mail {to,from,body}`、名册 `docs/BOARD_NAMES.md`。
 - **项目专属开工清单**：`docs/PROJECT_RULES.md`（本项目要读哪几份、哪些文件不能碰，都写在那里）。
