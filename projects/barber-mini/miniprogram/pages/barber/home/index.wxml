@@ -120,18 +120,14 @@
         </view>
       </view>
 
-      <view class="glass">
-        <view class="row row--between">
-          <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">排队明细</text></view>
-          <view class="pill pill--gold" id="queueAll" bindtap="goQueue">全部 ›</view>
-        </view>
-        <view class="item" wx:for="{{queue}}" wx:key="_id">
-          <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
-          <view class="grow">
-            <view class="item__t">{{item.face}} {{item.name}}</view>
-            <view class="item__s">{{item.serviceName}} · {{item.statusText}}</view>
+      <!-- 排队明细不再重复列（第一屏的头像条已经够了），只留一个入口 -->
+      <view class="glass glass--tight">
+        <view class="row row--between" id="queueAll" bindtap="goQueue">
+          <view>
+            <view class="item__t">排队详情</view>
+            <view class="item__s">{{queue.length}} 位 · 顺序与规则</view>
           </view>
-          <view class="pill {{item.tagClass}}">{{item.tag}}</view>
+          <text class="muted">去看 ›</text>
         </view>
       </view>
 

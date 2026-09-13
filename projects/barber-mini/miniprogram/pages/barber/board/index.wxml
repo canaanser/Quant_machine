@@ -52,7 +52,7 @@
   <!-- ③ 忙闲时段（下班一看就知道今天有多忙 → 成就感） -->
   <view class="glass">
     <view class="row row--between">
-      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">今天忙不忙（按时段）</text></view>
+      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">忙不忙（{{openHour}}–{{closeHour}} 点）</text></view>
       <text class="muted">柱子越高越忙</text>
     </view>
     <view class="bars mt20">

@@ -16,12 +16,14 @@ Page({
     avgMinText: "0 分", rank: [], customers: [], byService: [], byType: [], byHour: [], byDay: [],
     hideMoney: false, showCustomers: false, showMore: false, openKey: "",
     goal: 300, goalPct: 0, goalLeft: 300,
+    openHour: 9, closeHour: 21,
   },
   onShow() { this.load(); },
   async load() {
     try {
       const b = await api.board({ barberId: "b1", range: this.data.range });
       const goal = await this.loadGoal();
+      await this.loadHours();
       const barMax = Math.max(1, ...b.byService.map((x) => x.count));
       const hourMax = Math.max(1, ...b.byHour.map((x) => x.count));
       const am = Math.round((b.summary.avgMs || 0) / 60000);
@@ -33,7 +35,8 @@ Page({
         goalLeft: Math.max(0, goal - (b.summary.revenue || 0)),
         byService: b.byService.map((x) => ({ ...x, pct: Math.round((x.count / barMax) * 100), avgMin: Math.round(x.ms / Math.max(1, x.count) / 60000) })),
         byType: b.byType.map((x) => ({ ...x, label: TYPE_LABEL[x.type] || x.type })),
-        byHour: b.byHour.map((x) => ({ ...x, h: Math.round((x.count / hourMax) * 150) + 10 })),
+        // ★ 时段柱状**铺满营业时间**（空时段也留柱子），看起来才像"今天有多忙"
+        byHour: this.fillHours(b.byHour, hourMax),
         byDay: b.byDay.slice(-14).reverse(),
       });
       this.applySort();
@@ -47,6 +50,26 @@ Page({
       const r = await db.collection("barbers").doc("b1").get();
       return Number((r.data || {}).dailyGoal || 0) || 300;
     } catch (e) { return 300; }
+  },
+  async loadHours() {
+    try {
+      const db = wx.cloud.database();
+      const r = await db.collection("barbers").doc("b1").get();
+      const bar = r.data || {};
+      const toH = (s, fb) => { const m = /^(\d{1,2}):/.exec(String(s || "")); return m ? Number(m[1]) : fb; };
+      this.setData({ openHour: toH(bar.openTime, 9), closeHour: toH(bar.closeTime, 21) });
+    } catch (e) { this.setData({ openHour: 9, closeHour: 21 }); }
+  },
+  /** 把营业时段每一小时都补出来（没单的小时高度=最小），柱子才连成"一整天的形状" */
+  fillHours(hours, hourMax) {
+    const map = {};
+    (hours || []).forEach((x) => { map[x.hour] = x.count; });
+    const out = [];
+    for (let h = this.data.openHour; h <= this.data.closeHour; h++) {
+      const c = map[h] || 0;
+      out.push({ hour: h, count: c, h: Math.round((c / hourMax) * 150) + (c ? 14 : 6) });
+    }
+    return out;
   },
   applySort() {
     const b = this.data.b; const key = this.data.sort;

@@ -18,7 +18,15 @@ Page({
     summary: { time: "未选", item: "未选", type: "未选", price: 0 },
     canSubmit: false,
   },
-  onLoad() { this.buildSlots(); },
+  onLoad(options) {
+    // ★ 接住首页选好的「我是谁 / 做什么」——不用让顾客再选一遍
+    const patch = {};
+    if (options && options.item) patch.pickedItem = options.item;
+    if (options && options.type) patch.pickedType = options.type;
+    if (Object.keys(patch).length) this.setData(patch);
+    this.buildSlots();
+    this.syncSummary();
+  },
   buildSlots() {
     const base = new Date(); base.setMinutes(0, 0, 0);
     const slots = [];
