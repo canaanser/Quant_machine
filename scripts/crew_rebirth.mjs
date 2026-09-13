@@ -67,6 +67,62 @@ const clip = (s, n = 80) => {
 };
 
 /**
+ * §三「未结」自动草稿（老板 2026-09-13 09:1x 定："积压不会自动跟着走"）。
+ * 活样本：08:19 那次重生的 §三 交出去时原文就是 `（待填）`——**等于没交**，新实例只能从信箱自己拼。
+ * 这里把散在**卡 / 信箱 / 合入队列 / 我最近一条板行**里的"我的活"抓成一页草稿：出发的人删改即可，不从空白写。
+ */
+function draftOpenItems(name, meta) {
+  const slug = meta.slug || "";
+  const out = [];
+  const taskDir = path.join(ROOT, "docs", "tasks");                       // ① 卡：提到我，且还有"待…"
+  let cards = [];
+  try { cards = fs.readdirSync(taskDir).filter((f) => f.endsWith(".md")); } catch { /* 没有就算了 */ }
+  for (const f of cards) {
+    let t = "";
+    try { t = fs.readFileSync(path.join(taskDir, f), "utf8"); } catch { continue; }
+    if (!t.includes(name)) continue;
+    const lines = t.split(/\r?\n/);
+    let idx = -1;                                                     // 优先取卡里的「未结」小节，
+    for (let i = 0; i < lines.length; i++) if (/^#{1,6}\s*.*未结/.test(lines[i])) idx = i;
+    let picked = [];
+    if (idx >= 0) {                                                   // 那里才是"欠着的活"，
+      for (let i = idx + 1; i < lines.length && picked.length < 2; i++) {
+        if (/^#{1,6}\s/.test(lines[i])) break;
+        const l = lines[i].trim();
+        if (!l || l.startsWith("<!--")) continue;
+        picked.push(l.replace(/^\s*[-|]\s*/, ""));
+      }
+    }
+    if (!picked.length) {                                             // 没有那一节，才退回关键词捞一句
+      const pend = lines.filter((l) => /(待你|等你|待老板|待批|待验收|待人拍板|待合)/.test(l));
+      if (pend.length) picked = [pend[pend.length - 1].trim().replace(/^\s*[-|]\s*/, "")];
+    }
+    if (!picked.length) continue;
+    out.push(`- 卡 \`${f.replace(/\.md$/, "")}\`：${clip(picked.join(" / "), 70)}`);
+  }
+  const since = Date.now() - 24 * 3600e3;                                  // ② 信箱里点名要我动的信（近 24h）
+  for (const r of readNdjson(path.join(ROOT, "outputs", "dialog", `pending_${slug}.ndjson`))) {
+    const m = tsMs(r.ts);
+    if (m === null || m < since) continue;
+    if (!/(要你一句话|等你|待你|请批复|待批|请裁定)/.test(String(r.body || ""))) continue;
+    out.push(`- 信 \`${r.ts}\`（${r.from || "?"}）：${clip(String(r.body), 70)}`);
+  }
+  const mdir = path.join(ROOT, "outputs", "merge");                        // ③ 没跑完的合入申请
+  try {
+    for (const f of fs.readdirSync(mdir)) {
+      if (!/^merge_request.*\.json$/.test(f)) continue;
+      let j = {};
+      try { j = JSON.parse(fs.readFileSync(path.join(mdir, f), "utf8")); } catch { /* 坏文件也列出来 */ }
+      out.push(`- 合入队列 \`${j.task || "?"}\`（${j.branch || "?"}）：${f}`);
+    }
+  } catch { /* 没有队列目录 */ }
+  const mine = readNdjson(path.join(ROOT, "outputs", "dialog", "dialog.ndjson")).filter((r) => r.from === name);
+  const last = mine[mine.length - 1];                                      // ④ 我最近一条板行（若写了"未结"）
+  if (last && /未结/.test(String(last.body || ""))) out.push(`- 我最近一条板行（${last.ts}）：${clip(last.body, 90)}`);
+  return out.slice(0, 12);
+}
+
+/**
  * ★ 2026-09-13 08:4x（老板："把他这次错的问题，用固化方法来解决"）——**差量页**。
  *
  * 根因不是新实例判错：**重生只继承了"叫醒水位"，没继承"内容"**。水位说"这封推过了"，新实例
@@ -130,6 +186,7 @@ function packFor(name, meta, delta) {
   const slug = meta.slug || "";
   const drel = delta ? delta.rel : "（差量页未生成——别开工，先让总监补）";
   const dmix = delta ? `近 ${delta.hours} 小时：信箱 ${delta.mail} 条 + 看板 ${delta.board} 条 = ${delta.count} 条` : "";
+  const openItems = draftOpenItems(name, meta);
   return `# 重生包 · \`${name}\`（工号不变：${slug}）
 
 > 老板 2026-09-13 08:3x：「**个人重生：全自动、资产不落、号不变、只有 ID 变**」。
@@ -154,9 +211,11 @@ function packFor(name, meta, delta) {
 
 ## 三、未结（本线待办，重生不丢）
 
-<!-- 由本人填写或从卡/信箱同步；如实列，"无"就写无 -->
-<!-- 判据：每条未结都要能对上差量页里的一条时间戳；对不上 = 过期未结，划掉，别报给老板 -->
-- （待填）
+<!-- ★★ 下面是脚本自动抓的**草稿**（卡 / 信箱 / 合入队列 / 我最近一条板行）。
+     **出发的人必须删改后再交，不许原样交出去**：① 已办结的划掉 ② 缺"等谁"的补上
+     ③ 一条都没有就写"无"——**别留空白**（08:19 那次就是留了"（待填）"，等于没交）。
+     判据：每条都要能对上差量页里的一条时间戳；对不上 = 过期未结，划掉，别报给老板。 -->
+${openItems.length ? openItems.join("\n") : "- （自动草稿没抓到——**要么你手上真没有积压，要么它不在账上；后者更危险，自己写清楚**）"}
 
 ## 四、资产指针（都在盘上）
 
