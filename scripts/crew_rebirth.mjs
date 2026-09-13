@@ -196,6 +196,11 @@ else {
   console.log("用法：");
   console.log("  node scripts/crew_rebirth.mjs --plan  --me <看板名>");
   console.log("  node scripts/crew_rebirth.mjs --apply --me <看板名> --thread <新 threadId>");
-  console.log("\n§自动化边界：**新建对话框**这一步目前只能人点（平台建窗工具据 L15/L21 有"
-    + "『首回合缺 call_id 写坏线程』的已知缺陷）。若验证该缺陷已修，可把它也自动化。");
+  console.log("  node scripts/crew_rebirth.mjs --auto  --me <看板名> [--dry]   # ★ 全自动（推荐）");
+  console.log("\n§自动化边界（2026-09-13 08:1x 实测更新）：");
+  console.log("  · **app 的跨线程委派通道有缺陷**：`create_thread`/`send_message_to_thread` 会在目标线写下一条"
+    + "**缺 `call_id` 的 `function_call_output`** → 该线此后每轮 400（活样本 01a09817，工具建窗 1 条残项）；");
+  console.log("  · **绕开它**：壳外小工用 `codex exec` 起**无窗实例** → 实测**首回合 0 残项**（样本 01a09819）✅；");
+  console.log("  · 代价：这种实例**不在 UI 侧边栏**（看不见）。要"看得见的窗"就人在 Codex 里点一次新建；"
+    + "身份/资产不依赖窗口（名册+信箱+门铃+重生包）。");
 }
