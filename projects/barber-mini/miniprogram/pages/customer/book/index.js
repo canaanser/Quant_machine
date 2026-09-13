@@ -58,13 +58,15 @@ Page({
       return wx.showToast({ title: "还有没选的", icon: "none" });
     }
     try {
-      await api.createOrder({ barberId: "b1", serviceItemId: pickedItem, customerType: pickedType,
+      wx.showLoading({ title: "提交中…", mask: true });
+      const r = await api.createOrder({ barberId: "b1", serviceItemId: pickedItem, customerType: pickedType,
         customerOpenid: "me", customerName: "我", appointmentTime: pickedSlot });
+      getApp().globalData.lastOrder = r && r.order;
       wx.showToast({ title: "预约成功", icon: "success" });
       setTimeout(() => wx.switchTab({ url: "/pages/customer/home/index" }), 1200);
     } catch (e) {
       const msg = String((e && (e.errMsg || e.message)) || e);
       wx.showModal({ title: "预约失败", content: msg.slice(0, 120), showCancel: false });
-    }
+    } finally { wx.hideLoading(); }
   },
 });

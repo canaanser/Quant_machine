@@ -9,9 +9,18 @@ Page({
   data: {
     list: [], front: [], ahead: 0, etaMin: 0, leftMin: 0, progressPct: 8,
     countdown: "--:--", updated: "--:--",
+    loading: true,
     me: { initial: "我", serviceName: "", statusText: "排队中", tag: "现场", tagClass: "" },
   },
   onLoad() {
+    // ★ 秒开：先用上一页带过来的单把界面填上（不空白），再拉云端队伍校正
+    const passed = (getApp().globalData || {}).lastOrder;
+    if (passed) {
+      this.setData({
+        me: { initial: "我", serviceName: passed.serviceName || "", statusText: "排队中",
+              tag: priorityLabel(passed.priority), tagClass: TAG_CLASS[passed.priority] || "" },
+      });
+    }
     this.load();
     this.timer = setInterval(() => this.tick(), 1000);
   },
@@ -38,6 +47,7 @@ Page({
       ahead, etaMin, leftMin: etaMin,
       progressPct: list.length ? Math.round(((idx + 1) / list.length) * 100) : 8,
       updated: new Date().toTimeString().slice(0, 5),
+      loading: false,
       me: {
         initial: (mine && mine.customerName ? mine.customerName.slice(0, 1) : "我"),
         serviceName: mine ? mine.serviceName : "",

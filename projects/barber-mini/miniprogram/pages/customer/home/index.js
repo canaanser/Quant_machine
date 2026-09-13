@@ -56,10 +56,15 @@ Page({
   },
   goBook() { wx.navigateTo({ url: "/pages/customer/book/index" }); },
   async joinQueue() {
+    // ★ 先给反馈再等网络：云函数一次往返约 1 秒（实测 0.8–1.1s），不给提示就像卡死
+    wx.showLoading({ title: "正在排队…", mask: true });
     try {
-      await api.createOrder({ barberId: "b1", serviceItemId: "s1", customerOpenid: "me", customerName: "我", customerType: "man" });
+      const r = await api.createOrder({ barberId: "b1", serviceItemId: "s1", customerOpenid: "me", customerName: "我", customerType: "man" });
+      getApp().globalData.lastOrder = r && r.order;      // 把结果直接带去进度页，省掉一次查询
       this.setData({ waiting: (this.data.waiting || 0) + 1 });
-    } catch (e) { /* 云端未就绪也让他看进度页 */ }
+    } catch (e) {
+      wx.showModal({ title: "排队失败", content: String((e && (e.errMsg || e.message)) || e).slice(0, 100), showCancel: false });
+    } finally { wx.hideLoading(); }
     wx.navigateTo({ url: "/pages/customer/progress/index" });
   },
 });

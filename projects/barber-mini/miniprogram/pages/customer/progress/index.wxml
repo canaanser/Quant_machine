@@ -34,7 +34,7 @@
       <view class="bar__in" style="width:{{progressPct}}%"></view>
     </view>
     <view class="row row--between mt12">
-      <text class="muted" style="color:rgba(255,255,255,.72)">{{me.statusText === '服务中' ? '正在为你服务' : '叫到你会有提醒'}}</text>
+      <text class="muted" style="color:rgba(255,255,255,.72)">{{loading ? '正在同步队伍…' : (me.statusText === '服务中' ? '正在为你服务' : '叫到你会有提醒')}}</text>
       <text class="muted" style="color:rgba(255,255,255,.72)">倒计时 {{countdown}}</text>
     </view>
   </view>
