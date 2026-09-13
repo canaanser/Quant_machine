@@ -22,7 +22,27 @@ import os
 import subprocess
 import sys
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+def _main_repo():
+    """主仓根（**不是**当前工作树根）。
+
+    ★ 2026-09-13 10:5x（`codex-看板编辑` 报、附复现）：`core.hooksPath=.githooks` 是**相对路径**，
+      在链接工作树（`git worktree add`）里钩子按**工作树根**解析 → 原来用 `__file__` 推 REPO
+      就推到了工作树根 → 去 `<worktree>/outputs/dialog/agents.json` 找名册（那份**不存在**，
+      `outputs/` 不受版本管理）→ 名册加载成 {} → **任何实名都判"不在名册"**，一律拒提交。
+      修法：REPO 取 `--git-common-dir` 的父目录（链接工作树与主仓**共用**它），名册用绝对路径。
+    """
+    try:
+        out = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+        common = (out.stdout or "").strip()
+        if out.returncode == 0 and common:
+            return os.path.abspath(os.path.join(common, ".."))
+    except Exception:
+        pass
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+REPO = _main_repo()
 ROSTER = os.path.join(REPO, "outputs", "dialog", "agents.json")
 DOMAIN = "@agents.canaanser.local"
 
