@@ -1,0 +1,15 @@
+{
+  "appid": "wx6d64887d34c54909",
+  "projectname": "barber-mini",
+  "miniprogramRoot": "miniprogram/",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "compileType": "miniprogram",
+  "libVersion": "3.5.5",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "minified": true,
+    "postcss": true
+  }
+}

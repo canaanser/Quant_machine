@@ -1,0 +1,4 @@
+# 生成物（真源在 shared/ 与 cloudfn-common/，别提交副本）
+cloudfunctions/*/_shared/
+cloudfunctions/*/cloudstore.js
+cloudfunctions/*/package.json

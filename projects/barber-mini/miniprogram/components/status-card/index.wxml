@@ -1,0 +1,4 @@
+<view class="sc {{tone}}">
+  <view class="sc-text">{{text}}</view>
+  <view class="sc-sub muted">前面还有 {{waiting}} 位</view>
+</view>

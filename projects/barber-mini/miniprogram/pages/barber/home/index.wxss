@@ -1,0 +1,2 @@
+.chip { padding: 22rpx 26rpx; margin: 0 12rpx 12rpx 0; border-radius: 14rpx; background: #F0EFEA; font-size: 30rpx; }
+.chip-on { background: var(--gold); color: #fff; }

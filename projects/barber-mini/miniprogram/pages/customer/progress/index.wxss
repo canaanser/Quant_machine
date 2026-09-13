@@ -1,0 +1,1 @@
+.big { margin-top: 28rpx; font-size: 72rpx; font-weight: 700; color: var(--gold); }

@@ -1,0 +1,5 @@
+<view class="card">
+  <view class="title">前面还有 {{ahead}} 位</view>
+  <view class="muted" style="margin-top:16rpx">预计等待 {{etaMin}} 分钟</view>
+  <view class="big">{{left / 60 < 1 ? '就快了' : etaMin + ' 分钟'}}</view>
+</view>

@@ -1,0 +1,26 @@
+{
+  "pages": [
+    "pages/customer/home/index",
+    "pages/customer/book/index",
+    "pages/customer/progress/index",
+    "pages/barber/home/index",
+    "pages/barber/queue/index",
+    "pages/barber/stats/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "阿明理发",
+    "navigationBarBackgroundColor": "#2B2B2B",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F5F5F5"
+  },
+  "tabBar": {
+    "color": "#8A8A8A",
+    "selectedColor": "#C9A227",
+    "backgroundColor": "#FFFFFF",
+    "list": [
+      { "pagePath": "pages/customer/home/index", "text": "看排队" },
+      { "pagePath": "pages/barber/home/index", "text": "工作台" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,21 @@
+<view class="card">
+  <view class="title">第 {{step}} / 3 步</view>
+  <view wx:if="{{step === 1}}">
+    <view class="muted" style="margin-top:12rpx">选时间（绿=可约，灰=已约）</view>
+    <view class="row" style="flex-wrap:wrap;margin-top:16rpx">
+      <view wx:for="{{slots}}" wx:key="t" class="slot {{item.state}}" bindtap="pickSlot" data-t="{{item.t}}">{{item.label}}</view>
+    </view>
+  </view>
+  <view wx:if="{{step === 2}}">
+    <view class="muted" style="margin-top:12rpx">选项目</view>
+    <view wx:for="{{items}}" wx:key="_id" class="btn btn-ghost" style="margin-top:16rpx" bindtap="pickItem" data-id="{{item._id}}">{{item.name}} ¥{{item.price}}</view>
+  </view>
+  <view wx:if="{{step === 3}}">
+    <view class="muted" style="margin-top:12rpx">选客人属性</view>
+    <view class="row" style="flex-wrap:wrap;margin-top:16rpx">
+      <view wx:for="{{types}}" wx:key="key" class="slot {{pickedType === item.key ? 'busy' : 'free'}}" bindtap="pickType" data-key="{{item.key}}">{{item.label}}</view>
+    </view>
+    <view class="btn btn-primary" style="margin-top:24rpx" bindtap="submit">确认预约</view>
+  </view>
+  <view class="muted" style="margin-top:20rpx">预付款用户仅在同一时间段内优先，不跨时段插队。</view>
+</view>
