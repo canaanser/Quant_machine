@@ -185,11 +185,60 @@ function auto(name, dry) {
       { cwd: ROOT, encoding: "utf8" });
     console.log("③ 体检：" + String(out).split("\n").slice(-3).join(" ").trim());
   } catch (e) { console.log("③ 体检失败（不影响绑定）：" + String(e.message).slice(0, 120)); }
-  apply(name, tid);                                          // ④ 绑定名册 + 留痕（同工号、只换 ID）
-  console.log("④ 请交底：say.mjs --mail --wake --to " + name + " --file <重生包路径>");
+  // ④ **先让它报到、确认活着，再换绑**（老板 2026-09-13 08:2x："要是不成功呢？" → 不成功就一步都不写）
+  const okAlive = waitAlive(name, meta, tid);                // 依"它有没有对门铃产生回合 / 有没有按包报到"
+  if (!okAlive) {
+    console.log("✗ **没验证到它活着 → 不换绑**：名册一个字没动，旧实例原样在岗（资产/号/信箱全未变）。");
+    console.log("  已起的那条无窗实例可以放着（无害），也可以按 rollout 路径归档：" + f.p);
+    process.exitCode = 4;
+    return;
+  }
+  apply(name, tid);                                          // ⑤ 绑定名册 + 留痕（同工号、只换 ID）
+  console.log("⑤ 请交底：say.mjs --mail --wake --to " + name + " --file " + pack);
 }
 
-if (has("--auto")) auto(opt("--me"), has("--dry"));
+/** 确认新实例"真的活着"：给它的实例投一条门铃，看它有没有产生新回合（账本 mtime 前进）。 */
+function waitAlive(name, meta, tid) {
+  const before = newestRollout();
+  const exe = findCodex();
+  if (!exe) return false;
+  const env = { ...process.env, USERPROFILE: os.homedir(), HOME: os.homedir(),
+                CODEX_HOME: path.join(os.homedir(), ".codex") };
+  try {
+    execFileSync(exe, ["queue", "--thread", tid,
+      "--message", `【自检】你已作为 ${name}（工号 ${meta.slug}）的新生实例就位。请回一行「我在」。`],
+      { env, encoding: "utf8", timeout: 90000 });
+  } catch { /* 投递失败也算"没验证到" */ }
+  for (let i = 0; i < 20; i++) {                 // 最多等 60 秒
+    const now = newestRollout();
+    if (now && now.tid === tid && (!before || now.m > before.m)) return true;
+    try { execFileSync("sleep", ["3"]); } catch { /* Windows 无 sleep 命令 */ }
+  }
+  return false;
+}
+
+/** 一键回退：把 threadId 换回（默认取 failedThreadIds 里最后一个），并从 failed 列表里摘掉。 */
+function rollback(name) {
+  const cfg = roster();
+  const meta = (cfg.agents || {})[name];
+  if (!meta) { console.error("名册里没有这条线：" + name); process.exit(3); }
+  const failed = meta.failedThreadIds || [];
+  const to = opt("--to") || failed[failed.length - 1];
+  if (!to) { console.error("没有可回退的旧 threadId（failedThreadIds 为空）"); process.exit(4); }
+  const from = meta.threadId || null;
+  meta.threadId = to;
+  meta.failedThreadIds = failed.filter((x) => x !== to);
+  meta.note = `${meta.note || ""}｜回退 ${stamp()}：实例 ${from ? from.slice(0, 8) : "(无)"} → ${to.slice(0, 8)}`;
+  fs.writeFileSync(ROSTER, JSON.stringify(cfg, null, 2) + "\n", "utf8");
+  fs.appendFileSync(SUCCESSIONS, JSON.stringify({
+    ts: stamp(), by: "codex-总监", kind: "rebirth-rollback", name, slug: meta.slug,
+    fromThreadId: from, toThreadId: to, reason: opt("--reason", "手动回退"),
+  }) + "\n", "utf8");
+  console.log(`✓ 已回退：${name} 的实例 ${from ? from.slice(0, 8) : "(无)"} → ${to.slice(0, 8)}（名字/工号/资产从未变过）`);
+}
+
+if (has("--rollback")) rollback(opt("--me"));
+else if (has("--auto")) auto(opt("--me"), has("--dry"));
 else if (has("--apply")) apply(opt("--me"), opt("--thread"));
 else if (has("--plan")) plan(opt("--me"));
 else {
@@ -197,6 +246,7 @@ else {
   console.log("  node scripts/crew_rebirth.mjs --plan  --me <看板名>");
   console.log("  node scripts/crew_rebirth.mjs --apply --me <看板名> --thread <新 threadId>");
   console.log("  node scripts/crew_rebirth.mjs --auto  --me <看板名> [--dry]   # ★ 全自动（推荐）");
+  console.log("  node scripts/crew_rebirth.mjs --rollback --me <看板名> [--to <旧 threadId>]  # 一键回退");
   console.log("\n§自动化边界（2026-09-13 08:1x 实测更新）：");
   console.log("  · **app 的跨线程委派通道有缺陷**：`create_thread`/`send_message_to_thread` 会在目标线写下一条"
     + "**缺 `call_id` 的 `function_call_output`** → 该线此后每轮 400（活样本 01a09817，工具建窗 1 条残项）；");
