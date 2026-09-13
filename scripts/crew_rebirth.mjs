@@ -128,45 +128,66 @@ function findCodex() {
   return c.length ? c.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] : null;
 }
 
-/** 最新的 rollout 文件名 → 解析出 threadId（`rollout-<ts>-<tid>.jsonl` 的后 5 段）。 */
-function newestRollout() {
+/** 扫出**全部** rollout 路径（用作"起实例前后"的集合差）。 */
+function rolloutFiles() {
   const root = path.join(os.homedir(), ".codex", "sessions");
-  let best = null;
+  const out = [];
   const walk = (d) => {
     let items = [];
     try { items = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const it of items) {
       const p = path.join(d, it.name);
       if (it.isDirectory()) walk(p);
-      else if (/^rollout-.*\.jsonl$/.test(it.name)) {
-        const m = fs.statSync(p).mtimeMs;
-        if (!best || m > best.m) best = { m, p, name: it.name };
-      }
+      else if (/^rollout-.*\.jsonl$/.test(it.name)) out.push(p);
     }
   };
   walk(root);
-  if (!best) return null;
-  const tid = best.name.replace(/\.jsonl$/, "").split("-").slice(-5).join("-");
-  return { ...best, tid };
+  return out;
+}
+
+const tidOf = (p) => path.basename(p).replace(/\.jsonl$/, "").split("-").slice(-5).join("-");
+
+/**
+ * ★ 2026-09-13 08:15 修：**别再按 mtime 找"最新 rollout"** ——
+ *   首次真跑时它撞上了**正在活跃的看板编辑会话**（人家刚被写过文件、mtime 最新），
+ *   于是体检/自检都对着错的线做（幸好"没验证到→不换绑"兜住了，零变化）。
+ *   现在用**起实例前后的集合差**：新出现的那个文件才是我起的实例 ✓。
+ */
+function freshRollout(before, after) {
+  const fresh = after.filter((p) => !before.includes(p));
+  if (!fresh.length) return null;
+  fresh.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  return { p: fresh[0], name: path.basename(fresh[0]), tid: tidOf(fresh[0]) };
 }
 
 /** ★ 起一条**无窗实例**（绕开"工具委派通道"的首回合缺陷）。返回新 threadId。 */
 function spawnHeadless(prompt) {
   const exe = findCodex();
   if (!exe) throw new Error("找不到 codex.exe");
-  const before = newestRollout();
   const env = { ...process.env, USERPROFILE: os.homedir(), HOME: os.homedir(),
                 CODEX_HOME: path.join(os.homedir(), ".codex") };
+  // ★ 2026-09-13 08:2x（老板："新生上一个实例他会带个名字，你直接找不就行了"）：
+  //   用 `--json` —— 第一行就是 `{"type":"thread.started","thread_id":"…"}`，**ID 直接来自它自己**，
+  //   不再靠"扫 sessions 目录猜最新文件"（那招撞过正在活跃的别家会话）。
+  //   存活证明也用它自己的产出：**出现 turn.started + 一条 agent_message item.completed = 它真跑完一个回合** ✓。
+  let out = "";
   try {
-    execFileSync(exe, ["exec", "--skip-git-repo-check", "-"],
-      { input: prompt, env, encoding: "utf8", timeout: 600000, stdio: ["pipe", "pipe", "pipe"] });
-  } catch (e) {
-    // 非零退出也可能是"跑完但 warn"；只要出现了**新的 rollout** 就算起了实例
-    if (!e || !e.stdout) throw e;
+    out = String(execFileSync(exe, ["exec", "--json", "--skip-git-repo-check", "-"],
+      { input: prompt, env, encoding: "utf8", timeout: 600000 }));
+  } catch (e) { out = String((e && (e.stdout || e.message)) || ""); }
+  const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+  let tid = null, turnStarted = false, gotMessage = false;
+  for (const l of lines) {
+    try {
+      const ev = JSON.parse(l);
+      if (ev.type === "thread.started" && ev.thread_id) tid = ev.thread_id;
+      if (ev.type === "turn.started") turnStarted = true;
+      if (ev.type === "item.completed" && ev.item && ev.item.type === "agent_message") gotMessage = true;
+    } catch { /* 非 JSON 行忽略 */ }
   }
-  const after = newestRollout();
-  if (!after || (before && after.p === before.p)) throw new Error("没有新 rollout，实例可能没起来");
-  return after.tid;
+  if (!tid) throw new Error("没从 --json 事件里拿到 thread_id（实例可能没起来）：" + lines.slice(0, 3).join(" | ").slice(0, 200));
+  const p = (rolloutFiles().find((x) => x.includes(tid))) || "(rollout 未落盘)";
+  return { tid, p, alive: turnStarted && gotMessage };
 }
 
 function auto(name, dry) {
@@ -176,18 +197,19 @@ function auto(name, dry) {
   const pack = plan(name, true);                            // ① 重生包
   console.log("② 目标：起一条**无窗实例**（绕开工具委派通道；实测首回合 0 残项）");
   if (dry) { console.log("（--dry：不真起实例、不写名册）"); return; }
-  const tid = spawnHeadless(`你是 ${name}（工号 ${meta.slug}）的**新生实例**。请读 ${pack} 并按它接手：`
+  const inst = spawnHeadless(`你是 ${name}（工号 ${meta.slug}）的**新生实例**。请读 ${pack} 并按它接手：`
     + `先跑 whoami、清空自己信箱、然后回报一行现状。不要读别的文件。`);   // ②
+  const tid = inst.tid;
   console.log("✓ 新实例 threadId = " + tid);
-  const f = newestRollout();
+  const f = { p: inst.p };
   try {                                                      // ③ 体检（只读）
     const out = execFileSync("python", ["scripts/repair_callid_incident.py", "--rollout", f.p, "--thread", tid],
       { cwd: ROOT, encoding: "utf8" });
     console.log("③ 体检：" + String(out).split("\n").slice(-3).join(" ").trim());
   } catch (e) { console.log("③ 体检失败（不影响绑定）：" + String(e.message).slice(0, 120)); }
-  // ④ **先让它报到、确认活着，再换绑**（老板 2026-09-13 08:2x："要是不成功呢？" → 不成功就一步都不写）
-  const okAlive = waitAlive(name, meta, tid);                // 依"它有没有对门铃产生回合 / 有没有按包报到"
-  if (!okAlive) {
+  // ④ **先确认它活着，再换绑**（老板 08:2x："要是不成功呢？" → 不成功就一步都不写）
+  //   判据 = 它自己的事件流里**跑完了一整个回合**（turn.started + agent_message）——这是它"活着"的直接证据。
+  if (!inst.alive) {
     console.log("✗ **没验证到它活着 → 不换绑**：名册一个字没动，旧实例原样在岗（资产/号/信箱全未变）。");
     console.log("  已起的那条无窗实例可以放着（无害），也可以按 rollout 路径归档：" + f.p);
     process.exitCode = 4;
@@ -199,9 +221,11 @@ function auto(name, dry) {
 
 /** 确认新实例"真的活着"：给它的实例投一条门铃，看它有没有产生新回合（账本 mtime 前进）。 */
 function waitAlive(name, meta, tid) {
-  const before = newestRollout();
   const exe = findCodex();
   if (!exe) return false;
+  const mine = () => rolloutFiles().find((p) => p.includes(tid)) || null;
+  const f0 = mine();
+  const m0 = f0 ? fs.statSync(f0).mtimeMs : 0;
   const env = { ...process.env, USERPROFILE: os.homedir(), HOME: os.homedir(),
                 CODEX_HOME: path.join(os.homedir(), ".codex") };
   try {
@@ -210,8 +234,8 @@ function waitAlive(name, meta, tid) {
       { env, encoding: "utf8", timeout: 90000 });
   } catch { /* 投递失败也算"没验证到" */ }
   for (let i = 0; i < 20; i++) {                 // 最多等 60 秒
-    const now = newestRollout();
-    if (now && now.tid === tid && (!before || now.m > before.m)) return true;
+    const f = mine();
+    if (f && fs.statSync(f).mtimeMs > m0) return true;      // ★ 只认**它自己**的账本有没有新回合
     try { execFileSync("sleep", ["3"]); } catch { /* Windows 无 sleep 命令 */ }
   }
   return false;

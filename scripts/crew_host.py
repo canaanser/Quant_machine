@@ -566,16 +566,47 @@ def run_codex_resume_bg(exe, thread_id, message):
 
 
 def run_codex_wake(exe, thread_id, message):
-    """**队列优先**（2026-09-12 实测修正）：
-       · `codex queue` 对"已加载/未加载"两种线**都能真的跑出回合**；
-       · `codex exec resume` 会**报成功却不产生回合**（查过对方线程 updatedAt 不动）——
-         所以它只能当备选，不能当主通道。
-       教训：门铃日志里的"投递OK"要能被追溯验证——见 docs/LESSONS.md。"""
+    """**队列优先，但必须验证"真起了回合"；没起就落 resume。**
+
+    · `codex queue` 对**应用里挂着的线**（含未加载的窗）有效；
+    · **对"无窗实例"（`codex exec` 起的会话）queue 会被受理、但没人消费** ——
+      2026-09-13 08:2x 重生实验实测：新实例账本 mtime 不动、板上无回话，
+      改投 `codex exec resume` **立刻起回合**（它自己读包、按规矩回板）。
+    · 所以判据不是"投递返回 0"，而是**它自己的账本有没有前进**（教训：投递OK ≠ 叫醒）。
+    """
+    before = rollout_mtime_ms(thread_id)
     code, err = run_codex_queue(exe, thread_id, message)
-    if code == 0:
+    if code == 0 and turn_started(thread_id, before, 8):
         return code, err, "queue"
     code2, err2 = run_codex_resume_bg(exe, thread_id, message)
-    return code2, err2, "resume(备选)"
+    return code2, err2, "resume(备选)" + ("" if code == 0 else "(queue 失败)") + (
+        "(queue 受理但没起回合)" if code == 0 else "")
+
+
+def rollout_path(tid):
+    """按 threadId 找它自己的会话账本（找不到返回 None）。"""
+    try:
+        hits = glob.glob(os.path.join(SESSIONS_DIR, "**", "rollout-*%s*.jsonl" % tid), recursive=True)
+        return max(hits, key=os.path.getmtime) if hits else None
+    except Exception:
+        return None
+
+
+def rollout_mtime_ms(tid):
+    p = rollout_path(tid)
+    try:
+        return int(os.path.getmtime(p) * 1000) if p else 0
+    except Exception:
+        return 0
+
+
+def turn_started(tid, before_ms, secs):
+    """在 `secs` 秒内，该线账本有没有前进（= 真起了回合）。"""
+    for _ in range(max(1, int(secs))):
+        if rollout_mtime_ms(tid) > int(before_ms or 0):
+            return True
+        time.sleep(1)
+    return False
 
 
 def ring_priority(state, dry, exe, cfg, spoken, now):
