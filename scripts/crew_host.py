@@ -112,6 +112,28 @@ def ts_ms(s):
     return 0
 
 
+# ── ★ 行首判据的「剥信头」防护（老板 2026-09-13 08:5x 定，**锚定**）──────────────
+#   背景：**我方信头**（`say.mjs` 的 `【<卡号> · <时间戳>】`）是**机器加的元数据**，不是正文。
+#   只要被任一发送口拼在**正文最前**，下面这些"行首锚定"的判据就**静默失效**——
+#   不报错、只是判错，正是今晚反复踩的那类病（`codex-看板编辑` 实测：公告回执 5 条里 4 条被吃掉）：
+#     · `P0_BODY_RE`（`^\s*【公告`）→ **老板的公告掉出 P0**：不再优先、不报错；
+#     · `〔代答〕` 行首标记 → 代答被当成"本人发言" → 水位被抬高 → 真未读被吞掉。
+#   修法：判定前**先剥一层我方信头**，且**只剥一层**。**不放宽成"包含"**：
+#   放宽会把"正文里引用一句【公告…】"当成 P0 或代答（假 P0 会抢占所有线的队列与额度）。
+#   ⚠️ 形状**不能**照搬 `board.mjs` 那种无差别的 `【…】`（≤80 字）——**实测当场红**：
+#      `【公告 N-A5EB】…` 本身就是**公告标题**，无差别剥会把**真公告剥成非 P0**
+#      （旧用例「【公告】正文 → P0」直接变红，5 条失败里有它）。
+#   所以收紧为「**长得像我方信头才剥**」：单行、含 `·`、且 `·` 后面跟着日期——
+#   即 `【<卡号|无卡> · <YYYY-MM-DD HH:MM>】`。公告标题、`〔回执〕` 这类正文**一律不动**。
+#   （若将来信头格式变了，这条正则要跟它一起改；用例①把它钉住了。）
+TOOL_PREFIX_RE = re.compile(r"^\s*【[^】\n]{0,40}·\s*\d{4}-\d{2}-\d{2}[^】\n]{0,20}】\s*")
+
+
+def strip_tool_prefix(s):
+    """剥掉正文最前面**一层**我方信头（没有就不动）。**判行首判据前一律先过它。**"""
+    return TOOL_PREFIX_RE.sub("", str(s if s is not None else ""), count=1)
+
+
 def read_last_spoken(cfg):
     """每条线在看板真源里**最后一次本人发言**的时间（slug -> ms）。
 
@@ -128,7 +150,8 @@ def read_last_spoken(cfg):
         slug = alias2slug.get(str(row.get("from") or ""))
         if not slug:
             continue
-        if str(row.get("body") or "").startswith("〔代答〕"):
+        # ★ 先剥信头再判行首：信头（机器加的）挡在前面时，代答仍要被认出来
+        if strip_tool_prefix(row.get("body") or "").startswith("〔代答〕"):
             continue
         ms = ts_ms(row.get("ts"))
         if ms > out.get(slug, 0):
@@ -493,7 +516,8 @@ def is_priority_row(row):
     row = row or {}
     if str(row.get("from") or "") in P0_SENDERS:
         return True
-    return bool(P0_BODY_RE.match(str(row.get("body") or "")))
+    # ★ 先剥一层信头再锚行首：`【公告` 被信头挡在第二段时，老板的公告仍必须进 P0
+    return bool(P0_BODY_RE.match(strip_tool_prefix(row.get("body") or "")))
 
 
 def find_git_dir():
