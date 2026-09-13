@@ -61,8 +61,9 @@ const FLATTENED = POISON.replace(/\s*\n\s*/g, " ").trim();
 // ★ HUB-018 信头规约（老板 2026-09-13 05:1x）：say.mjs 会在正文最前面拼 `【卡号 · 时间戳】`。
 //   断言"正文没被吞"时先把信头剥掉再比——信头本身也参与逐字节校验（工具内部已验）。
 const CARD = "HUB-018";
-const HEADER_RE = /^【HUB-018 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】 /;
-const stripHeader = (s) => String(s || "").replace(HEADER_RE, "");
+// ★ 信头位置：2026-09-13 07:53 起**在正文最后**（原来在最前，污染"正文首行"→ 行首判据全失配）
+const HEADER_RE = / 【HUB-018 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】$/;
+const stripHeader = (s) => String(s || "").replace(/ 【[^】]*】$/, "").trim();
 
 function say(args, env) {
   const r = spawnSync(process.execPath, [SAY, ...args], {
@@ -71,6 +72,17 @@ function say(args, env) {
     encoding: "utf8",
   });
   return { code: r.status, out: String(r.stdout || ""), err: String(r.stderr || "") };
+}
+// 并发版（用于 ⑦ 的"同一分钟两个作者"竞态）
+function sayAsync(args, env) {
+  return new Promise((res) => {
+    const c = spawn(process.execPath, [SAY, ...args], { cwd: REPO, env: { ...process.env, ...env } });
+    let o = "";
+    let e = "";
+    c.stdout.on("data", (d) => (o += d));
+    c.stderr.on("data", (d) => (e += d));
+    c.on("close", (code) => res({ code, out: o, err: e }));
+  });
 }
 
 let child = null;
@@ -221,9 +233,39 @@ try {
     .filter((r) => String(r.from) === author)
     .pop() || {};
   ck(
-    "⑥ 无卡也带时间戳（【无卡 · 2026-09-13 05:2x】）",
-    /^【无卡 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】 /.test(String(noCardRec.body || "")),
+    "⑥ 无卡也带时间戳（信头在**最后**：【无卡 · 2026-09-13 0x:xx】）",
+    /【无卡 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}】$/.test(String(noCardRec.body || "")),
     JSON.stringify(String(noCardRec.body || "").slice(0, 30))
+  );
+
+  // ⑦ **假失败**（codex-修复 2026-09-13 07:06 报的）：同一分钟里**别人发给同一收件人**的信
+  //   成了文件最后一行 → 回读如果"按收件人取最后一行"，就拿别人的行来比 → 必然 MISMATCH →
+  //   **假失败**（比没校验更危险：线以为没发出去会重发，正好制造重复噪声）。
+  //
+  //   ⚠️ 端到端造不出**确定性**复现（POST 与回读之间的并发窗口太窄；我先写了并发版用例，
+  //      实测**旧代码也绿**——那是摆设，所以改成把**匹配逻辑**单独拎出来做确定性判别）。
+  //   夹具：我的那条**被夹在别人两条之间**（最后一行是别人的）→ 旧版必红、新版必绿。
+  const probeFile = path.join(ROOT, "verify-probe.ndjson");
+  const probeExpect = path.join(ROOT, "verify-probe-expect.txt");
+  const MYBODY = "【无卡 · 2026-09-13 07:05】 我的正文（452 字那封）";
+  fs.writeFileSync(
+    probeFile,
+    [
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "乙", to: "codex-总监", body: "别人的正文一" }),
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "codex-看板编辑", to: "codex-总监", body: MYBODY }),
+      JSON.stringify({ ts: "2026-09-13 07:05", from: "乙", to: "codex-总监", body: "别人的正文二（它才是最后一行）" }),
+    ].join("\n") + "\n",
+    "utf8"
+  );
+  fs.writeFileSync(probeExpect, MYBODY, "utf8");
+  const probe = say(
+    ["--verify-probe", probeFile, "--probe-from", "codex-看板编辑", "--probe-to", "codex-总监", "--probe-expect", probeExpect],
+    env
+  );
+  ck(
+    "⑦ 回读必须按 **(发件人, 收件人) 找我那条**，不许拿别人写在最后的行来比（假失败根因）",
+    probe.code === 0,
+    "exit=" + probe.code + " " + String(probe.out || probe.err).trim().slice(0, 110)
   );
 
   const failed = results.filter((x) => !x).length;

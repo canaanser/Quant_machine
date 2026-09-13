@@ -70,6 +70,22 @@ const max = Number(arg("--max", 0)) || 0;
 const card = arg("--card", "");
 const cardGiven = !!card && card !== true && String(card).trim() !== "";
 
+// ★ 隐藏自测口（只给 `selftest_say` 用）：把一份**夹具文件**交给 `verify()`，按指定 (发件人,收件人) 找我那条。
+//   为什么需要它：假失败的**并发窗口太窄**，端到端造不出确定性复现（我先写的并发版用例**旧代码也绿**，是摆设）；
+//   所以把"匹配逻辑"单独拎出来做**确定性**判别：旧版按收件人取最后一行 → 必红；新版按 (from,to) 找精确匹配 → 必绿。
+//   注意：它**必须在必填校验之前**（探针不带 --file/--author）。
+if (has("--verify-probe")) {
+  const pf = arg("--verify-probe", "");
+  const pFrom = arg("--probe-from", "");
+  const pTo = arg("--probe-to", "");
+  const pExp = arg("--probe-expect", "");
+  const exp = fs.readFileSync(pExp, "utf8").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trim();
+  // 用**调用点同一份**匹配条件（`mailPick`），这样它测的是真代码、不是副本
+  const v = verify(pf, mailPick(pTo, pFrom), exp);
+  process.stdout.write(JSON.stringify(v) + "\n");
+  process.exit(v.ok ? 0 : 1);
+}
+
 if (!file || !author || (useMail && !to) || !cardGiven) {
   process.stderr.write(
     "用法：node tools/mobile_chat/say.mjs --file <正文文件> --author <看板名> --card <卡号|- > [--to <看板名>] [--mail] [--wake] [--dry]\n" +
@@ -92,28 +108,24 @@ function stampNow() {
   return g("year") + "-" + g("month") + "-" + g("day") + " " + g("hour") + ":" + g("minute");
 }
 const CARD_LABEL = String(card).trim() === "-" ? "无卡" : String(card).trim();
-const HEADER = "【" + CARD_LABEL + " · " + stampNow() + "】 ";
+// ★ 信头位置（`codex-总监` 2026-09-13 07:53 派活）：**从"正文最前"挪到"正文最后"**。
+//   原来拼在最前会把**正文首行**污染掉 → 凡"行首锚定"的判据全会失配（公告回执、`〔代答〕`识别、
+//   `【解除暂停】`识别…），这是"两个自家特性打架"，**根子在位置、不在判据**。
+//   判定侧的 `stripToolPrefix()` **仍然保留**——那是为了**修历史**（已发出去的旧信）；改位置是为了**断了将来的根**。
+const HEADER = "【" + CARD_LABEL + " · " + stampNow() + "】";
 
-// 正文：只从文件读，并做与 Hub 一致的归（去 BOM / CRLF→LF / 去首尾空白）
+// 正文：只从文件读，并做与 Hub 一致的归（去 BOM / CRLF→LF / 去首尾空白）——**这一段不含信头**
 const raw = fs.readFileSync(file, "utf8");
-const body = HEADER + raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+const body = raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 const sha = (s) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
 if (!body) {
   process.stderr.write("空正文，不发。\n");
   process.exit(2);
 }
-if (max > 0 && [...body].length > max) {
-  // 长度闸：不许把超长正文发出去（"别再靠人肉数"——写进工具，跟回读校验一个路子）
-  process.stderr.write(
-    "拒绝发送：正文 " + [...body].length + " 字，超过 --max " + max + " 字（超 " + ([...body].length - max) + " 字）。\n" +
-      "要么压短，要么明确把 --max 调大（别默认放过）。\n"
-  );
-  process.exit(3);
-}
 // 看板行式存储：Hub 的 appendBoardLine 会做 `\s*\n\s*` → " "。这里对齐同一口径，
 // 免得"我发的是多行、落盘变成一行"被当成别人改了内容（2026-09-13 首次联调就撞上）。
 const FLATTEN = (s) => s.replace(/\s*\n\s*/g, " ").trim();
-let send = body;
+let sendBody = body;
 if (!useMail) {
   if (/\n/.test(body) && !flatten) {
     process.stderr.write(
@@ -124,9 +136,20 @@ if (!useMail) {
     process.exit(2);
   }
   if (/\n/.test(body)) {
-    send = FLATTEN(body);
+    sendBody = FLATTEN(body);
     process.stderr.write("提示：已按看板口径压成一行（" + body.split("\n").length + " 行 → 1 行，sha256 用压好的算）。\n");
   }
+}
+// 信头**拼在最后**（同一行、不引入换行 → 不会把看板正文变成"多行"，也就不影响 --flatten 的判定）
+const send = sendBody + " " + HEADER;
+if (max > 0 && [...send].length > max) {
+  // 长度闸：不许把超长正文发出去（"别再靠人肉数"——写进工具，跟回读校验一个路子）。
+  // 按**含信头的最终文本**算，诚实计数。
+  process.stderr.write(
+    "拒绝发送：正文 " + [...send].length + " 字（含信头），超过 --max " + max + " 字（超 " + ([...send].length - max) + " 字）。\n" +
+      "要么压短，要么明确把 --max 调大（别默认放过）。\n"
+  );
+  process.exit(3);
 }
 
 function readToken() {
@@ -138,6 +161,12 @@ function readToken() {
 }
 
 // 回读真源：在最近 N 条记录里找**正文完全相等**的那条（不看"像不像"，只看逐字节）
+// ★ 2026-09-13 07:06 `codex-修复` 报的**假失败**（比没校验更危险：线以为没发出去 → 重发 → 制造重复噪声）：
+//   原来匹配条件只按**收件人**取（`r.to === to`），于是**同一分钟里别人发给同一收件人的信**
+//   成了文件最后一行 → 拿别人的行跟我的正文逐字比 → 必然 MISMATCH。
+//   修法（照他给的方向）：① `pick` 里**必须带发件人**；② **窗口内找"精确匹配"**，
+//   而不是"取最后一条匹配就算我的"（同一作者同一收件人也可能有旧信）；
+//   ③ 报错时带上**行号 + 该行前 40 字**，真假失败一眼可辨。
 function verify(filePath, pick, expected) {
   let rows = [];
   try {
@@ -146,6 +175,8 @@ function verify(filePath, pick, expected) {
     return { ok: false, why: "真源读不到：" + e.message };
   }
   const tail = rows.slice(-40);
+  const base = rows.length - tail.length; // tail 在原文件里的起始下标（报行号用）
+  let near = null; // "像我的那条"的最近一条（用于报 MINMATCH 时给人看）
   for (let i = tail.length - 1; i >= 0; i--) {
     let rec = null;
     try {
@@ -155,14 +186,27 @@ function verify(filePath, pick, expected) {
     }
     if (!pick(rec)) continue;
     if (String(rec.body || "") === expected) return { ok: true, ts: rec.ts, id: rec.id || "" };
+    if (!near) near = { rec, row: base + i + 1 };
+  }
+  if (near) {
     return {
       ok: false,
       why: "落盘正文与输入不一致（被吞/被改）",
-      got: String(rec.body || ""),
-      ts: rec.ts,
+      got: String(near.rec.body || ""),
+      ts: near.rec.ts,
+      row: near.row,                                  // ← 比的是**哪一行**
+      rowHead: String(near.rec.body || "").slice(0, 40), // ← 那一行长什么样
+      rowFrom: String(near.rec.from || ""),
     };
   }
   return { ok: false, why: "真源里没找到刚发的这条（可能发失败了）" };
+}
+
+// **邮件回读的匹配条件**——抽成具名函数，让「调用点」和「自测探针」共用同一份：
+//   这样"把匹配条件改坏"能被自测**确定性地**打到（改成只按收件人 → 探针必红）。
+//   ★ 必须带**发件人**：只按收件人取，会把"同一分钟别人发给同一收件人的信"当成我的那条（假失败根因）。
+function mailPick(toWant, authorWant) {
+  return (r) => String(r.to || "") === String(toWant || "") && String(r.from || "") === String(authorWant || "");
 }
 
 function firstDiff(a, b) {
@@ -210,7 +254,8 @@ if (!res || res._err) {
   else {
     // ★ 关键一步：回读真源，逐字节校验
     const v = useMail
-      ? verify(path.join(MAILBOX_DIR, j.mailbox || ""), (r) => String(r.to || "") === String(j.to || to), send)
+      // ★ **必须带发件人**：只按收件人取，会把"同一分钟别人发给同一收件人的信"当成我的那条（假失败根因）
+      ? verify(path.join(MAILBOX_DIR, j.mailbox || ""), mailPick(j.to || to, author), send)
       : verify(DIALOG_FILE, (r) => String(r.from || "") === author && String(r.to || "") === String(to || "老板"), send);
     out.verify = v;
     out.ok = !!v.ok;
@@ -243,6 +288,13 @@ if (asJson) {
   }
   if (out.verify && out.verify.got !== undefined) {
     process.stderr.write("输入长度=" + [...send].length + " 落盘长度=" + [...String(out.verify.got)].length + "\n");
+  }
+  // ★ 修复 07:06 的要求：**带上"比的是哪一行"**——真假失败一眼可辨
+  if (out.verify && out.verify.row) {
+    process.stderr.write(
+      "比对的是第 " + out.verify.row + " 行 · 该行 from=" + (out.verify.rowFrom || "?") +
+        " · 前 40 字：" + JSON.stringify(out.verify.rowHead || "") + "\n"
+    );
   }
 }
 process.exit(out.ok ? 0 : 1);

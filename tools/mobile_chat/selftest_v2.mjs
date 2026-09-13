@@ -2103,6 +2103,22 @@ async function main() {
     !!((n4.refs.acks || {})["codex-测备用"] || {}).mode,
     JSON.stringify(((n4.refs.acks || {})["codex-测备用"] || {}))
   );
+  // ★ 反向用例（`codex-总监` 07:53 派活里点名要的）：**"引用别人的回执"不许算成自己回过**。
+  //   放宽前缀**必须只认"我方信头这一种前缀"**，不能退化成"正文里任意位置包含 `收到 N-xxxx`"——
+  //   否则一句"我替你转达：它回的是 收到 N-A5EB"就会被判成自己回过，账号就假了。
+  fs.appendFileSync(
+    BOARD_FILE,
+    "- @老板 " + boardStamp(new Date()) + " codex-测占用：转述一下：它当时回的是 收到 " + ncode + "（我只是引用）\n",
+    "utf8"
+  );
+  await new Promise((r) => setTimeout(r, 2500));
+  const d5 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const n5 = (d5.records || []).filter((r) => r.kind === "notice").pop();
+  check(
+    "公告回执：**引用别人的回执不算自己回过**（放宽前缀 ≠ 任意位置包含）",
+    !((n5.refs.acks || {})["codex-测占用"] || {}).mode,
+    JSON.stringify(((n5.refs.acks || {})["codex-测占用"] || {}))
+  );
 
   // ㉑ HUB-015 公告"送到"补全（`codex-修复` 2026-09-13 01:54 反馈；总监派单）
   //   ① 入职时补投**生效公告正文**；② 回执窗口从**投递时刻**起算（入职晚于发布也要回执）；
