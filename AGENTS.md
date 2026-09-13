@@ -395,8 +395,22 @@
 
 ### ⑦ 归档：**按钮归老板按**
 
-Agent 只做两件：旧实例进 `failedThreadIds`（`--apply` 自动写）+ 旧窗改名标 `·旧（待归档）`。
-**不代按归档**——新实例验过之前，旧窗是唯一回退面；要回退用 `--rollback`。
+Agent 只做一件：旧实例进 `failedThreadIds`（`--apply` 自动写）。**不代按归档**——新实例验过之前，
+旧窗是唯一回退面；要回退用 `--rollback`。
+**窗口标题由老板定**：Agent **不主动改**任何窗口标题（**包括"`·旧（待归档）`"这种后缀**）——
+标题是你**在侧边栏认人的锚**，两具同岗位重名也不影响路由（路由挂工号/实例 id）。
+
+### 附：换实例的**底层操作清单**（就这些，没有第五类）
+
+| 步骤 | 底层动作 | 动到什么 |
+| --- | --- | --- |
+| 起无窗实例 | 壳外 `codex exec --json <提示词>` | 新建一条 rollout（`source=exec`） |
+| 绑定 | `node scripts/crew_rebirth.mjs --apply --me <名> --thread <id>` | **写** `outputs/dialog/agents.json`（`threadId` 换新、旧 id 进 `failedThreadIds`）+ **追加** `successions.ndjson` |
+| 交底/通知 | `say.mjs --mail [--wake] --to …` | 追加对方信箱 / 发一行看板 |
+| **改标题** | app 工具 `set_thread_title{threadId,title}`（**或老板在界面上点**） | **只改标题元数据**——实测**不往对话里写内容**（改完账本残项仍为 0），**不属于**「往线程里写字」那三条禁令 |
+| 提交 | `git commit` / `git push` | 仓库 |
+
+**从不动**：别人的信箱、别人的 rollout、计划任务、服务；**也只由老板按归档**。
 
 ## 红线（通用）
 
