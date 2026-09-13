@@ -1,5 +1,7 @@
 {
   "pages": [
+    "pages/simple/customer/index",
+    "pages/simple/barber/index",
     "pages/customer/home/index",
     "pages/customer/book/index",
     "pages/customer/progress/index",
@@ -8,8 +10,6 @@
     "pages/barber/board/index",
     "pages/barber/ledger/index",
     "pages/barber/settings/index"
-    ,"pages/simple/customer/index"
-    ,"pages/simple/barber/index"
   ],
   "window": {
     "navigationBarTitleText": "阿明理发",
