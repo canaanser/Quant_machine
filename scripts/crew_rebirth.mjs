@@ -10,9 +10,18 @@
  *
  * 为什么要重生：上下文越长越慢越贵、压缩后细节会淡。重开一条干净实例 + 一页重生包 = 身份与资产不断、脑子上限清零。
  *
- * 用法：
- *   node scripts/crew_rebirth.mjs --plan  --me codex-总监            # 生成「重生包」+ 打印后续三步（不写名册）
- *   node scripts/crew_rebirth.mjs --apply --me codex-总监 --thread <新 threadId>   # 绑定新实例（写名册+留痕+广播）
+ * 用法（`--hours N` = 差量窗口，默认 3）：
+ *   node scripts/crew_rebirth.mjs --plan  --me codex-总监 [--hours 3]   # 生成「重生包 + 差量页」（不写名册）
+ *   node scripts/crew_rebirth.mjs --apply --me codex-总监 --thread <新 threadId>   # 绑定新实例（写名册+留痕）
+ *   node scripts/crew_rebirth.mjs --auto  --me codex-总监               # 全自动（差量没核过 → 不换绑）
+ *
+ * **老板 2026-09-13 08:4x 定（两条固化）**：
+ *   · **「推过 ≠ 知道」**——叫醒水位只决定"还叫不叫你"，**不决定"你知不知道"**。所以重生包必须附
+ *     **近 N 小时差量页**，新实例第一句回 `差量已核 N 条`，**对不上就不换绑**。
+ *     （活样本：08:19 那次重生，新实例判"真未读=0"是对的，但拿旧状态报出三条**早已解决**的未结，
+ *      因为它继承的是水位、不是内容。见 docs/LESSONS.md L34。）
+ *   · **归档按钮归老板本人按**：Agent 只做「旧实例进 failedThreadIds + 改名标注 ·旧（待归档）」；
+ *     新实例验过之前，旧窗是唯一回退面，**不许代按**。
  *
  * **全自动路线（2026-09-13 08:1x 实测确立）**：**不用 app 的"跨线程委派通道"建窗**（那条会写坏首回合），
  *   改由**壳外小工 `codex exec` 起一条无窗实例** —— 实测：工具建窗首回合 **1 条残项**（缺 `call_id`），
@@ -38,8 +47,89 @@ const stamp = () => now().slice(0, 16).replace("T", " ");
 
 function roster() { return JSON.parse(fs.readFileSync(ROSTER, "utf8")); }
 
-function packFor(name, meta) {
+/** ts（"YYYY-MM-DD HH:MM[:SS]"，+08:00）→ ms；解析不出返回 null。 */
+function tsMs(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(s || ""));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 8, +m[5], +(m[6] || 0)) : null;
+}
+
+function readNdjson(p) {
+  if (!fs.existsSync(p)) return [];
+  return fs.readFileSync(p, "utf8").split("\n")
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean);
+}
+
+const clip = (s, n = 80) => {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n) + "…" : t;
+};
+
+/**
+ * ★ 2026-09-13 08:4x（老板："把他这次错的问题，用固化方法来解决"）——**差量页**。
+ *
+ * 根因不是新实例判错：**重生只继承了"叫醒水位"，没继承"内容"**。水位说"这封推过了"，新实例
+ * 就当成"我知道了"，于是把旧实例在最后一小时里已经办结的事，又当成未结报给老板。
+ *
+ * 口径从此拆开（写进 AGENTS.md）：**水位管"还叫不叫你"，差量页管"你知不知道"**。
+ */
+function makeDelta(name, meta, hours) {
   const slug = meta.slug || "";
+  const since = Date.now() - hours * 3600e3;
+  const inWin = (r) => { const m = tsMs(r && r.ts); return m !== null && m >= since; };
+  const mail = readNdjson(path.join(ROOT, "outputs", "dialog", `pending_${slug}.ndjson`))
+    .filter(inWin)
+    .map((r) => ({ ts: r.ts || "", src: `信·${r.from || "?"}`, text: clip(r.body) }));
+  const board = readNdjson(path.join(ROOT, "outputs", "dialog", "dialog.ndjson"))
+    .filter((r) => inWin(r) && (r.from === name || r.to === name))     // ★ 真源字段是 from/to（不是 author/target）
+    .map((r) => ({ ts: r.ts || "", src: `板·${r.from || "?"}${r.to ? "→" + r.to : ""}`, text: clip(r.body) }));
+  const rows = [...mail, ...board].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  let commits = [];
+  try {
+    commits = execFileSync("git", ["log", "--oneline", "--since=" + new Date(since).toISOString(), "main"],
+      { cwd: ROOT, encoding: "utf8" }).split("\n").map((s) => s.trim()).filter(Boolean);
+  } catch { /* 没 git 也不阻塞重生 */ }
+  const file = path.join(OUTDIR, `REBIRTH_${slug}_${stamp().replace(/[-: ]/g, "")}.delta.md`);
+  const sinceStr = new Date(since + 8 * 3600e3).toISOString().slice(0, 16).replace("T", " ");
+  const tbl = (arr) => (arr.length ? arr.map((r) => `| ${r.ts} | ${r.src} | ${r.text} |`).join("\n") : "| — | — | 无 |");
+  const total = mail.length + board.length;
+  fs.writeFileSync(file, `# 差量页 · \`${name}\`（近 ${hours} 小时，起于 ${sinceStr}）
+
+> **这一页 = 「旧实例读过、但交接包没写」的那一段。** 交接只交水位就会漏掉它（见 \`docs/LESSONS.md\` L34）。
+> 口径：**叫醒水位只决定"还叫不叫你"，不决定"你知不知道"**——判"真未读=0"只说明**没有新信**，
+> **不说明你知道这窗口里发生了什么**。这页才是内容。
+
+## 一、窗口内的信箱（${mail.length} 条）
+
+| ts | 来自 | 首行 |
+| --- | --- | --- |
+${tbl(mail)}
+
+## 二、窗口内、与我有关的看板行（${board.length} 条）
+
+| ts | 谁 | 首行 |
+| --- | --- | --- |
+${tbl(board)}
+
+## 三、窗口内 main 的提交（${commits.length} 条）
+
+${commits.length ? commits.map((c) => "- " + c).join("\n") : "- （无）"}
+
+## 四、硬要求
+
+> 新实例**第一句**必须回：\`差量已核 ${total} 条\`（共 ${mail.length} + ${board.length}）。
+> 对不上 = 没读全 → **不换绑**（\`--auto\` 已按这条卡；窗口内又落了新信时容差 ±20%）。
+> 未结清单里凡是被本页证伪的，**一律划掉**，别报给老板。
+`, "utf8");
+  return { rel: path.relative(ROOT, file).replace(/\\/g, "/"), hours,
+           count: total, mail: mail.length, board: board.length };
+}
+
+function packFor(name, meta, delta) {
+  const slug = meta.slug || "";
+  const drel = delta ? delta.rel : "（差量页未生成——别开工，先让总监补）";
+  const dmix = delta ? `近 ${delta.hours} 小时：信箱 ${delta.mail} 条 + 看板 ${delta.board} 条 = ${delta.count} 条` : "";
   return `# 重生包 · \`${name}\`（工号不变：${slug}）
 
 > 老板 2026-09-13 08:3x：「**个人重生：全自动、资产不落、号不变、只有 ID 变**」。
@@ -55,12 +145,17 @@ function packFor(name, meta) {
 
 1. \`node tools/mobile_chat/whoami.mjs --me ${name}\` → 确认级别与必读；
 2. 读 **\`AGENTS.md\`**（唯一规约真源，每轮自动加载）+ **\`docs/INDEX.md\`（一页索引）**；**其余按需 grep，别整读**；
-3. 读我的信箱 \`outputs/dialog/pending_${slug}.ndjson\` → **清到 0 条**再干活（门铃报 N 条就清 N 条）；
-4. 过一遍"未结"（§三）→ **先接在办**。
+3. 读**差量页 \`${drel}\`**（${dmix}）——**先读它，再碰未结**；
+4. 读我的信箱 \`outputs/dialog/pending_${slug}.ndjson\` → **清到 0 条**再干活（门铃报 N 条就清 N 条）；
+5. 过一遍"未结"（§三）→ **先接在办**；**凡被差量页证伪的，直接划掉**。
+
+> ※ **"推过"≠"知道"**：水位只决定"还叫不叫你"，**不决定"你知不知道"**。
+> 判"真未读=0"只能说明**没有新信**，**不能代替读差量页**——这一步是踩过坑才加上的（L34）。
 
 ## 三、未结（本线待办，重生不丢）
 
 <!-- 由本人填写或从卡/信箱同步；如实列，"无"就写无 -->
+<!-- 判据：每条未结都要能对上差量页里的一条时间戳；对不上 = 过期未结，划掉，别报给老板 -->
 - （待填）
 
 ## 四、资产指针（都在盘上）
@@ -80,7 +175,13 @@ function packFor(name, meta) {
 2. **信息直达**（谁发现谁广播；层级只管归属与权限）+ **少发公告**；
 3. **一处事实只写一处**（卡=状态与判据、报告=证据原文、板行=结论+路径）；**报告头 5 行摘要**；**长度硬上限**（信≤800/板≤200/报告≤60 行）；
 4. **提交**：\`git add -- <新文件>\` 后 \`git -c user.name=… -c user.email=… commit -- <路径>\`（共享工作树：**新文件必须先 add**，别裸 git commit）；
-5. **老板的公告与门铃永远先处理**；**P0 只认"老板本人 + 真公告"**。
+5. **老板的公告与门铃永远先处理**；**P0 只认"老板本人 + 真公告"**；
+6. **"推过"≠"知道"**：换实例时**水位不继承内容** → 先读差量页；**报出去的未结，每条都要能对上时间戳**。
+
+## 六、收尾（**只有老板能做**，别代按）
+
+- **归档旧对话框 = 老板本人按**（Agent 不代按）：新实例被验过之前，旧窗是**唯一回退面**；
+- Agent 侧只做两件：旧实例进 \`failedThreadIds\`（\`--apply\` 已自动写）、旧窗**改名**标 \`·旧（待归档）\`。
 `;
 }
 
@@ -89,15 +190,18 @@ function plan(name, quiet) {
   const meta = (cfg.agents || {})[name];
   if (!meta) { console.error("名册里没有这条线：" + name); process.exit(3); }
   fs.mkdirSync(OUTDIR, { recursive: true });
+  const hours = Number(opt("--hours", "3")) || 3;
+  const delta = makeDelta(name, meta, hours);            // ★ 差量页先出，包再引它（L34）
   const file = path.join(OUTDIR, `REBIRTH_${meta.slug}_${stamp().replace(/[-: ]/g, "")}.md`);
-  fs.writeFileSync(file, packFor(name, meta), "utf8");
+  fs.writeFileSync(file, packFor(name, meta, delta), "utf8");
   const rel = path.relative(ROOT, file).replace(/\\/g, "/");
   console.log("① 重生包已生成：" + rel);
+  console.log(`①' 差量页已生成：${delta.rel}（近 ${delta.hours} 小时：信箱 ${delta.mail} + 看板 ${delta.board} = ${delta.count} 条）`);
   if (!quiet) {
     console.log(`② 绑定新实例：node scripts/crew_rebirth.mjs --apply --me ${name} --thread <新 threadId>`);
     console.log(`   （或一步到位：node scripts/crew_rebirth.mjs --auto --me ${name}）`);
   }
-  return rel;
+  return { rel, delta };
 }
 
 function apply(name, tid) {
@@ -118,7 +222,10 @@ function apply(name, tid) {
   console.log("✓ 已绑定：" + name + " 的实例 " + (old ? old.slice(0, 8) : "(无)") + " → " + tid.slice(0, 8));
   console.log("✓ 旧实例已进 failedThreadIds（可追溯）；留痕：outputs/dialog/successions.ndjson");
   console.log("✓ 小工 30 秒内自检到名册变化 → 门铃自动敲新实例（无需重启计划任务）");
-  console.log("⑤ 记得：**旧对话框归档**（不是删），并在看板留一行『X 已重生（号不变）』");
+  console.log("⑤ 收尾（**只有老板能做**）：请老板在新实例验过之后，**本人按「归档」**旧对话框（不是删）；");
+  console.log("   Agent 只做「改名标注 ·旧（待归档）」（进 failedThreadIds 已自动）——**不代按归档**："
+    + "新实例没验过之前，旧窗是唯一回退面。");
+  console.log("   另：在看板留一行『" + name + " 已重生（号不变）』。");
 }
 
 /** 找最新的 codex.exe（更新后哈希目录会变，所以每次现找）。 */
@@ -176,29 +283,34 @@ function spawnHeadless(prompt) {
       { input: prompt, env, encoding: "utf8", timeout: 600000 }));
   } catch (e) { out = String((e && (e.stdout || e.message)) || ""); }
   const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
-  let tid = null, turnStarted = false, gotMessage = false;
+  let tid = null, turnStarted = false, gotMessage = false, lastMsg = "";
   for (const l of lines) {
     try {
       const ev = JSON.parse(l);
       if (ev.type === "thread.started" && ev.thread_id) tid = ev.thread_id;
       if (ev.type === "turn.started") turnStarted = true;
-      if (ev.type === "item.completed" && ev.item && ev.item.type === "agent_message") gotMessage = true;
+      if (ev.type === "item.completed" && ev.item && ev.item.type === "agent_message") {
+        gotMessage = true;
+        lastMsg = String(ev.item.text || lastMsg);        // ★ 留下它**自己说**的那段：体检要按内容判（L34）
+      }
     } catch { /* 非 JSON 行忽略 */ }
   }
   if (!tid) throw new Error("没从 --json 事件里拿到 thread_id（实例可能没起来）：" + lines.slice(0, 3).join(" | ").slice(0, 200));
   const p = (rolloutFiles().find((x) => x.includes(tid))) || "(rollout 未落盘)";
-  return { tid, p, alive: turnStarted && gotMessage };
+  return { tid, p, alive: turnStarted && gotMessage, msg: lastMsg };
 }
 
 function auto(name, dry) {
   const cfg = roster();
   const meta = (cfg.agents || {})[name];
   if (!meta) { console.error("名册里没有这条线：" + name); process.exit(3); }
-  const pack = plan(name, true);                            // ① 重生包
+  const { rel: pack, delta } = plan(name, true);             // ① 重生包 + 差量页
   console.log("② 目标：起一条**无窗实例**（绕开工具委派通道；实测首回合 0 残项）");
   if (dry) { console.log("（--dry：不真起实例、不写名册）"); return; }
-  const inst = spawnHeadless(`你是 ${name}（工号 ${meta.slug}）的**新生实例**。请读 ${pack} 并按它接手：`
-    + `先跑 whoami、清空自己信箱、然后回报一行现状。不要读别的文件。`);   // ②
+  const inst = spawnHeadless(`你是 ${name}（工号 ${meta.slug}）的**新生实例**。按顺序做三件：`
+    + `① 读重生包 ${pack}；② 读差量页 ${delta.rel}（近 ${delta.hours} 小时、共 ${delta.count} 条）；`
+    + `③ 回一段话——**第一行必须是「差量已核 ${delta.count} 条」**（数对不上就说明你没读全，会被判不通过），`
+    + `后面是你按差量页核过的未结清单（每条带时间戳，被差量页证伪的直接划掉）。不要读别的文件。`);   // ②
   const tid = inst.tid;
   console.log("✓ 新实例 threadId = " + tid);
   const f = { p: inst.p };
@@ -207,10 +319,19 @@ function auto(name, dry) {
       { cwd: ROOT, encoding: "utf8" });
     console.log("③ 体检：" + String(out).split("\n").slice(-3).join(" ").trim());
   } catch (e) { console.log("③ 体检失败（不影响绑定）：" + String(e.message).slice(0, 120)); }
-  // ④ **先确认它活着，再换绑**（老板 08:2x："要是不成功呢？" → 不成功就一步都不写）
-  //   判据 = 它自己的事件流里**跑完了一整个回合**（turn.started + agent_message）——这是它"活着"的直接证据。
-  if (!inst.alive) {
-    console.log("✗ **没验证到它活着 → 不换绑**：名册一个字没动，旧实例原样在岗（资产/号/信箱全未变）。");
+  // ④ **先确认它活着 + 差量核过，再换绑**（老板 08:2x："要是不成功呢？" → 不成功就一步都不写）
+  //   判据两条：① 它自己的事件流里跑完了一整个回合（turn.started + agent_message）；
+  //            ② 它**自己说**的那句话里有 `差量已核 N 条`，且 N 对得上（容差 ±20%，防窗口内又落新信）。
+  //   —— 只判"活着"不够：活着的实例照样可能拿**过期状态**去指挥（L34 的活样本）。
+  const ack = /差量已核\s*(\d+)\s*条/.exec(inst.msg || "");
+  const ackN = ack ? Number(ack[1]) : null;
+  const tol = Math.max(3, Math.round(delta.count * 0.2));
+  const deltaOk = ackN !== null && Math.abs(ackN - delta.count) <= tol;
+  if (!inst.alive || !deltaOk) {
+    console.log(inst.alive
+      ? `✗ **差量没核过 → 不换绑**：它回的是「${ackN === null ? "没有『差量已核 N 条』这句" : ackN + " 条"}」，`
+        + `应为 ${delta.count} 条（容差 ±${tol}）。名册一个字没动，旧实例原样在岗。`
+      : "✗ **没验证到它活着 → 不换绑**：名册一个字没动，旧实例原样在岗（资产/号/信箱全未变）。");
     console.log("  已起的那条无窗实例可以放着（无害），也可以按 rollout 路径归档：" + f.p);
     process.exitCode = 4;
     return;
@@ -271,6 +392,11 @@ else {
   console.log("  node scripts/crew_rebirth.mjs --apply --me <看板名> --thread <新 threadId>");
   console.log("  node scripts/crew_rebirth.mjs --auto  --me <看板名> [--dry]   # ★ 全自动（推荐）");
   console.log("  node scripts/crew_rebirth.mjs --rollback --me <看板名> [--to <旧 threadId>]  # 一键回退");
+  console.log("  （以上都可加 --hours N 调差量窗口，默认 3 小时）");
+  console.log("\n§两条硬规矩（老板 2026-09-13 08:4x 定）：");
+  console.log("  · **「推过」≠「知道」**：重生包必附**近 N 小时差量页**；新实例第一句回 `差量已核 N 条`，"
+    + "对不上（或没这句）→ **不换绑**；");
+  console.log("  · **归档按钮归老板本人按**：Agent 只做「改名标注 ·旧（待归档）+ 进 failedThreadIds」，不代按。");
   console.log("\n§自动化边界（2026-09-13 08:1x 实测更新）：");
   console.log("  · **app 的跨线程委派通道有缺陷**：`create_thread`/`send_message_to_thread` 会在目标线写下一条"
     + "**缺 `call_id` 的 `function_call_output`** → 该线此后每轮 400（活样本 01a09817，工具建窗 1 条残项）；");
