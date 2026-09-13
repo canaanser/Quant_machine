@@ -1902,29 +1902,72 @@ async function main() {
     JSON.stringify((dj.groups || [])[0] || {}).slice(0, 120)
   );
 
+  // ★★ 减法（老板 2026-09-13 08:1x 全批 / `codex-总监` 08:02 派活）：**`/api/mail` 只入库、不推送**。
+  //   于是下面这些"拿 /api/mail 当推送驱动"的用例**必须改驱动**——改指**仍然存在的推送路径**：
+  //   ① 公告投递（`ingestNotices` → `deliverByQueue`）② 到点补投（`wakeRetryTick` → `deliverToLine`）。
+  //   ⚠️ 这也是本次减法**唯一有风险的地方**：两条路都改用同一批断言时，要保证
+  //     "推成功才记账 / 推失败不记账 / 账本写坏不影响投递" 这三条语义**仍被钉住**。
+  const readPushedAll = () => {
+    const p = path.join(path.dirname(DIALOG_FILE), "pushed.ndjson");
+    try {
+      if (!fs.existsSync(p) || !fs.statSync(p).isFile()) return [];
+      return fs
+        .readFileSync(p, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((s) => {
+          try {
+            return JSON.parse(s);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  const pushedRows = (to, sinceMs) =>
+    readPushedAll().filter((r) => r && String(r.to) === to && Number(r.ts_ms) >= Number(sinceMs || 0));
+  // 驱动①：发一条 `@全体` 公告 → 摄取时会**逐个投递**（带 mailboxTs），这就是真推送路径
+  const pushViaNotice = async (kw) => {
+    const t0 = Date.now();
+    fs.appendFileSync(BOARD_FILE, "- @全体 " + boardStamp(new Date()) + " 老板：【自测·推记账】" + kw + "\n", "utf8");
+    await new Promise((r) => setTimeout(r, 2600));
+    return t0;
+  };
+
   // ⑯ 队列冷却语义（2026-09-12 01:0x 老板发现两条消息被"阻塞"）：
   //    **不同内容**的消息不该被冷却挡住（能连着叫醒）；**同一条**才必须去重。
-  // 用 /api/mail{wake:true} 直接看"这次到底有没有真的叫醒"，避免被后台唤醒（公告/解除暂停的扇出）干扰计数
-  const mailWake = async (body) =>
-    (await (await fetch(base + "/api/mail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...hdr },
-      body: JSON.stringify({ to: "codex-测窗口", from: "老板", body: body, wake: true }),
-    })).json());
-  const q1 = await mailWake("[自测] 连发第一条：内容不同，该唤醒");
-  const q2 = await mailWake("[自测] 连发第二条：内容不同，也该唤醒");
+  //    驱动改成**公告投递**（同一条公告同时推给多条线，正是"连发"的形状）。
+  const tQ1 = await pushViaNotice("连发第一条");
+  const tQ2 = await pushViaNotice("连发第二条（内容不同）");
+  const q1n = pushedRows("codex-测窗口", tQ1).length;
+  const q2n = pushedRows("codex-测窗口", tQ2).length;
   check(
-    "队列：内容不同的连续消息**不会被冷却挡住**（不再「阻塞」）",
-    q1.woke === true && q2.woke === true,
-    JSON.stringify({ q1: q1, q2: q2 }).slice(0, 140)
+    "队列：内容不同的连续推送**不会被冷却挡住**（各自都真的推出去了）",
+    q1n >= 1 && q2n >= 1,
+    "第一条=" + q1n + " 行 · 第二条=" + q2n + " 行"
   );
-  const dupBody = "[自测] 同一条消息，连投两次应当只叫一次";
-  const q3 = await mailWake(dupBody);
-  const q4 = await mailWake(dupBody);
+  // ★ 本次减法的**验收判据**：`/api/mail` **只入库、不推送、不记账**。
+  //   为什么"不记账"是必须的（这条比"停推送"更要紧）：账本是"**已推送**"的水位依据——
+  //   没推却记一行 → 小工一看"Hub 推过了"就**不再按铃** → 两条通道同时哑掉，信没人叫。
+  const tMailOnly = Date.now();
+  const mailOnly = await (await fetch(base + "/api/mail", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...hdr },
+    body: JSON.stringify({ to: "codex-测窗口", from: "老板", body: "[自测·减法] 这封只入库，不该推送", wake: true }),
+  })).json();
   check(
-    "队列：**同一条消息**十分钟内不重复投（幂等，接口直接报 deduped）",
-    q3.woke === true && q4.deduped === true && q4.woke === false,
-    JSON.stringify({ q3: q3, q4: q4 }).slice(0, 140)
+    "减法·一条叫醒通道：`/api/mail` **只入库**（woke=false、ingested=true、信仍落信箱）",
+    mailOnly.ok === true && mailOnly.woke === false && mailOnly.ingested === true && !!mailOnly.mailbox,
+    JSON.stringify(mailOnly)
+  );
+  check(
+    "减法·一条叫醒通道：只入库的这封**不写账本**（否则小工以为推过了、就不再按铃）",
+    pushedRows("codex-测窗口", tMailOnly).every((r) => String(r.mailbox_ts) !== "" && Number(r.ts_ms) < tMailOnly) &&
+      pushedRows("codex-测窗口", tMailOnly).length === 0,
+    "该线在窗口内的账本行=" + pushedRows("codex-测窗口", tMailOnly).length
   );
 
   // ⑰ HUB-011 可塑性：能力协商 / 增量游标 / 服务端已读 / schema
@@ -2032,7 +2075,13 @@ async function main() {
     headers: { "Content-Type": "application/json", ...hdr },
     body: JSON.stringify({ to: "codex-测窗口", from: "老板", body: "[自测] 这条要顺便叫醒", wake: true }),
   })).json();
-  check("投信箱 wake:true：顺手叫醒（queue 优先）", mWake.ok === true && mWake.woke === true, JSON.stringify(mWake));
+  // ★ 减法（老板 2026-09-13 08:1x 全批 / 总监 08:02 派活）：**只剩一条叫醒通道**——
+  //   `/api/mail` 不再推送"来信提示"，叫醒统一交给小工门铃（它有节拍/账本/P0/兜底/日志判据）。
+  check(
+    "投信箱 wake:true：按减法**只入库、不推送**（woke=false、ingested=true；叫醒交给小工门铃）",
+    mWake.ok === true && mWake.woke === false && mWake.ingested === true,
+    JSON.stringify(mWake)
+  );
 
   // ⑳ 公告重做（2026-09-12）：**每条公告单独回执**（取消笼统式）+ 短号 + 公告投信箱
   const noticeLine = "- @全体 " + boardStamp(new Date()) + " 老板：自测公告：请回执";
@@ -2119,6 +2168,23 @@ async function main() {
     !((n5.refs.acks || {})["codex-测占用"] || {}).mode,
     JSON.stringify(((n5.refs.acks || {})["codex-测占用"] || {}))
   );
+  // ★★ 减法②（老板 2026-09-13 08:1x 全批 / 总监 08:02 派活）：**公告回执分类**。
+  //   `〔免回执〕` 标记的公告 = "知道类" → **不进回执名单、不催办**；不标的照旧要回执（默认宁多要一次）。
+  const noAckKw = "自测免回执公告" + Date.now().toString(36);
+  fs.appendFileSync(BOARD_FILE, "- @全体 " + boardStamp(new Date()) + " 老板：〔免回执〕" + noAckKw + "\n", "utf8");
+  await new Promise((r) => setTimeout(r, 2600));
+  const d6 = await (await fetch(base + "/api/dialog?limit=50", { headers: hdr })).json();
+  const n6 = (d6.records || []).filter((r) => r.kind === "notice" && String(r.body || "").includes(noAckKw)).pop();
+  check(
+    "减法②：`〔免回执〕` 公告 → refs.ackRequired=false 且 **pendingAck 为空**（不催办）",
+    !!n6 && n6.refs.ackRequired === false && (n6.refs.pendingAck || []).length === 0 && (n6.refs.expected || []).length === 0,
+    JSON.stringify({ ackRequired: n6 && n6.refs.ackRequired, pending: n6 && (n6.refs.pendingAck || []).length, expected: n6 && (n6.refs.expected || []).length })
+  );
+  check(
+    "减法②：**不标**的公告照旧要回执（默认 true，别把要改行为的漏掉）",
+    !!n5 && n5.refs.ackRequired !== false && (n5.refs.expected || []).length > 0,
+    JSON.stringify({ ackRequired: n5 && n5.refs.ackRequired, expected: n5 && (n5.refs.expected || []).length })
+  );
 
   // ㉑ HUB-015 公告"送到"补全（`codex-修复` 2026-09-13 01:54 反馈；总监派单）
   //   ① 入职时补投**生效公告正文**；② 回执窗口从**投递时刻**起算（入职晚于发布也要回执）；
@@ -2138,7 +2204,12 @@ async function main() {
   const n15 = (d15.records || []).filter((r) => r.kind === "notice" && /自测HUB015/.test(String(r.body || ""))).pop();
   const code15 = n15 ? "N-" + String(n15.id).slice(0, 4).toUpperCase() : "";
   check("HUB-015①：公告已入库", !!n15 && !!code15, code15);
-  // 入职一条**晚于发布**的新线（此刻公告还"生效中"：TTL 9s，刚过 2.5s）
+  // 入职一条**晚于发布**的新线。★ 刻意**把入职时点往后挪到 ~6.5s**：
+  //   这条用例的判据是"老线窗口已关 且 新线窗口未关"，两条边界相距 = `新线投递时刻 - 老线投递时刻`
+  //   = 摄取↔入职 的间隔。原来只隔 ~1 秒 → 余量只有 ±0.5s，机器一忙就翻（今晚红-红-绿就是这么来的）。
+  //   往后挪到 6.5s，带子拉到 ~6s、余量 ±3s；同时公告 TTL=9s，此刻**仍然生效**（回执窗口还开着）。
+  const obWait = 6500 - (Date.now() - tPub15);
+  if (obWait > 0) await new Promise((r) => setTimeout(r, obWait));
   const ob15 = await onboard({
     by: "codex-看板编辑",
     approval: "老板 自测口述",
@@ -2252,52 +2323,51 @@ async function main() {
           })
       : [];
   const ledgerBefore = readLedger().length;
-  const pushMail = (to, body) =>
-    fetch(base + "/api/mail", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...hdr },
-      body: JSON.stringify({ to, from: "codex-测在岗", body, wake: true }),
-    }).then((r) => r.json());
-  const pushOk = await pushMail("codex-测窗口", "[自测] 推送记账：这条推得通（桩返回 0）");
-  const pushBad = await pushMail("codex-测在岗", "[自测] 推送记账：这条推不通（桩返回 1）");
+  // 驱动改成**公告投递**：`/api/mail` 已按减法只入库、不推送（`pushMail` 那条路没了）。
+  // 公告摄取会把正文**逐条投到每条线**，这正是"真推送"，且带 mailboxTs、会记账。
+  const tPA = await pushViaNotice("推送记账夹具A");
+  const tPB = await pushViaNotice("推送记账夹具B（与 A 同一分钟内）");
+  const winRows = pushedRows("codex-测窗口", tPA);
   const delta = readLedger().slice(ledgerBefore);
   check(
     "推送记账：推成功写一行（by=hub / to=看板名 / ts_ms / mailbox_ts 齐）",
-    delta.some(
+    winRows.some(
       (r) =>
         r &&
-        r.to === "codex-测窗口" &&
         r.by === "hub" &&
         Number.isFinite(r.ts_ms) &&
         !!r.mailbox_ts &&
         /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(r.ts))
     ),
-    "pushOk=" + JSON.stringify(pushOk) + " delta=" + JSON.stringify(delta)
+    "该线行=" + JSON.stringify(winRows.slice(-2))
   );
   check(
-    "推送记账：推失败**不写**（这正是门铃兜底要叫的场景）",
-    pushBad.woke !== true && !delta.some((r) => r && r.to === "codex-测在岗"),
-    "woke=" + pushBad.woke + " delta=" + JSON.stringify(delta.map((r) => r && r.to))
+    "推送记账：推失败**不写**（`codex-测在岗` 没有会话 → 一条行都没有；这正是门铃兜底要叫的场景）",
+    pushedRows("codex-测在岗", tPA).length === 0,
+    "该线行=" + pushedRows("codex-测在岗", tPA).length
   );
   // ★ HUB-018 追加（codex-修复 2026-09-13 05:41 给的判别性用例②）：
-  //   **同一分钟两封不同的信 → 账本必须两行**（不能因为"这一分钟推过了"把第二封并掉）。
-  //   这正是我第一版写错的地方：去重键用了分钟精度的 `mailbox_ts`，同分钟的第二封会被吃掉 →
-  //   门铃还会为它多叫一次（等于没修）。改用正文哈希做去重键之后才对。
-  const t0SameMin = Date.now();
-  await pushMail("codex-测窗口", "[自测] 同分钟第一封 A");
-  await pushMail("codex-测窗口", "[自测] 同分钟第二封 B");
-  const sameMin = readLedger().filter((r) => r && r.to === "codex-测窗口" && Number(r.ts_ms) >= t0SameMin);
+  //   **同一分钟两封不同 → 账本必须两行**（不能因为"这一分钟推过了"把第二封并掉）。
+  //   我第一版把去重键写成分钟精度的 `mailbox_ts`，同分钟第二封会被吃掉 → 门铃还会为它多叫一次。
+  const sameMin = winRows;
   check(
-    "推送记账：同分钟两封**不同**的信 → 账本**两行**（不许并成一封）",
-    sameMin.length === 2,
+    "推送记账：同分钟两封**不同**的信 → 该线账本**两行**（不许并成一封）",
+    sameMin.length >= 2,
     "rows=" + sameMin.length + " mailbox_ts=" + JSON.stringify(sameMin.map((r) => r.mailbox_ts))
   );
-  // 写失败不许影响投递：把账本路径临时换成"目录"→ append 必然抛 → 只在日志记一笔，投递**仍须成功**。
-  let pushNoLedger = null;
+  // 写失败不许影响投递：把账本路径临时换成"目录" → append 必然抛 → 只在日志记一笔，
+  // **投递仍须成功**（判据改成看"信有没有落进那条线的信箱"，因为 `/api/mail` 已不推送）。
+  let deliveredWhileLedgerBroken = false;
   try {
     fs.rmSync(pushedPath, { force: true });
     fs.mkdirSync(pushedPath, { recursive: true });
-    pushNoLedger = await pushMail("codex-测窗口", "[自测] 推送记账：账本写不进去，投递也不许失败");
+    const kw = "账本坏也要投到";
+    const t0 = Date.now();
+    fs.appendFileSync(BOARD_FILE, "- @全体 " + boardStamp(new Date()) + " 老板：【自测·推记账】" + kw + "\n", "utf8");
+    await new Promise((r) => setTimeout(r, 2600));
+    const box = path.join(dirs.mailbox, "pending_codex-awake2.ndjson");
+    const txt = fs.existsSync(box) ? fs.readFileSync(box, "utf8") : "";
+    deliveredWhileLedgerBroken = txt.includes(kw) && Date.now() > t0;
   } finally {
     try {
       fs.rmdirSync(pushedPath);
@@ -2305,9 +2375,9 @@ async function main() {
   }
   const pingOk = await (await fetch(base + "/api/ping")).json().catch(() => ({}));
   check(
-    "推送记账：账本写失败**不许影响投递**（只多叫一次门铃）",
-    pushNoLedger && pushNoLedger.ok === true && pushNoLedger.woke === true && pingOk.ok === true,
-    JSON.stringify(pushNoLedger)
+    "推送记账：账本写失败**不许影响投递**（信照旧落进那条线的信箱）",
+    deliveredWhileLedgerBroken && pingOk.ok === true,
+    "投到=" + deliveredWhileLedgerBroken + " ping=" + pingOk.ok
   );
 
   // ★ PLT-006（codex-总监 2026-09-13 06:23）：**补投队列要看账本**

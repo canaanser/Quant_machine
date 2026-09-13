@@ -122,7 +122,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.55"; // .55：HUB-AVATAR 头像放大 + 点头像出资料卡 + 长按名字 @（页面改了必须跳版本号，否则已打开的客户端不会自动刷新）
+const PAGE_VER = "2026-09-10.56"; // .56：减法② 公告"免回执"开关（发布入口勾一下 = 知道类公告不回执、不催办）
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -1187,8 +1187,10 @@ function stripToolPrefix(s) {
 //   **只认开头连续的那一串** @，免得正文里随口提一句 @某人 就被当成收件人名单。
 function noticeRecipientsOf(content) {
   const out = [];
-  // 同样先剥工具前缀，再找**开头连续的那一串 @**（名单是正文的一部分，前缀不是）
-  const m = stripToolPrefix(content).match(/^\s*(?:@[A-Za-z0-9_\u4e00-\u9fa5-]{1,32}\s*)+/);
+  // 同样先剥工具前缀、再剥"免回执"标记，然后找**开头连续的那一串 @**
+  // （前缀与标记都是元数据，名单才是正文的一部分）
+  const s = stripToolPrefix(content).replace(/^\s*〔免回执〕\s*/, "");
+  const m = s.match(/^\s*(?:@[A-Za-z0-9_\u4e00-\u9fa5-]{1,32}\s*)+/);
   if (!m) return out;
   for (const x of m[0].matchAll(/@([A-Za-z0-9_\u4e00-\u9fa5-]{1,32})/g)) {
     const a = boardName(x[1]);
@@ -1196,6 +1198,15 @@ function noticeRecipientsOf(content) {
     if (!out.includes(a)) out.push(a);
   }
   return out;
+}
+// ★★ 减法②（老板 2026-09-13 08:1x 全批「这些冗余的东西我全都批」/ `codex-总监` 08:02 派活）：
+//   **公告回执分类**——只有"要改行为 / 要拍板"的公告才要回执；"知道类"的免回执。
+//   落法：公告正文开头写一个显式标记 `〔免回执〕`（发布入口默认**不加**=要回执，宁多要一次）。
+//   为什么用正文标记而不是新字段：**看板行只有"一行文本"这一种载体**，公告记录是从板行解析出来的，
+//   标记写在正文里才能随行持久化、也才能在板上一眼看出来（不引入第二份真源）。
+const NO_ACK_MARK = "〔免回执〕";
+function noticeAckRequired(content) {
+  return !stripToolPrefix(content).trim().startsWith(NO_ACK_MARK);
 }
 // 公告有效期：过期就不再要求回执（"有些公告已经失效了，自然不必存在"）。默认 24 小时。
 const NOTICE_TTL_MS = Number(process.env.MCHAT_NOTICE_TTL_MS || 24 * 3600 * 1000);
@@ -1354,7 +1365,10 @@ function applyNoticeAcks(records) {
     const acks = info.acks || {};
     // ★ HUB-018 D：公告只 @ 了几条线时，**回执名单也只算这几条**（老板："艾特多少人"自己选）。
     const only = noticeRecipientsOf(r.body);
-    const expected = mustAck.filter((a) => a !== r.from && (!only.length || only.includes(a)));
+    // ★★ 减法②：**免回执类公告不进回执名单、不催办**（老板 08:1x 全批 / 总监 08:02 派活）。
+    //   `refs.ackRequired` 一并下发，页面据此显示"已投递（免回执）"而不是"缺 N 条"。
+    const ackRequired = noticeAckRequired(r.body);
+    const expected = ackRequired ? mustAck.filter((a) => a !== r.from && (!only.length || only.includes(a))) : [];
     const nTs = parseCst(r.ts);
     const expired = now - nTs > NOTICE_TTL_MS;
     const supersededBy = info.supersededBy || null;
@@ -1363,7 +1377,7 @@ function applyNoticeAcks(records) {
       const base = Number(deliveredMap[String(r.id) + "|" + a] || 0) || nTs;
       return now - base <= NOTICE_TTL_MS;
     };
-    const pendingAck = supersededBy ? [] : expected.filter((a) => !acks[a] && windowOk(a));
+    const pendingAck = ackRequired && !supersededBy ? expected.filter((a) => !acks[a] && windowOk(a)) : [];
     // 显示口径：公告本身没过期，**或者**它虽然全局过期、但还有线在"自己的窗口"里（刚入职的新号）
     const active = !supersededBy && (!expired || pendingAck.length > 0);
     return {
@@ -1373,6 +1387,9 @@ function applyNoticeAcks(records) {
         acks,
         expected,
         pendingAck,
+        ackRequired,
+        // 投递到哪几条线（免回执时页面仍有东西可显示："已投递"）
+        deliveredTo: Object.keys(deliveredMap).filter((k) => k.startsWith(String(r.id) + "|")).map((k) => k.slice(String(r.id).length + 1)),
         expired,
         supersededBy,
         active,
@@ -4543,13 +4560,17 @@ function noticeOnlyCount(){try{return NOTICE_ONLY_SET.size;}catch(e){return 0;}}
 //   "让我能够选择艾特谁，其中有个选项是艾特所有人"。**一个都不勾 = 全体**；勾了 = 只发这几条线，
 //   而且**回执也只要它们回**（服务端按正文开头的 @ 列举收窄，见 noticeRecipientsOf）。
 let NOTICE_ONLY_SET=new Set();
+// ★★ 减法②：公告"免回执"开关（**默认关** = 要回执；宁多要一次，也不漏掉要改行为的）
+let NOTICE_NOACK=false;
 function renderNoticePick(){
   const box=$("#noticePick");
   if(!box)return;
   if(TARGET!=="全体"){box.hidden=true;box.innerHTML="";if(box.dataset)box.dataset.key="";return;}
   box.hidden=false;
   const lines=knownTargets().filter(t=>t!=="全体"&&t!=="老板");
-  const key=lines.join(",")+"|"+[...NOTICE_ONLY_SET].sort().join(",");
+  // ⚠️ 缓存键必须**把每个会影响渲染的状态位都算进去**——我这次就漏了 NOTICE_NOACK：
+  //   勾了"免回执"但 key 没变 → 这里早退 → 勾选态与提示都不刷新（真页面探针当场抓到）。
+  const key=lines.join(",")+"|"+[...NOTICE_ONLY_SET].sort().join(",")+"|"+(NOTICE_NOACK?"noack":"ack");
   if(box.dataset&&box.dataset.key===key)return;
   if(box.dataset)box.dataset.key=key;
   box.innerHTML="";
@@ -4569,7 +4590,10 @@ function renderNoticePick(){
   }
   const lab=document.createElement("span");
   lab.className="np-lab";
-  lab.textContent=NOTICE_ONLY_SET.size?("只发这 "+NOTICE_ONLY_SET.size+" 条线，回执也只要它们回"):"（不勾就发给所有线）";
+  // ★★ 减法②：多一个"免回执"开关——"知道类"公告不必每条都回，也就不再催办
+  box.appendChild(mk("免回执（知道类）",NOTICE_NOACK,()=>{NOTICE_NOACK=!NOTICE_NOACK;}));
+  lab.textContent=(NOTICE_ONLY_SET.size?("只发这 "+NOTICE_ONLY_SET.size+" 条线，回执也只要它们回"):"（不勾就发给所有线）")+
+    (NOTICE_NOACK?" · **免回执**（不催办）":"");
   box.appendChild(lab);
 }
 function insertMention(alias){
@@ -5381,10 +5405,12 @@ sendEl.addEventListener("click",async()=>{
     if(QUOTE)body.quoteId=QUOTE.id;
     // HUB-018 D：公告只发勾选的那几条线（服务端把名单写成正文开头的 @ 列举）
     if(target==="全体"&&NOTICE_ONLY_SET.size)body.only=[...NOTICE_ONLY_SET];
+    // ★★ 减法②：勾了"免回执"就显式传 false（服务端在正文最前加 〔免回执〕 标记）
+    if(target==="全体"&&NOTICE_NOACK)body.ackRequired=false;
     const r=await fetchT("/api/send",{method:"POST",headers:{"Content-Type":"application/json","x-mchat-token":token},body:JSON.stringify(body)},20000);
     const j=await r.json();
     if(r.status===401){askToken();return;}
-    if(j.ok){clearQuote();if(target==="全体"){NOTICE_ONLY_SET=new Set();renderNoticePick();refreshRouteHint();}}
+    if(j.ok){clearQuote();if(target==="全体"){NOTICE_ONLY_SET=new Set();NOTICE_NOACK=false;renderNoticePick();refreshRouteHint();}}
     statusEl.textContent=j.ok?"已发送，等待回复":"发送失败："+(j.error||"");
     if(j.ok)jumpToBottom();
     setTimeout(load,1200);
@@ -6386,23 +6412,24 @@ async function main() {
       // 但"投了等于没投"是真实痛点（老板 2026-09-12 当场指出：发完没叫醒总监）。
       // 所以给一个**显式开关** `wake:true`：投完顺手走一次"投递即唤醒"（queue 优先，带冷却/上限）。
       // 不做成默认，是为了保住 I3 语义（投递与唤醒分离）、也给调用方选择权。
-      let woke = false;
-      let deduped = false;
-      if (payload.wake === true) {
-        try {
-          const dv = await deliverByQueue(to, "（看板信箱来信提示 · 来自 " + from + "）你信箱里有一条：" + body.slice(0, 120) + "　请读 outputs/dialog/pending_" + slugFor(to) + ".ndjson 后回一句。", { mailboxTs: mailTs });
-          deduped = dv.how === "dup-skip";
-          woke = !!dv.ok && !deduped;
-          if (!woke && !deduped) {
-            // 叫不醒不能**静默**：记一笔 + 排一次补投（复用 HUB-002 的退避补投，2 分钟后重试）
-            log("MAIL WAKE MISS:", to, dv.how, dv.error ? String(dv.error).slice(0, 80) : "");
-            const n = Number(wakeBook(to).attempts || 0);
-            const wait = WAKE_BACKOFF_MS[Math.min(n, WAKE_BACKOFF_MS.length - 1)];
-            setWakeBook(to, { attempts: n + 1, nextAt: Date.now() + wait, lastReason: "信箱来信唤醒失败:" + dv.how });
-          }
-        } catch {}
-      }
-      sendJson(res, 200, { ok: true, to: to, mailbox: "pending_" + slugFor(to) + ".ndjson", woke: woke, deduped: deduped });
+      // ★★ 减法（老板 2026-09-13 08:1x 全批「这些冗余的东西我全都批」，`codex-总监` 08:02 派活）：
+      //   **只剩一条叫醒通道** —— 投一封信原来有**两条**在叫人：① 这里推"（看板信箱来信提示）…" 
+      //   ② 小工门铃（30 秒节拍、有共用账本、有 P0/兜底、有日志判据字段）。今晚为这个修了一整晚。
+      //   现在：**这里只入库、不推送**；叫醒统一交给小工门铃。
+      //
+      //   ⚠️ **并且不写账本行**（这一条比"停推送"更要紧）：`pushed.ndjson` 是"**已推送**"的水位依据——
+      //     如果这次没推却记了一行，小工一看"Hub 推过了"就**不再按铃** → **两边的叫醒同时消失，信没人叫**。
+      //     所以账本只记**真的推出去**的那些（`recordPush` 的调用点：公告投递/催办/补投/resume）。
+      //   返回语义不变：`woke` 恒为 false（本次没有任何叫醒动作），`deduped` 恒为 false。
+      log("MAIL INGESTED(只入库):", to, "from=" + from, "wake参数已按减法忽略");
+      sendJson(res, 200, {
+        ok: true,
+        to: to,
+        mailbox: "pending_" + slugFor(to) + ".ndjson",
+        woke: false,
+        deduped: false,
+        ingested: true,
+      });
       return;
     }
 
@@ -6599,6 +6626,10 @@ async function main() {
       const onlyPick = Array.isArray(payload.only)
         ? [...new Set(payload.only.map((x) => boardName(String(x || "").trim())).filter(Boolean))]
         : [];
+      // ★★ 减法②：公告可显式标"**免回执**"（默认不加 = 要回执；宁多要一次，也不漏掉要改行为的）。
+      //   标记写在正文**最前**（在 @ 名单之前也行——名单解析会先剥掉它）：
+      //   `〔免回执〕 @a @b 正文` → 公告仍投给 @ 到的那几条线，但**不进回执名单、不催办**。
+      if (target === "全体" && payload.ackRequired === false) content = NO_ACK_MARK + " " + content;
       if (target === "全体" && onlyPick.length) {
         const reg = Object.keys(readAgents().agents || {});
         const kept = onlyPick.filter((a) => a !== "老板" && reg.includes(a));
