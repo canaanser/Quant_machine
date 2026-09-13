@@ -8,6 +8,7 @@ const STATUS_TEXT = { reserved: "已预约", queuing: "排队中", serving: "服
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     list: [], front: [], ahead: 0, etaMin: 0, leftMin: 0, progressPct: 8,
     countdown: "--:--", updated: "--:--",
     loading: true,

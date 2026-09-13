@@ -3,7 +3,7 @@
   <view class="bg__blob bg__blob--c"></view>
 </view>
 
-<view class="page">
+<view class="page {{theme}}">
   <!-- ① 主看板：大数字 + 右上角两个小按钮（周期 / 眼睛） -->
   <view class="glass glass--dark">
     <view class="row row--between">

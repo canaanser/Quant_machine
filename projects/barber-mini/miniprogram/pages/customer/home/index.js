@@ -13,6 +13,7 @@ const FACE = { woman: "👩", man: "👨", elder: "🧓", child: "🧒" };
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     tone: "busy", statusText: "正在服务", statusSub: SUB.busy,
     waiting: 0, etaMin: 20, progress: 45, done: 0, updated: "--:--", mine: null,
     types: [

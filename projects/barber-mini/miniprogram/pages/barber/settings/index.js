@@ -8,6 +8,7 @@ const ICONS = [
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     icons: ICONS,
     goal: 300, openTime: "09:00", closeTime: "21:00",
     list: [], edit: null, form: { name: "", price: 38, min: 30, icon: "scissors" },
@@ -20,6 +21,15 @@ Page({
     getApp().setAutoFlow(on);
     this.setData({ autoFlow: on });
     wx.showToast({ title: on ? "调试滚动已开" : "已关闭", icon: "none" });
+  },
+  setThemeTap(e) {
+    const t = e.currentTarget.dataset.v;
+    getApp().setTheme(t);
+    const cls = getApp().themeClass();
+    // 让**所有已打开的页面**立刻换装（不然返回上一页还是旧皮）
+    try { getCurrentPages().forEach((p) => p.setData && p.setData({ theme: cls })); } catch (err) {}
+    this.setData({ theme: cls });
+    wx.showToast({ title: t === "minimal" ? "已切到极简 V1" : "已切回毛玻璃", icon: "none" });
   },
   async load() {
     try {

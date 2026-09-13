@@ -4,7 +4,7 @@
   <view class="bg__blob bg__blob--c"></view>
 </view>
 
-<view class="page">
+<view class="page {{theme}}">
   <view class="head">
     <view class="head__ava">{{me.initial}}</view>
     <view class="grow">

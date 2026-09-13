@@ -4,7 +4,7 @@
   <view class="bg__blob bg__blob--c"></view>
 </view>
 
-<view class="page">
+<view class="page {{theme}}">
   <!-- 店头 -->
   <view class="head">
     <view class="head__ava">明</view>

@@ -1,6 +1,7 @@
 import { api, priorityLabel } from "../../../utils/cloud.js";
 Page({
-  data: { list: [] },
+  data: {
+    theme: getApp().themeClass(), list: [] },
   onShow() { this.load(); },
   async load() {
     try {

@@ -173,3 +173,31 @@ page {
 .center { text-align: center; }
 .mt8 { margin-top: 8rpx; } .mt12 { margin-top: 12rpx; } .mt16 { margin-top: 16rpx; }
 .mt20 { margin-top: 20rpx; } .mt24 { margin-top: 24rpx; }
+
+/* ══ 极简版 V1（老板 2026-09-14 要求另起一套，留作备份）══════════════════════
+   **逻辑、信息架构、色系与毛玻璃版完全一致**，只换观感：
+   · 纯白卡片、无模糊、无投影、无光斑；描边细、留白多、圆角小；
+   · 颜色仍只 墨灰 + 金 + 三态色（忙橙 / 空闲绿 / 打烊绿），**依旧没有红色**。 */
+.theme--minimal { background: #FFFFFF; }
+.theme--minimal .bg { display: none; }
+.theme--minimal .glass {
+  background: #FFF; backdrop-filter: none; -webkit-backdrop-filter: none;
+  border: 1rpx solid #EDEDED; box-shadow: none; border-radius: 16rpx; padding: 30rpx; }
+.theme--minimal .glass--dark { background: #1B1D21; border-color: #1B1D21; }
+.theme--minimal .glass--tight { padding: 24rpx 26rpx; }
+.theme--minimal .tile, .theme--minimal .entry, .theme--minimal .tl24 {
+  background: #FFF; border: 1rpx solid #EDEDED; box-shadow: none; backdrop-filter: none;
+  -webkit-backdrop-filter: none; border-radius: 16rpx; }
+.theme--minimal .btn { border-radius: 12rpx; box-shadow: none; height: 96rpx; line-height: 96rpx; }
+.theme--minimal .btn--gold { background: var(--gold); }
+.theme--minimal .btn--ghost { background: #FFF; border: 1rpx solid #DADADA; }
+.theme--minimal .pill { background: #F5F5F5; }
+.theme--minimal .head__ava, .theme--minimal .ava { background: var(--gold); color: #fff; box-shadow: none; border-radius: 16rpx; }
+.theme--minimal .item__ico, .theme--minimal .pick, .theme--minimal .type { background: #FAFAFA; border: 1rpx solid #EDEDED; border-radius: 14rpx; }
+.theme--minimal .pick--on, .theme--minimal .type--on { border-color: var(--gold); background: #FFF9E8; }
+.theme--minimal .status, .theme--minimal .hero { box-shadow: none; border-radius: 16rpx; }
+.theme--minimal .seg { background: #F3F3F3; border-radius: 12rpx; }
+.theme--minimal .seg__i { border-radius: 10rpx; }
+.theme--minimal .seg__i--on { background: #FFF; box-shadow: none; border: 1rpx solid #E6E6E6; }
+.theme--minimal .bar { background: #F0F0F0; height: 10rpx; }
+.theme--minimal .tlbar__seg { border-radius: 8rpx; }

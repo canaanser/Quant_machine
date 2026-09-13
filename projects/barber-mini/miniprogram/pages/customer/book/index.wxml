@@ -3,7 +3,7 @@
   <view class="bg__blob bg__blob--b"></view>
 </view>
 
-<view class="page">
+<view class="page {{theme}}">
   <view class="row row--between" style="margin-bottom:22rpx">
     <view>
       <view class="lbl">阿明理发</view>

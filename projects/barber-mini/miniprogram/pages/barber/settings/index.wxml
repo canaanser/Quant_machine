@@ -3,7 +3,7 @@
   <view class="bg__blob bg__blob--b"></view>
 </view>
 
-<view class="page">
+<view class="page {{theme}}">
   <view class="row row--between" style="margin:6rpx 4rpx 26rpx">
     <view>
       <view class="lbl">价格 / 时长 / 目标 / 营业时间</view>
@@ -66,6 +66,20 @@
   </view>
 
   <!-- 调试分组（上线前关掉/删掉） -->
+  <view class="glass">
+    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">外观</text></view>
+    <view class="row row--between">
+      <view class="grow">
+        <view class="item__t">界面风格</view>
+        <view class="item__s">毛玻璃（默认·层次丰富）／ 极简 V1（纯白扁平·留白多）</view>
+      </view>
+      <view class="seg" style="width:260rpx">
+        <view class="seg__i {{theme === 'theme--minimal' ? '' : 'seg__i--on'}}" id="thGlass" data-v="glass" bindtap="setThemeTap">毛玻璃</view>
+        <view class="seg__i {{theme === 'theme--minimal' ? 'seg__i--on' : ''}}" id="thMin" data-v="minimal" bindtap="setThemeTap">极简</view>
+      </view>
+    </view>
+  </view>
+
   <view class="glass">
     <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">调试</text><text class="muted grow" style="text-align:right">正式经营请保持关闭</text></view>
     <view class="row row--between">

@@ -1,7 +1,8 @@
 // 今日流水：读 orders（客户端只读，写仍然只走云函数）。按完成时间倒序，含单笔详情。
 Page({
   // 时间统一走 hhmm（24 小时制）
-  data: { today: [], earlier: [], tSum: 0, tCount: 0, tAvg: 0, loading: true },
+  data: {
+    theme: getApp().themeClass(), today: [], earlier: [], tSum: 0, tCount: 0, tAvg: 0, loading: true },
   onShow() { this.load(); },
   async load() {
     try {

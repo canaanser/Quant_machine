@@ -12,6 +12,7 @@ const TYPE_TEXT = { woman: "女士", man: "男士", elder: "老人", child: "小
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     status: "idle", tone: "free", statusText: "空闲",
     currentName: "暂无客人", currentItem: "—", elapsed: 0, overtime: 0,
     servingId: null, servingStartAt: 0, servingPlanMin: 0,

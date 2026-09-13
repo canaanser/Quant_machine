@@ -4,7 +4,7 @@
 </view>
 
 <!-- 两屏：左滑看第二屏（接单/工具）。第一屏只放"急事"。 -->
-<swiper class="sw" bindchange="onSwipe" current="{{page}}">
+<swiper class="sw {{theme}}" bindchange="onSwipe" current="{{page}}">
   <!-- ============ 第 1 屏：急事 ============ -->
   <swiper-item>
     <scroll-view scroll-y class="pane">

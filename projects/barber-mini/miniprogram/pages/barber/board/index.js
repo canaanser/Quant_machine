@@ -10,6 +10,7 @@ const TYPE_LABEL = { woman: "女士", man: "男士", elder: "老人", child: "�
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     ranges: RANGES, sorts: SORTS, range: "today", rangeLabel: "今天", sort: "revenue",
     b: { summary: { count: 0, revenue: 0, perCustomer: 0, people: 0, customers: 0, avgMs: 0 } },
     avgMinText: "0 分", rank: [], customers: [], byService: [], byType: [], byHour: [], byDay: [],

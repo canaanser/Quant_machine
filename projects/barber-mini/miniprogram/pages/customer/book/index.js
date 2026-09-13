@@ -12,6 +12,7 @@ const TYPES = [
 
 Page({
   data: {
+    theme: getApp().themeClass(),
     step: 1, slots: [], items: [], types: TYPES,
     pickedSlot: null, pickedItem: null, pickedType: null,
     summary: { time: "未选", item: "未选", type: "未选", price: 0 },

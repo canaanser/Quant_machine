@@ -2,8 +2,9 @@
 const ENV_ID = "cloud1-d2g4axdnz488a6d75";   // 云环境 ID（老板 2026-09-14 建）
 
 App({
-  globalData: { barberId: "b1", envId: ENV_ID, autoFlow: false },
+  globalData: { barberId: "b1", envId: ENV_ID, autoFlow: false, theme: "glass" },
   onLaunch() {
+    try { const t = wx.getStorageSync("theme"); if (t) this.globalData.theme = t; } catch (e) {}
     if (!wx.cloud) {
       console.error("请使用 2.2.3+ 基础库以使用云能力");
       return;
@@ -13,6 +14,12 @@ App({
       traceUser: true,
     });
   },
+  // 外观主题：glass（毛玻璃·默认）/ minimal（极简版 V1）。同一份逻辑，只换观感。
+  setTheme(t) {
+    this.globalData.theme = t === "minimal" ? "minimal" : "glass";
+    try { wx.setStorageSync("theme", this.globalData.theme); } catch (e) {}
+  },
+  themeClass() { return this.globalData.theme === "minimal" ? "theme--minimal" : "theme--glass"; },
   // ★ 调试滚动队列（全局，与页面无关）：每 4 秒自动流转 + 队列少于 4 位自动补客
   setAutoFlow(on) {
     this.globalData.autoFlow = !!on;
