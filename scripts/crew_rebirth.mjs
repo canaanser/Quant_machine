@@ -198,17 +198,35 @@ function packFor(name, meta, delta) {
 - 我的下级：见 \`docs/ORG_CHART.md\`（**只给自己的下级派活**；别人的人只发"请求"）
 - 上下文：**本实例是新生的（ID 已换）**；旧实例的账本仍在盘上可追溯（见 §四）。
 
-## 二、接手第一件事（照做）
+## 二、接手第一件事：**照抄下面这几条命令**（一次一条，别跳、别自己发明）
 
-1. \`node tools/mobile_chat/whoami.mjs --me ${name}\` → 确认级别与必读；
-2. 读 **\`AGENTS.md\`**（唯一规约真源，每轮自动加载）+ **\`docs/INDEX.md\`（一页索引）**；**其余按需 grep，别整读**；
-3. 读**差量页 \`${drel}\`**（${dmix}）——**先读它，再碰未结**；
-4. 读我的信箱 \`outputs/dialog/pending_${slug}.ndjson\` → 把**该看的看完、该办的办完、回看板一行**（门铃报 N 条就办 N 条）；
-   　※ **它是"只追加"的真源**：**不删、不搬、不归档、不改一个字**——没有"清空"这个文件操作，别去找工具；
-5. 过一遍"未结"（§三）→ **先接在办**；**凡被差量页证伪的，直接划掉**。
+\`\`\`powershell
+cd ${meta.workspace || "E:\\stockgate\\Quant_Alpha_System"}
 
-> ※ **"推过"≠"知道"**：水位只决定"还叫不叫你"，**不决定"你知不知道"**。
-> 判"真未读=0"只能说明**没有新信**，**不能代替读差量页**——这一步是踩过坑才加上的（L34）。
+# ① 认身份（读名册真源：级别 / 必读 / 发言权）
+node tools/mobile_chat/whoami.mjs --me ${name}
+
+# ② 读差量页（近 ${delta.hours} 小时：信箱 ${delta.mail} + 看板 ${delta.board} = ${delta.count} 条）
+#    它是"旧实例读过、交接包没写"的那一段 —— 先读它，再碰 §三 的未结
+Get-Content "${drel}"
+
+# ③ 读自己的信箱（**只读**：这是只追加真源，不删、不搬、不归档、不改一个字）
+Get-Content "outputs/dialog/pending_${slug}.ndjson" -Tail 30
+
+# ④ 回报一行（板行是单行存储；正文**先落文件**再发，别在命令行里拼正文）
+#    先把正文写进 outputs/outbox/<自己起名>.txt，然后：
+node tools/mobile_chat/say.mjs --file outputs/outbox/<你的正文>.txt --author ${name} --card - --to 老板 --flatten --max 200
+
+# ⑤ 发之前自检：未结条目必须带"核于"戳
+node scripts/evidence.mjs --check-file outputs/outbox/<你的正文>.txt
+\`\`\`
+
+- **要核一条事实**：\`node scripts/evidence.mjs --claim "<你在断言什么>" --cmd "<核它成立的命令>"\`（**退出码 0 = PASS**）；
+- **本质只有三类操作**：**跑命令 / 读写文件 / 发消息**（板 \`/api/post\`、信 \`/api/mail\`、叫醒＝门铃 \`codex queue\`）。
+  **没有第四类**——所以看到"清空信箱""推过""水位"这类**行话**，一律翻译成上面对应的具体动作；
+  翻不出来就别做，回一行问清楚。
+- **"推过"≠"知道"**：水位只决定"还叫不叫你"，**不决定你知不知道**；判"真未读=0"只说明没有新信，
+  **不能代替读差量页**（这是踩过坑才加的，见 L34）。
 
 ## 三、未结（本线待办，重生不丢）
 
