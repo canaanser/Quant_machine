@@ -29,7 +29,7 @@
   <view class="tiles mt16" wx:if="{{board}}">
     <view class="tile"><view class="tile__k">服务人次</view><view class="tile__v">{{board.summary.people}}<text class="tile__u">次</text></view></view>
     <view class="tile"><view class="tile__k">有名客人</view><view class="tile__v">{{board.summary.customers}}<text class="tile__u">位</text></view></view>
-    <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{board.summary.avgMs / 60000 < 1 ? '<1' : (board.summary.avgMs / 60000).toFixed(0)}}<text class="tile__u">分</text></view></view>
+    <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMinText}}</view></view>
   </view>
 
   <!-- 排行榜 -->

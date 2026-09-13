@@ -18,6 +18,9 @@ Page({
       const barMax = Math.max(1, ...b.byService.map((x) => x.count));
       const hourMax = Math.max(1, ...b.byHour.map((x) => x.count));
       this.setData({ board: b, barMax, hourMax, openKey: "" });
+      // WXML **不支持方法调用**（.toFixed/.slice 都会编译报错）→ 在这里先算成字符串
+      const am = Math.round((b.summary.avgMs || 0) / 60000);
+      this.setData({ avgMinText: am < 1 ? "<1 分" : am + " 分" });
       this.applySort();
     } catch (e) {
       wx.showModal({ title: "看板读取失败", content: String((e && (e.errMsg || e.message)) || e).slice(0, 110), showCancel: false });
