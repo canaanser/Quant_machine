@@ -5,8 +5,9 @@ App({
   // ★ 默认外观 = **极简版 V1**（老板 2026-09-14：先把极简这套摆到手机那条线上，复杂版挪一边当备份）
   globalData: { barberId: "b1", envId: ENV_ID, autoFlow: false, theme: "minimal" },
   onLaunch() {
-    // 只有用户**主动切过**才用他的选择；没切过的一律走默认（极简 V1）
-    try { const t = wx.getStorageSync("theme"); if (t) this.globalData.theme = t; } catch (e) {}
+    // ★ 老板 2026-09-14：「把极简版推到手机上就行」——**强制走极简 V1**，不再读本地偏好
+    //   （这样无论手机上以前存过什么，打开就是极简版；要换回毛玻璃再说一声）
+    this.globalData.theme = "minimal";
     if (!wx.cloud) {
       console.error("请使用 2.2.3+ 基础库以使用云能力");
       return;
