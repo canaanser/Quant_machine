@@ -7,21 +7,22 @@
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
+  <h1 class="h1">理发师接单小程序 · 两端联动预览</h1>
+  <p class="hint">左边＝顾客看到的；右边＝理发师（经营者）看到的。<b>同一份状态</b>：右边点「开始服务 / 完成本单」，左边那张卡立刻变。</p>
+  <div id="err" class="err" hidden></div>
   <div class="wrap">
-    <div class="phone">
-      <div class="notch">阿明理发</div>
-      <div class="screen" id="screen"></div>
-      <div class="tabbar">
-        <button class="tab" data-tab="customer">看排队（顾客）</button>
-        <button class="tab" data-tab="barber">工作台（理发师）</button>
+    <div class="col">
+      <div class="phone">
+        <div class="notch">顾客端 · 阿明理发</div>
+        <div class="screen" id="screen-customer"></div>
       </div>
+      <button class="demo-btn" data-act="demo">一键演示：顾客预约 → 理发师接单 → 完成</button>
     </div>
-    <div class="side">
-      <h3>这是本地预览</h3>
-      <p>· 无云环境、无开发者工具，<b>同一份业务逻辑</b>（<code>shared/orders.js</code>）在浏览器里跑。</p>
-      <p>· 点「立即预约」「加入排队」、工作台里「开始服务 / 完成本单 / 切状态」，界面会实时变。</p>
-      <p>· 状态色：<span class="dot free"></span>空闲 <span class="dot busy"></span>服务中 <span class="dot rest"></span>休息</p>
-      <p class="muted">真机/上云：装微信开发者工具导入本目录，开通云开发后填环境 ID。</p>
+    <div class="col">
+      <div class="phone">
+        <div class="notch">经营者端 · 工作台</div>
+        <div class="screen" id="screen-barber"></div>
+      </div>
     </div>
   </div>
   <script type="module" src="./app.js"></script>
