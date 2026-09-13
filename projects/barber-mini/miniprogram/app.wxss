@@ -123,9 +123,9 @@ page {
 /* ── 按钮 ── */
 .btn { height: 100rpx; line-height: 100rpx; border-radius: 24rpx; text-align: center;
   font-size: 32rpx; font-weight: 600; letter-spacing: 1rpx; }
-.btn--gold { background: #FFFFFF; color: var(--ink); border: 2rpx solid var(--ink); box-shadow: none; }
-.btn--dark { background: #FFFFFF; color: var(--ink); border: 2rpx solid var(--ink); }
-.btn--ghost { background: transparent; border: none; color: var(--ink-2); }   /* 老板：旁边的按钮不要把线框出来 */
+.btn--gold { background: #FFFFFF; color: var(--ink); border: 1rpx solid rgba(29,29,31,.10); box-shadow: 0 2rpx 10rpx rgba(29,29,31,.06); }   /* 主按钮：**去掉黑框**，白卡+极细边 */
+.btn--dark { background: #FFFFFF; color: var(--ink); border: 1rpx solid rgba(29,29,31,.10); }
+.btn--ghost { background: #FFFFFF; border: 1rpx solid rgba(29,29,31,.10); color: var(--ink); box-shadow: 0 2rpx 10rpx rgba(29,29,31,.06); }   /* 次级按钮：**保留卡片感**（浅边白卡） */
 .btn--disabled { opacity: .45; }
 .btn--sm { height: 72rpx; line-height: 72rpx; font-size: 26rpx; border-radius: 18rpx; }
 
@@ -149,9 +149,16 @@ page {
 .item__t { font-size: 30rpx; font-weight: 600; }
 .item__s { font-size: 24rpx; color: var(--ink-3); margin-top: 4rpx; }
 
-/* ── 进度条 ── */
-.bar { height: 14rpx; border-radius: 999rpx; background: rgba(20,22,26,0.08); overflow: hidden; }
-.bar__in { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
+/* ── 进度条：改成**理发店门口那根旋转的三色彩带柱**（老板 2026-09-14）──────────
+   未走到的地方留一点点灰度（看得出"槽"在哪）；走到的地方是三色斜纹在转。 */
+.bar { height: 20rpx; border-radius: 999rpx; background: rgba(29,29,31,0.055);
+  border: 1rpx solid rgba(29,29,31,0.10); overflow: hidden; }
+.bar__in { height: 100%; border-radius: 999rpx;
+  background-image: repeating-linear-gradient(45deg,
+    #E5484D 0 14rpx, #FFFFFF 14rpx 28rpx, #0A84FF 28rpx 42rpx, #FFFFFF 42rpx 56rpx);
+  background-size: 158rpx 100%;
+  animation: barberpole 1.8s linear infinite; }
+@keyframes barberpole { from { background-position: 0 0; } to { background-position: 158rpx 0; } }
 
 /* ── 分段控件 ── */
 .seg { display: flex; background: rgba(20,22,26,0.06); border-radius: 20rpx; padding: 6rpx; }
