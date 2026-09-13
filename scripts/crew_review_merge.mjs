@@ -12,6 +12,8 @@ import fs from "fs";
 import path from "path";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
+import os from "os";
+import crypto from "crypto";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.dirname(HERE);
@@ -58,9 +60,19 @@ function check(repo, branch, task, baseBranch, testsCmd, reviewPath, scopeArg) {
   //   轻则 MODULE_NOT_FOUND、重则**拿旧代码跑绿**（最坏：门禁替一个没测过的版本背书）。
   //   判据：`git diff <branch> -- <本次变更的文件>` 必须为空（= 工作树里这些文件与分支一致）。
   //  边界：分支**已合入**（或空提交）时 files 为空 → 这条退化成"整树对比"会误报，所以显式跳过。
-  const dirtyVsBranch = files.length
-    ? git(repo, "diff", "--name-only", branch, "--", ...files).split("\n").filter(Boolean)
-    : [];
+  //  ★ 2026-09-13 08:0x 修（`codex-看板编辑` 报的假红）：**按"内容"比对，不看是否已跟踪**——
+  //   原来用 `git diff <branch> -- <path>`，对**新增（未跟踪）文件**一律报"不同步"，
+  //   而它给的修法（`git restore --worktree`）又不入索引 → 重跑还是红，**任何带新文件的交付都会被假红**。
+  //   现在：分支侧 blob = `git rev-parse <branch>:<path>`；工作树侧 blob = `git hash-object <path>`；相等即同步。
+  const blobOf = (rev, p) => { try { return git(repo, "rev-parse", `${rev}:${p}`); } catch { return "(absent)"; } };
+  const blobWs = (p) => {
+    const fp = path.join(ROOT, repo, p);
+    try {
+      if (!fs.existsSync(fp) || fs.statSync(fp).isDirectory()) return "(absent)";
+      return git(repo, "hash-object", "--", p);
+    } catch { return "(absent)"; }
+  };
+  const dirtyVsBranch = files.filter((p) => blobOf(branch, p) !== blobWs(p));
   add(
     "工作树与分支同步（变更文件逐一比对）",
     dirtyVsBranch.length === 0,
@@ -77,14 +89,26 @@ function check(repo, branch, task, baseBranch, testsCmd, reviewPath, scopeArg) {
   // 回归命令可换（如 Hub 仓要跑 selftest_v2 183 + ui_check 44），默认 npm test
   const cmd = testsCmd || "npm test";
   let testOk = false, testTail = "", testDeferred = false;
+  // ★ 证据指纹（老板 2026-09-13 08:0x："一次验证，上层不重跑"）：
+  //   命令 + 退出码 + 输出 sha256 + 时间 + 机器 + **全文日志路径**；上层只校验指纹，不再重复跑同一份回归。
+  let EV = null;
+  const testHead = (() => { try { return git(repo, "rev-parse", branch); } catch { return null; } })();
   try {
     const out = execFileSync(cmd, { cwd: repo, encoding: "utf8", shell: true, stdio: ["ignore", "pipe", "pipe"] });
     testOk = true;
     testTail = String(out).split("\n").filter((l) => /pass|fail|通过/.test(l)).slice(-3).join(" ");
+    EV = { cmd, code: 0, head: testHead, ts: nowIso(), host: os.hostname(),
+           bytes: Buffer.byteLength(String(out), "utf8"),
+           sha256: crypto.createHash("sha256").update(String(out), "utf8").digest("hex").slice(0, 16),
+           log: writeTestLog(task, branch, String(out)) };
   } catch (e) {
     testTail = String(e.stdout || e.message).split("\n").slice(-6).join(" ");
     // 沙箱写不了别的仓（EPERM/EACCES）→ 不是测试失败，**交给 apply 阶段在沙箱外跑**。
     if (/EPERM|EACCES|operation not permitted|拒绝访问/i.test(testTail)) testDeferred = true;
+    if (!testDeferred) {
+      EV = { cmd, code: Number(e.status || 1), head: testHead, ts: nowIso(), host: os.hostname(),
+             bytes: 0, sha256: null, log: writeTestLog(task, branch, String(e.stdout || e.message)) };
+    }
   }
   add(
     testDeferred ? "回归交给沙箱外跑（本沙箱写不了该仓）" : "回归全绿：" + cmd,
@@ -117,6 +141,7 @@ function check(repo, branch, task, baseBranch, testsCmd, reviewPath, scopeArg) {
     ts: nowIso(), task: task || "(未标)", repo, branch, base: base0, tests: cmd, review: reviewPath || null,
     head: (() => { try { return git(repo, "rev-parse", branch); } catch { return null; } })(),
     ok, gates, by: "codex-总监",
+    evidence: EV,
   };
   return rec;
 }
@@ -135,15 +160,25 @@ function applyMerge() {
     fs.renameSync(REQ, REQ.replace(/\.json$/, `.superseded-${Date.now()}.json`));
     return;
   } catch {}
-  // apply 在**沙箱外**执行 → 回归命令在这里真跑一遍（check 阶段可能因沙箱写不了而跳过）
+  // ★ 一次验证（老板 2026-09-13 08:0x 拍）：check 阶段**已经真跑过**、且指纹对得上 → 这里**不重跑**，
+  //   直接引用它的指纹（命令/退出码/sha256/时间/机器/全文日志）。对不上才真跑。
   const tcmd = r.tests || "npm test";
+  const ev = r.evidence || null;
+  const canReuse = !!(ev && ev.code === 0 && ev.head === r.head && ev.cmd === tcmd);
+  if (canReuse) {
+    console.log(`复用 check 阶段证据（不重跑）：${tcmd} → sha256=${ev.sha256} ${ev.bytes}B @${ev.host} ${ev.ts}｜全文 ${ev.log}`);
+  }
   try {
+    if (canReuse) throw { __skip: true };
     const out = execFileSync(tcmd, { cwd: r.repo, encoding: "utf8", shell: true, stdio: ["ignore", "pipe", "pipe"] });
     console.log("回归通过：" + tcmd + " → " + String(out).split("\n").filter((l) => /pass|fail|通过/.test(l)).slice(-2).join(" "));
   } catch (e) {
+    if (e && e.__skip) { /* 复用证据，跳过重跑 */ }
+    else {
     console.log("✗ 回归失败，**不合**：" + tcmd + "\n" + String(e.stdout || e.message).split("\n").slice(-8).join("\n"));
     process.exitCode = 1;
     return;
+    }
   }
   // ── ★ 不碰工作树的合入（2026-09-13 07:4x；`codex-看板编辑` 报的死结 + L28 正解）──
   //   死结：**共享工作树里"工作树已含待合内容、而 HEAD 还没有"** → `git switch` + `git merge` 一律被判成
@@ -212,6 +247,21 @@ function isClean(repo, rev, p) {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** 把回归**全文**落盘（上下文只留摘要，老板 2026-09-13 08:0x："大输出落盘、只回三行"）；返回相对路径。失败不影响门禁。 */
+function writeTestLog(task, branch, text) {
+  try {
+    const dir = path.dirname(REQ);
+    fs.mkdirSync(dir, { recursive: true });
+    const safe = String(task || "task").replace(/[^\w.-]+/g, "_") + "-" +
+                 String(branch || "").split("/").pop().replace(/[^\w.-]+/g, "_");
+    const p = path.join(dir, `${safe}-${Date.now()}.test.log`);
+    fs.writeFileSync(p, String(text || ""), "utf8");
+    return path.relative(ROOT, p).replace(/\\/g, "/");
+  } catch {
+    return null;
   }
 }
 
