@@ -1,0 +1,63 @@
+<view class="bg"><view class="bg__blob bg__blob--a"></view><view class="bg__blob bg__blob--b"></view><view class="bg__blob bg__blob--c"></view></view>
+<view class="page">
+  <view class="row row--between" style="margin:6rpx 4rpx 24rpx">
+    <view class="row row--gap">
+      <view class="ava">明</view>
+      <view>
+        <view class="h1" style="font-size:38rpx">阿明</view>
+        <view class="lbl">工号 b1 · 今日营业</view>
+      </view>
+    </view>
+    <view class="pill pill--{{tone}}"><view class="dot dot--{{tone}}"></view>{{statusText}}</view>
+  </view>
+
+  <view class="tiles">
+    <view class="tile"><view class="tile__k">今日单数</view><view class="tile__v">{{today}}<text class="tile__u">单</text></view></view>
+    <view class="tile"><view class="tile__k">今日收入</view><view class="tile__v">{{revenue}}<text class="tile__u">元</text></view></view>
+    <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMin}}<text class="tile__u">分</text></view></view>
+  </view>
+
+  <view class="glass glass--dark mt24">
+    <view class="row row--between">
+      <view class="grow">
+        <view class="lbl" style="color:rgba(255,255,255,.62)">当前服务</view>
+        <view class="h1" style="color:#fff;margin-top:10rpx;font-size:38rpx">{{currentName}}</view>
+        <view class="muted" style="color:rgba(255,255,255,.72);margin-top:8rpx">已用 {{elapsed}} 分钟 · {{currentItem}}</view>
+      </view>
+      <view class="center">
+        <view class="num" style="color:#fff">{{elapsed}}</view>
+        <view class="lbl" style="color:rgba(255,255,255,.62)">分钟</view>
+      </view>
+    </view>
+    <view class="btn btn--gold mt20" id="finishBtn" bindtap="finish">完成本单</view>
+  </view>
+
+  <view class="glass">
+    <view class="row row--between"><text class="h2">接单状态</text><text class="muted">顾客端会立刻看到</text></view>
+    <view class="seg mt16">
+      <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" id="stIdle" data-s="idle" bindtap="setStatus">空闲</view>
+      <view class="seg__i {{status === 'busy' ? 'seg__i--on' : ''}}" id="stBusy" data-s="busy" bindtap="setStatus">忙</view>
+      <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" id="stRest" data-s="rest" bindtap="setStatus">休息</view>
+    </view>
+  </view>
+
+  <view class="glass">
+    <view class="row row--between"><text class="h2">快捷接单</text><view class="pill">{{clickCount}} 击</view></view>
+    <view class="muted mt8">选客人 → 选项目 → 开始服务</view>
+    <view class="grid4 mt16">
+      <view wx:for="{{types}}" wx:key="k" id="type-{{item.k}}" class="type {{picked === item.k ? 'type--on' : ''}}"
+            data-k="{{item.k}}" bindtap="pickType">
+        <view class="type__ico">{{item.ico}}</view>
+        <view class="type__t">{{item.label}}</view>
+      </view>
+    </view>
+    <view class="grid3 mt16">
+      <view wx:for="{{items}}" wx:key="_id" id="item-{{item._id}}" class="type {{itemPicked === item._id ? 'type--on' : ''}}"
+            data-id="{{item._id}}" bindtap="pickItem">
+        <view class="type__t" style="font-size:28rpx;font-weight:600">{{item.name}}</view>
+        <view class="type__t">¥{{item.price}}</view>
+      </view>
+    </view>
+    <view class="btn btn--gold mt20" id="startBtn" bindtap="start">开始服务</view>
+  </view>
+</view>

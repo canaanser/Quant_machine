@@ -8,6 +8,8 @@
     "pages/barber/board/index",
     "pages/barber/ledger/index",
     "pages/barber/settings/index"
+    ,"pages/simple/customer/index"
+    ,"pages/simple/barber/index"
   ],
   "window": {
     "navigationBarTitleText": "阿明理发",
@@ -20,8 +22,8 @@
     "selectedColor": "#C9A227",
     "backgroundColor": "#FFFFFF",
     "list": [
-      { "pagePath": "pages/customer/home/index", "text": "顾客端" },
-      { "pagePath": "pages/barber/home/index", "text": "经营者端" }
+      { "pagePath": "pages/simple/customer/index", "text": "看排队" },
+      { "pagePath": "pages/simple/barber/index", "text": "工作台" }
     ]
   },
   "sitemapLocation": "sitemap.json"
