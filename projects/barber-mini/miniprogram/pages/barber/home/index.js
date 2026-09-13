@@ -11,6 +11,9 @@ Page({
   data: {
     status: "idle", tone: "free", statusText: "空闲",
     today: 0, revenue: 0, avgMin: 0, elapsed: 0,
+    overtime: 0, servingStartAt: 0, servingPlanMin: 0,
+    autoFlow: false,
+    goal: 300, goalPct: 0, goalLeft: 300,
     currentName: "暂无客人", currentItem: "—",
     picked: null, itemPicked: null, clickCount: 0, queue: [],
     types: [
@@ -22,7 +25,33 @@ Page({
       { _id: "s3", name: "染发", price: 258 },
     ],
   },
-  onShow() { this.refresh(); },
+  onShow() { this.loadGoal(); this.refresh(); this.startTick(); },
+  onHide() { this.stopTick(); },
+  onUnload() { this.stopTick(); },
+  toggleFlow(e) {
+    const on = e.currentTarget.dataset.v === "on";
+    this.setData({ autoFlow: on });
+    if (on) { this._f = setInterval(() => this.flowTick(), 4000); this.flowTick(); }
+    else if (this._f) { clearInterval(this._f); this._f = null; }
+  },
+  async flowTick() {
+    try { await api.debugTick({ barberId: "b1" }); await this.refresh(); }
+    catch (err) { /* 调试函数未部署时静默 */ }
+  },
+  startTick() {
+    this.stopTick();
+    this._t = setInterval(() => this.tickElapsed(), 1000);
+    this.tickElapsed();
+  },
+  stopTick() { if (this._t) { clearInterval(this._t); this._t = null; } },
+  // ★ 只做**提示**，绝不自动结束：时长是预估，必须理发师自己点「完成本单」
+  tickElapsed() {
+    const st = Number(this.data.servingStartAt || 0);
+    if (!st) { if (this.data.elapsed !== 0) this.setData({ elapsed: 0, overtime: 0 }); return; }
+    const min = Math.floor((Date.now() - st) / 60000);
+    const ot = Math.max(0, min - Number(this.data.servingPlanMin || 0));
+    if (min !== this.data.elapsed || ot !== this.data.overtime) this.setData({ elapsed: min, overtime: ot });
+  },
   async refresh() {
     try {
       const [s, q] = await Promise.all([
@@ -36,14 +65,38 @@ Page({
       }));
       this.setData({
         today: s.completedCount || 0, revenue: s.revenue || 0, avgMin: Math.round((s.avgServiceMs || 0) / 60000),
+        goalPct: Math.min(100, Math.round(((s.revenue || 0) / Math.max(1, this.data.goal)) * 100)),
+        goalLeft: Math.max(0, this.data.goal - (s.revenue || 0)),
         queue: list,
         currentName: q.serving ? (q.serving.customerName || "顾客") : "暂无客人",
         currentItem: q.serving ? q.serving.serviceName : "—",
         servingId: q.serving ? q.serving._id : null,
+        servingStartAt: q.serving ? Number(q.serving.actualStartTime || 0) : 0,
+        servingPlanMin: q.serving ? Math.round(Number(q.serving.duration || 0) / 60000) : 0,
       });
       if (q.serving) this.applyStatus("busy");
     } catch (e) { /* 云端未就绪：保持占位，界面不空 */ }
   },
+  async loadGoal() {
+    try {
+      const db = wx.cloud.database();
+      const r = await db.collection("barbers").doc("b1").get();
+      const g = Number((r.data || {}).dailyGoal || 0);
+      if (g > 0) this.setData({ goal: g });
+    } catch (e) { /* 用默认目标 */ }
+  },
+  async setGoal() {
+    const res = await new Promise((resolve) => wx.showModal({
+      title: "今日目标（元）", editable: true, placeholderText: String(this.data.goal),
+      success: (r) => resolve(r.confirm ? r.content : null), fail: () => resolve(null),
+    }));
+    if (res == null || res === "") return;
+    const g = Math.max(0, Number(res) || 0);
+    try { await api.saveSettings({ barberId: "b1", dailyGoal: g }); this.setData({ goal: g }); await this.refresh(); }
+    catch (e) { wx.showToast({ title: "保存失败", icon: "none" }); }
+  },
+  goLedger() { wx.navigateTo({ url: "/pages/barber/ledger/index" }); },
+  goItems() { wx.navigateTo({ url: "/pages/barber/items/index" }); },
   pickType(e) { this.setData({ picked: e.currentTarget.dataset.k, clickCount: this.data.clickCount + 1 }); },
   pickItem(e) { this.setData({ itemPicked: e.currentTarget.dataset.id, clickCount: this.data.clickCount + 1 }); },
   async start() {

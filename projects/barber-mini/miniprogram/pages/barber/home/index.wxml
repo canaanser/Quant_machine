@@ -24,12 +24,30 @@
     <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMin}}<text class="tile__u">分</text></view></view>
   </view>
 
+  <!-- 今日目标：给自己一个进度条（要的就是"有干劲"） -->
+  <view class="glass glass--tight mt24">
+    <view class="row row--between">
+      <view class="row row--gap">
+        <view class="sec__bar"></view>
+        <text class="item__t">今日目标 ¥{{goal}}</text>
+      </view>
+      <text class="muted">{{goalPct}}% · 还差 ¥{{goalLeft}}</text>
+    </view>
+    <view class="bar mt16"><view class="bar__in" style="width:{{goalPct}}%"></view></view>
+    <view class="row row--gap mt16">
+      <view class="btn btn--ghost btn--sm grow" id="ledgerBtn" bindtap="goLedger">今日流水</view>
+      <view class="btn btn--ghost btn--sm grow" id="itemsBtn" bindtap="goItems">服务项目</view>
+      <view class="btn btn--ghost btn--sm grow" id="goalBtn" bindtap="setGoal">改目标</view>
+    </view>
+  </view>
+
   <view class="glass glass--dark mt24">
     <view class="row row--between">
       <view class="grow">
         <view class="lbl" style="color:rgba(255,255,255,.62)">当前服务</view>
         <view class="h1" style="color:#fff;margin-top:10rpx;font-size:38rpx">{{currentName}}</view>
-        <view class="muted" style="color:rgba(255,255,255,.72);margin-top:8rpx">已用 {{elapsed}} 分钟 · {{currentItem}}</view>
+        <view class="muted" style="color:rgba(255,255,255,.72);margin-top:8rpx">已用 {{elapsed}} 分钟 · {{currentItem}}（预估 {{servingPlanMin}} 分钟）</view>
+        <view wx:if="{{overtime > 0}}" class="pill pill--rest" style="margin-top:12rpx">已超时 {{overtime}} 分钟 · 记得点「完成本单」</view>
       </view>
       <view class="center">
         <view class="num" style="color:#fff">{{elapsed}}</view>
@@ -48,6 +66,23 @@
       <view class="seg__i {{status === 'idle' ? 'seg__i--on' : ''}}" id="stIdle" data-s="idle" bindtap="setStatus">空闲</view>
       <view class="seg__i {{status === 'busy' ? 'seg__i--on' : ''}}" id="stBusy" data-s="busy" bindtap="setStatus">忙</view>
       <view class="seg__i {{status === 'rest' ? 'seg__i--on' : ''}}" id="stRest" data-s="rest" bindtap="setStatus">休息</view>
+    </view>
+  </view>
+
+  <!-- 调试专用：让队列自动滚动（生产环境请勿开启） -->
+  <view class="glass glass--tight">
+    <view class="row row--between">
+      <view class="grow">
+        <view class="row row--gap">
+          <text class="item__t">调试：队列自动滚动</text>
+          <view class="pill {{autoFlow ? 'pill--gold' : ''}}">{{autoFlow ? '开' : '关'}}</view>
+        </view>
+        <view class="muted mt8">开着时每 4 秒自动：到点的单完成 → 下一位自动开始（**仅调试用**）</view>
+      </view>
+      <view class="seg" style="width:200rpx">
+        <view class="seg__i {{autoFlow ? '' : 'seg__i--on'}}" id="flowOff" bindtap="toggleFlow" data-v="off">关</view>
+        <view class="seg__i {{autoFlow ? 'seg__i--on' : ''}}" id="flowOn" bindtap="toggleFlow" data-v="on">开</view>
+      </view>
     </view>
   </view>
 

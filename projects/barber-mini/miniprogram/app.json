@@ -6,6 +6,8 @@
     "pages/barber/home/index",
     "pages/barber/queue/index",
     "pages/barber/stats/index"
+    ,"pages/barber/ledger/index"
+    ,"pages/barber/items/index"
   ],
   "window": {
     "navigationBarTitleText": "阿明理发",

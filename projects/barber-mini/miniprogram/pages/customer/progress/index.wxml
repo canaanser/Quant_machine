@@ -23,11 +23,11 @@
           <text class="num" style="color:#fff">第 {{ahead + 1}}</text>
           <text class="muted" style="color:rgba(255,255,255,.7);margin:0 0 14rpx 12rpx">位</text>
         </view>
-        <view class="muted" style="color:rgba(255,255,255,.75)">前面还有 {{ahead}} 位 · 预计 {{etaMin}} 分钟</view>
+        <view class="muted" style="color:rgba(255,255,255,.75)">前面还有 {{ahead}} 位 · 预计 {{etaText}}</view>
       </view>
       <view class="center">
         <view class="num" style="color:#fff">{{leftMin}}</view>
-        <view class="lbl" style="color:rgba(255,255,255,.62)">分钟后</view>
+        <view class="lbl" style="color:rgba(255,255,255,.62)">分钟/秒</view>
       </view>
     </view>
     <view class="bar mt20" style="background:rgba(255,255,255,.18)">
@@ -42,7 +42,7 @@
   <!-- 三瓦片 -->
   <view class="tiles">
     <view class="tile"><view class="tile__k">前面人数</view><view class="tile__v">{{ahead}}<text class="tile__u">人</text></view></view>
-    <view class="tile"><view class="tile__k">预计等待</view><view class="tile__v">{{etaMin}}<text class="tile__u">分钟</text></view></view>
+    <view class="tile"><view class="tile__k">预计等待</view><view class="tile__v">{{etaText}}</view></view>
     <view class="tile"><view class="tile__k">队伍总长</view><view class="tile__v">{{list.length}}<text class="tile__u">人</text></view></view>
   </view>
 

@@ -1,0 +1,48 @@
+<view class="bg">
+  <view class="bg__blob bg__blob--a"></view>
+  <view class="bg__blob bg__blob--b"></view>
+</view>
+
+<view class="page">
+  <view class="row row--between" style="margin:6rpx 4rpx 26rpx">
+    <view>
+      <view class="lbl">只记已完成的单</view>
+      <view class="h1">今日流水</view>
+    </view>
+    <view class="pill pill--gold">{{tCount}} 单</view>
+  </view>
+
+  <view class="tiles">
+    <view class="tile"><view class="tile__k">今日收入</view><view class="tile__v">{{tSum}}<text class="tile__u">元</text></view></view>
+    <view class="tile"><view class="tile__k">单数</view><view class="tile__v">{{tCount}}<text class="tile__u">单</text></view></view>
+    <view class="tile"><view class="tile__k">客单价</view><view class="tile__v">{{tAvg}}<text class="tile__u">元</text></view></view>
+  </view>
+
+  <view class="glass mt24">
+    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">今天</text><text class="muted grow" style="text-align:right">按完成时间倒序</text></view>
+    <block wx:if="{{today.length}}">
+      <view class="item" wx:for="{{today}}" wx:key="_id">
+        <view class="item__ico" style="width:96rpx">
+          <text class="lbl">{{item.startText}}</text>
+        </view>
+        <view class="grow">
+          <view class="item__t">{{item.customerName}} · {{item.serviceName}}</view>
+          <view class="item__s">{{item.startText}}–{{item.endText}} · {{item.min}} 分钟 · {{item.typeText}}</view>
+        </view>
+        <view class="num--sm">¥{{item.price}}</view>
+      </view>
+    </block>
+    <view wx:else class="center" style="padding:26rpx 0"><text class="muted">{{loading ? '读取中…' : '今天还没有完成的单'}}</text></view>
+  </view>
+
+  <view class="glass" wx:if="{{earlier.length}}">
+    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">更早</text></view>
+    <view class="item" wx:for="{{earlier}}" wx:key="_id">
+      <view class="grow">
+        <view class="item__t">{{item.customerName}} · {{item.serviceName}}</view>
+        <view class="item__s">{{item.startText}}–{{item.endText}} · {{item.min}} 分钟</view>
+      </view>
+      <view class="num--sm">¥{{item.price}}</view>
+    </view>
+  </view>
+</view>

@@ -56,15 +56,24 @@ Page({
   },
   goBook() { wx.navigateTo({ url: "/pages/customer/book/index" }); },
   async joinQueue() {
-    // ★ 先给反馈再等网络：云函数一次往返约 1 秒（实测 0.8–1.1s），不给提示就像卡死
-    wx.showLoading({ title: "正在排队…", mask: true });
+    // ★ **秒开**：先造一个"本地待提交"的单带进进度页，人立刻看到界面；
+    //   云端在后台建单（约 1 秒），建好后再把真实单号/排位补上；失败则在进度页上明说。
+    const optimistic = {
+      _id: "local_pending", customerOpenid: "me", customerName: "我",
+      serviceItemId: "s1", serviceName: "剪发", priority: 2, status: "queuing",
+      duration: 0, appointmentTime: 0, _pending: true,
+    };
+    const app = getApp();
+    app.globalData.lastOrder = optimistic;
+    app.globalData.pendingJoin = true;
+    wx.navigateTo({ url: "/pages/customer/progress/index" });
     try {
       const r = await api.createOrder({ barberId: "b1", serviceItemId: "s1", customerOpenid: "me", customerName: "我", customerType: "man" });
-      getApp().globalData.lastOrder = r && r.order;      // 把结果直接带去进度页，省掉一次查询
-      this.setData({ waiting: (this.data.waiting || 0) + 1 });
+      app.globalData.lastOrder = r && r.order;
+      app.globalData.pendingJoin = false;
     } catch (e) {
-      wx.showModal({ title: "排队失败", content: String((e && (e.errMsg || e.message)) || e).slice(0, 100), showCancel: false });
-    } finally { wx.hideLoading(); }
-    wx.navigateTo({ url: "/pages/customer/progress/index" });
+      app.globalData.joinError = String((e && (e.errMsg || e.message)) || e).slice(0, 120);
+      app.globalData.pendingJoin = false;
+    }
   },
 });

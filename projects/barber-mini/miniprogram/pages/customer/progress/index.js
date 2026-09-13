@@ -25,8 +25,19 @@ Page({
     this.timer = setInterval(() => this.tick(), 1000);
   },
   onShow() { this.load(); },
+  onUnload2() {},
   onUnload() { clearInterval(this.timer); },
   async load() {
+    const app = getApp();
+    if (app.globalData && app.globalData.lastOrder && app.globalData.lastOrder._id !== "local_pending") {
+      const o = app.globalData.lastOrder;
+      this.setData({ me: { initial: "我", serviceName: o.serviceName || "", statusText: "排队中",
+        tag: priorityLabel(o.priority), tagClass: TAG_CLASS[o.priority] || "" } });
+    }
+    if (app.globalData && app.globalData.joinError) {
+      const msg = app.globalData.joinError; app.globalData.joinError = "";
+      wx.showModal({ title: "排队没成功", content: msg, showCancel: false });
+    }
     let list = [];
     try {
       const r = await api.queue({ barberId: "b1" });
@@ -36,7 +47,11 @@ Page({
     const idx = list.findIndex((o) => o.customerOpenid === "me");
     const mine = idx >= 0 ? list[idx] : null;
     const ahead = idx < 0 ? 0 : idx;
-    const etaMin = ahead * 20;
+    // 预计等待按**队伍里真实的项目时长**累加（不再写死 20 分钟/人；调试期时长很短也跟着变）
+    const msAhead = list.slice(0, Math.max(0, idx)).reduce((sum, o) => sum + Number(o.duration || 0), 0);
+    const etaMin = Math.max(0, Math.round(msAhead / 60000));
+    const etaSec = Math.round(msAhead / 1000);
+    const etaText = msAhead > 0 && msAhead < 60 * 1000 ? etaSec + " 秒" : etaMin + " 分钟";
     this.setData({
       list,
       front: list.slice(0, Math.max(0, idx)).map((o) => ({
@@ -44,7 +59,7 @@ Page({
         statusText: STATUS_TEXT[o.status] || o.status,
         tag: priorityLabel(o.priority), tagClass: TAG_CLASS[o.priority] || "",
       })),
-      ahead, etaMin, leftMin: etaMin,
+      ahead, etaMin, etaText, leftMin: etaMin,
       progressPct: list.length ? Math.round(((idx + 1) / list.length) * 100) : 8,
       updated: new Date().toTimeString().slice(0, 5),
       loading: false,

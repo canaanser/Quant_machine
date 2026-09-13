@@ -18,6 +18,9 @@ export const api = {
   setBarberStatus: (d) => call("barberStatusSet", d),
   stats: (d) => call("statsAggregate", d),
   queue: (d) => call("queueView", d),
+  debugTick: (d) => call("debugTick", d),   // 调试专用：自动流转（生产环境不部署这个云函数）
+  saveItem: (d) => call("serviceItemUpsert", d),
+  saveSettings: (d) => call("barberSettings", d),
 };
 
 export { PRIORITY };

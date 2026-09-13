@@ -124,4 +124,43 @@ async function queueView(store, barberId, nowTs) {
   return sortQueue(activeOrders(orders), nowTs);
 }
 
-module.exports = { createOrder, transitionOrder, setBarberStatus, aggregateStats, queueView, normalizePriority };
+/**
+ * ★★ **生产规则（老板 2026-09-14 明确）**：`duration` 是**预估时长，不是定时器**。
+ *   时间到了**绝不自动结束**——烫发/染发经常超时，必须**理发师自己点「完成本单」**才结束。
+ *   （下方 `debugTick` 里的"到点自动完成"**只用于调试**，生产环境不部署、不调用它。）
+ *
+ * ★ **调试用**：一次"自动流转"——
+ *   ① 在服务的单超过它自己的时长 → 自动完成；
+ *   ② 理发师空闲且队列有人 → 自动把下一位拉进来开始服务。
+ * 目的：调试期让**队列一直滚动**，不用人一直点。
+ * 安全：只动**这一位理发师**名下的单；上线前把这个云函数删掉/停用即可。
+ */
+async function debugTick(store, barberId, nowTs, opts) {
+  const t = Number(nowTs || Date.now());
+  const autoStart = !(opts && opts.autoStart === false);
+  const log = [];
+
+  const orders = await store.listOrders(barberId);
+  const serving = orders.find((o) => o.status === "serving");
+  if (serving) {
+    const elapsed = t - Number(serving.actualStartTime || 0);
+    if (elapsed >= Number(serving.duration || 0)) {
+      await transitionOrder(store, { orderId: serving._id, to: "completed" }, () => t);
+      log.push("completed:" + serving._id);
+    }
+  }
+
+  const barber = await store.getBarber(barberId);
+  if (autoStart && barber && !barber.currentOrderId) {
+    const q = await queueView(store, barberId, t);
+    const next = q.find((o) => o.status === "queuing" || o.status === "reserved");
+    if (next) {
+      if (next.status === "reserved") await transitionOrder(store, { orderId: next._id, to: "queuing" }, () => t);
+      await transitionOrder(store, { orderId: next._id, to: "serving" }, () => t);
+      log.push("started:" + next._id);
+    }
+  }
+  return { ok: true, log, at: t };
+}
+
+module.exports = { createOrder, transitionOrder, setBarberStatus, aggregateStats, queueView, debugTick, normalizePriority };
