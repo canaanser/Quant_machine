@@ -242,7 +242,11 @@ def task_monitor():
 
 
 def _read_plan():
-    """读取 outputs/next_plan.csv -> [(code, side, shares, price, name)]; 无文件返回[]"""
+    """读取 outputs/next_plan.csv -> [(code, side, shares, price, name, max_px)]; 无文件返回[]
+
+    第 6 列 `max_px` 是**可选的买入追高上限**（缺省空 = 不设闸）：实时价 > 上限 → 跳过该买单。
+    口径来源：老板 2026-09-14 交办（"影石 > 9/11 收盘×1.015 就撤买单"）——把这条从"人肉删行"
+    固化成引擎判据。老计划文件（5 列）行为不变。"""
     import csv
     plan_p = ROOT / "outputs" / "next_plan.csv"
     out = []
@@ -251,9 +255,21 @@ def _read_plan():
     for ln in csv.reader(open(plan_p, encoding="utf-8-sig")):
         if not ln or not ln[0].strip() or ln[0].strip().lower() == "code":
             continue
-        code, side, shares, price, name = (ln + [""] * 5)[:5]
-        out.append((code, side, int(float(shares)), price, name))
+        code, side, shares, price, name, mx = (ln + [""] * 6)[:6]
+        try:
+            mx_f = float(str(mx).strip()) if str(mx).strip() else None
+        except Exception:
+            mx_f = None
+        out.append((code, side, int(float(shares)), price, name, mx_f))
     return out
+
+
+def _chase_blocked(px_now, max_px):
+    """买入追高闸：实时价 > 上限 → 拦住（返回 True）。没设上限或取不到价 → 不拦。"""
+    try:
+        return bool(max_px) and float(px_now) > float(max_px)
+    except Exception:
+        return False
 
 
 def _already_sent():
@@ -273,7 +289,7 @@ def task_tail_exec():
     plan = _read_plan()
     pos = api.positions()
     codes = list(pos.keys())
-    for (code, side, sh, pxr, nm) in plan:
+    for (code, side, sh, pxr, nm, mx) in plan:
         if code not in codes:
             codes.append(code)
     px = _px_retry(codes)
@@ -290,7 +306,7 @@ def task_tail_exec():
             decision(f"[tail] 卖触发 {e['code']} {e['action']}")
     # 2) 计划减仓(sell行): 不超持仓; 同码已触发卖出则跳过(防重复卖超)
     if plan and not _already_sent():
-        for (code, side, sh, pxr, nm) in plan:
+        for (code, side, sh, pxr, nm, mx) in plan:
             if side == "sell" and code in pos and code in px:
                 if any(s[1] == code for s in sells):
                     decision(f"[tail] {code} 已触发卖出, 跳过计划减仓")
@@ -303,8 +319,11 @@ def task_tail_exec():
     # 3) 买入(按计划)
     buys = []
     if plan and not _already_sent():
-        for (code, side, sh, pxr, nm) in plan:
+        for (code, side, sh, pxr, nm, mx) in plan:
             if side == "buy" and code in px:
+                if _chase_blocked(px[code], mx):
+                    decision(f"[tail] 跳过买入 {code}: 实时 {px[code]} > 追高上限 {mx}")
+                    continue
                 buys.append(("BUY", code, sh, px[code], nm or NAMED.get(code, "")))
         decision(f"[tail] 买计划 {len(buys)} 笔")
     sells_t = [tuple(s) for s in sells]
