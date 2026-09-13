@@ -5,6 +5,8 @@
 .rank--on { background: linear-gradient(135deg, var(--gold-2), var(--gold)); color: #2A2205; }
 .detail { background: rgba(255,255,255,.55); border: 1rpx solid var(--glass-line); border-radius: 20rpx; padding: 22rpx; margin: 8rpx 0 16rpx; }
 .chart__row { display: flex; align-items: center; gap: 14rpx; padding: 14rpx 0; }
+.minibtn { background: rgba(255,255,255,.18); color: #fff; border-radius: 999rpx; padding: 8rpx 20rpx; font-size: 24rpx; }
+.minibtn--dark { background: rgba(20,22,26,.08); color: var(--ink); }
 .chart__k { width: 110rpx; font-size: 26rpx; color: var(--ink-2); }
 .chart__track { flex: 1; height: 22rpx; border-radius: 999rpx; background: rgba(20,22,26,.07); overflow: hidden; }
 .chart__bar { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }

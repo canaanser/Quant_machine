@@ -4,55 +4,68 @@
 </view>
 
 <view class="page">
-  <view class="row row--between" style="margin:6rpx 4rpx 20rpx">
-    <view>
-      <view class="lbl">看得到人、看得到钱</view>
-      <view class="h1">数据看板</view>
+  <!-- ① 主看板：大数字 + 右上角两个小按钮（周期 / 眼睛） -->
+  <view class="glass glass--dark">
+    <view class="row row--between">
+      <view class="lbl" style="color:rgba(255,255,255,.62)">{{rangeLabel}} · 主看板</view>
+      <view class="row row--gap">
+        <view class="minibtn" id="rangeBtn" bindtap="pickRange">{{rangeLabel}} ▾</view>
+        <view class="minibtn" id="eyeBtn" bindtap="toggleEye">{{hideMoney ? '👁' : '🙈'}}</view>
+      </view>
     </view>
-    <view class="pill" id="eyeBtn" bindtap="toggleEye">{{hideMoney ? '显示金额' : '隐藏金额'}}</view>
+    <view class="row row--between" style="margin-top:18rpx;align-items:flex-end">
+      <view>
+        <view class="lbl" style="color:rgba(255,255,255,.62)">收入</view>
+        <view class="row" style="align-items:flex-end">
+          <text class="num" style="color:#fff">{{hideMoney ? '∗∗∗' : b.summary.revenue}}</text>
+          <text class="lbl" style="color:rgba(255,255,255,.7);margin:0 0 12rpx 8rpx">元</text>
+        </view>
+      </view>
+      <view class="center">
+        <view class="num" style="color:#fff">{{b.summary.count}}</view>
+        <view class="lbl" style="color:rgba(255,255,255,.62)">单</view>
+      </view>
+    </view>
+    <view class="row row--between mt20">
+      <text class="lbl" style="color:rgba(255,255,255,.75)">客单价 {{hideMoney ? '∗∗∗' : ('¥' + b.summary.perCustomer)}}</text>
+      <text class="lbl" style="color:rgba(255,255,255,.75)">服务 {{b.summary.people}} 人次 · 有名客人 {{b.summary.customers}} 位</text>
+      <text class="lbl" style="color:rgba(255,255,255,.75)">均 {{avgMinText}}</text>
+    </view>
   </view>
 
-  <!-- 范围筛选 -->
-  <view class="glass glass--tight">
-    <view class="row row--gap">
-      <view wx:for="{{ranges}}" wx:key="k" class="chip {{range === item.k ? 'chip--on' : ''}}"
-            id="range-{{item.k}}" data-k="{{item.k}}" bindtap="pickRange">{{item.l}}</view>
-    </view>
-  </view>
-
-  <!-- 今日目标（从工作台挪过来，配眼睛） -->
+  <!-- ② 今日目标（只此一处；可直接改） -->
   <view class="glass">
     <view class="row row--between">
-      <view class="row row--gap">
-        <view class="sec__bar"></view>
-        <text class="item__t">今日目标</text>
-      </view>
+      <text class="item__t">今日目标</text>
       <view class="row row--gap">
         <text class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + goal)}}</text>
-        <view class="pill" id="goalBtn" bindtap="setGoal">改目标</view>
+        <view class="minibtn minibtn--dark" id="goalBtn" bindtap="setGoal">改</view>
       </view>
     </view>
     <view class="bar mt16"><view class="bar__in" style="width:{{goalPct}}%"></view></view>
     <view class="row row--between mt12">
-      <text class="muted">已完成 {{goalPct}}%</text>
+      <text class="muted">完成 {{goalPct}}%</text>
       <text class="muted">还差 {{hideMoney ? '∗∗∗' : ('¥' + goalLeft)}}</text>
     </view>
   </view>
 
-  <!-- 摘要 -->
-  <view class="tiles" wx:if="{{board}}">
-    <view class="tile"><view class="tile__k">完成单数</view><view class="tile__v">{{board.summary.count}}<text class="tile__u">单</text></view></view>
-    <view class="tile"><view class="tile__k">收入</view><view class="tile__v">{{hideMoney ? '∗∗∗' : board.summary.revenue}}<text class="tile__u">元</text></view></view>
-    <view class="tile"><view class="tile__k">客单价</view><view class="tile__v">{{hideMoney ? '∗∗∗' : board.summary.perCustomer}}<text class="tile__u">元</text></view></view>
-  </view>
-  <view class="tiles mt16" wx:if="{{board}}">
-    <view class="tile"><view class="tile__k">服务人次</view><view class="tile__v">{{board.summary.people}}<text class="tile__u">次</text></view></view>
-    <view class="tile"><view class="tile__k">有名客人</view><view class="tile__v">{{board.summary.customers}}<text class="tile__u">位</text></view></view>
-    <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMinText}}</view></view>
+  <!-- ③ 忙闲时段（下班一看就知道今天有多忙 → 成就感） -->
+  <view class="glass">
+    <view class="row row--between">
+      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">今天忙不忙（按时段）</text></view>
+      <text class="muted">柱子越高越忙</text>
+    </view>
+    <view class="bars mt20">
+      <view class="bars__i" wx:for="{{byHour}}" wx:key="hour">
+        <view class="bars__b" style="height:{{item.h}}rpx"></view>
+        <text class="lbl">{{item.hour}}</text>
+      </view>
+    </view>
+    <view wx:if="{{!byHour.length}}" class="center" style="padding:20rpx 0"><text class="muted">这个周期还没有完成的单</text></view>
   </view>
 
-  <!-- 排行榜 -->
-  <view class="glass mt24" wx:if="{{board}}">
+  <!-- ④ 排行榜 -->
+  <view class="glass">
     <view class="row row--between">
       <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">排行榜</text></view>
       <view class="row row--gap">
@@ -63,61 +76,77 @@
     <view class="item" wx:for="{{rank}}" wx:key="key" id="rank-{{index}}" data-k="{{item.key}}" bindtap="openCustomer">
       <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
       <view class="grow">
-        <view class="item__t">{{item.name}}{{item.anon ? '（无名字，已归并）' : ''}}</view>
+        <view class="item__t">{{item.name}}</view>
         <view class="item__s">{{item.count}} 次 · 累计 {{item.min}} 分钟 · 均 {{item.avgMin}} 分钟</view>
       </view>
       <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
     </view>
-    <view wx:if="{{!rank.length}}" class="center" style="padding:22rpx 0"><text class="muted">这个范围还没有数据</text></view>
+    <view wx:if="{{!rank.length}}" class="center" style="padding:20rpx 0"><text class="muted">暂无数据</text></view>
   </view>
 
-  <!-- 客人明细（点开看某人做了多久） -->
-  <view class="glass" wx:if="{{board}}">
-    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">客人明细</text><text class="muted grow" style="text-align:right">点一位看详情</text></view>
-    <view class="item" wx:for="{{customers}}" wx:key="key">
-      <view class="grow" id="cust-{{item.key}}" data-k="{{item.key}}" bindtap="openCustomer">
-        <view class="item__t">{{item.name}}</view>
-        <view class="item__s">{{item.count}} 次 · 累计 {{item.min}} 分钟{{item.lastText ? ' · 最近 ' + item.lastText : ''}}</view>
-      </view>
-      <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
-    </view>
-    <block wx:for="{{customers}}" wx:key="key">
-      <view wx:if="{{openKey === item.key}}" class="detail">
-        <view class="row row--between"><text class="muted">客人</text><text>{{item.name}}</text></view>
-        <view class="row row--between mt12"><text class="muted">服务次数</text><text>{{item.count}} 次</text></view>
-        <view class="row row--between mt12"><text class="muted">累计时长</text><text>{{item.min}} 分钟</text></view>
-        <view class="row row--between mt12"><text class="muted">平均每次</text><text>{{item.avgMin}} 分钟</text></view>
-        <view class="row row--between mt12"><text class="muted">累计消费</text><text>{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</text></view>
-        <view class="row row--between mt12"><text class="muted">最近一次</text><text>{{item.lastText || '—'}}</text></view>
-      </view>
-    </block>
-  </view>
-
-  <!-- 分布：按项目 / 按时段 / 按客人类型 -->
-  <view class="glass" wx:if="{{board}}">
-    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按项目</text></view>
-    <view class="chart__row" wx:for="{{byService}}" wx:key="name">
-      <text class="chart__k">{{item.name}}</text>
-      <view class="chart__track"><view class="chart__bar" style="width:{{item.pct}}%"></view></view>
-      <text class="chart__v">{{item.count}} 单 / 均 {{item.avgMin}} 分</text>
+  <!-- ⑤ 客人明细（折叠；点开某人是"透视图"） -->
+  <view class="glass glass--tight" id="custToggle" bindtap="toggleCustomers">
+    <view class="row row--between">
+      <text class="item__t">客人数据（{{customers.length}}）</text>
+      <text class="muted">{{showCustomers ? '收起 ▲' : '展开 ▼'}}</text>
     </view>
   </view>
-
-  <view class="glass" wx:if="{{board}}">
-    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按时段（几点忙）</text></view>
-    <view class="bars">
-      <view class="bars__i" wx:for="{{byHour}}" wx:key="hour">
-        <view class="bars__b" style="height:{{item.h}}rpx"></view>
-        <text class="lbl">{{item.hour}}</text>
+  <block wx:if="{{showCustomers}}">
+    <view class="glass">
+      <view class="item" wx:for="{{customers}}" wx:key="key">
+        <view class="grow" id="cust-{{item.key}}" data-k="{{item.key}}" bindtap="openCustomer">
+          <view class="item__t">{{item.name}}</view>
+          <view class="item__s">{{item.count}} 次 · 累计 {{item.min}} 分钟{{item.lastText ? ' · 最近 ' + item.lastText : ''}}</view>
+        </view>
+        <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
       </view>
     </view>
-  </view>
+    <!-- 透视图：某位客人的"换视角看" -->
+    <view class="glass" wx:for="{{customers}}" wx:key="key" wx:if="{{openKey === item.key}}">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">{{item.name}} · 透视图</text></view>
+      <view class="row row--between"><text class="muted">服务次数</text><text>{{item.count}} 次</text></view>
+      <view class="row row--between mt12"><text class="muted">累计时长</text><text>{{item.min}} 分钟（均 {{item.avgMin}} 分钟）</text></view>
+      <view class="row row--between mt12"><text class="muted">累计消费</text><text>{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</text></view>
+      <view class="row row--between mt12"><text class="muted">最近一次</text><text>{{item.lastText || '—'}}</text></view>
+      <view class="divider"></view>
+      <view class="lbl">换视角：他的钱花在哪</view>
+      <view class="chart__row" wx:for="{{item.byService}}" wx:key="name" wx:for-item="sv">
+        <text class="chart__k">{{sv.name}}</text>
+        <view class="chart__track"><view class="chart__bar" style="width:{{sv.pct}}%"></view></view>
+        <text class="chart__v">{{sv.count}} 次 · {{hideMoney ? '∗∗∗' : ('¥' + sv.revenue)}}</text>
+      </view>
+    </view>
+  </block>
 
-  <view class="glass" wx:if="{{board}}">
-    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按客人类型</text></view>
-    <view class="item" wx:for="{{byType}}" wx:key="type">
-      <view class="grow"><view class="item__t">{{item.label}}</view><view class="item__s">{{item.count}} 次</view></view>
-      <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
+  <!-- ⑥ 全店分布（折叠） -->
+  <view class="glass glass--tight" id="moreToggle" bindtap="toggleMore">
+    <view class="row row--between">
+      <text class="item__t">更多数据盘点</text>
+      <text class="muted">{{showMore ? '收起 ▲' : '展开 ▼'}}</text>
     </view>
   </view>
+  <block wx:if="{{showMore}}">
+    <view class="glass">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按项目</text></view>
+      <view class="chart__row" wx:for="{{byService}}" wx:key="name">
+        <text class="chart__k">{{item.name}}</text>
+        <view class="chart__track"><view class="chart__bar" style="width:{{item.pct}}%"></view></view>
+        <text class="chart__v">{{item.count}} 单 · 均 {{item.avgMin}} 分</text>
+      </view>
+    </view>
+    <view class="glass">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按客人类型</text></view>
+      <view class="item" wx:for="{{byType}}" wx:key="type">
+        <view class="grow"><view class="item__t">{{item.label}}</view><view class="item__s">{{item.count}} 次</view></view>
+        <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
+      </view>
+    </view>
+    <view class="glass">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按天</text></view>
+      <view class="item" wx:for="{{byDay}}" wx:key="day">
+        <view class="grow"><view class="item__t">{{item.day}}</view><view class="item__s">{{item.count}} 单</view></view>
+        <view class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + item.revenue)}}</view>
+      </view>
+    </view>
+  </block>
 </view>

@@ -13,6 +13,9 @@ function rangeToTs(range, now) {
     return { from: dayStart - wd * DAY, to: dayStart + (7 - wd) * DAY };
   }
   if (range === "month") return { from: Date.UTC(y, m, 1) - 8 * 3600e3, to: Date.UTC(y, m + 1, 1) - 8 * 3600e3 };
+  if (range === "lastMonth") return { from: Date.UTC(y, m - 1, 1) - 8 * 3600e3, to: Date.UTC(y, m, 1) - 8 * 3600e3 };
+  if (range === "year") return { from: Date.UTC(y, 0, 1) - 8 * 3600e3, to: Date.UTC(y + 1, 0, 1) - 8 * 3600e3 };
+  if (range === "lastYear") return { from: Date.UTC(y - 1, 0, 1) - 8 * 3600e3, to: Date.UTC(y, 0, 1) - 8 * 3600e3 };
   return { from: 0, to: Number.MAX_SAFE_INTEGER };
 }
 
@@ -64,12 +67,17 @@ exports.main = async (event) => {
     const key = anon ? ANON : rawName;
     const c = cust[key] = cust[key] || { key, name: key, count: 0, revenue: 0, ms: 0, lastAt: 0, anon };
     c.count++; c.revenue += price; c.ms += ms;
+    // 每位客人的项目分布（"换视角看他把钱花在哪"用）
+    c.svc = c.svc || {};
+    const sv = c.svc[o.serviceName] = c.svc[o.serviceName] || { name: o.serviceName, count: 0, revenue: 0 };
+    sv.count++; sv.revenue += price;
     if (endTs > c.lastAt) c.lastAt = endTs;
     if (!anon) uniq.add(key);
   }
 
   const customers = Object.values(cust).map((c) => ({
     ...c, avgMs: c.count ? Math.round(c.ms / c.count) : 0, min: Math.round(c.ms / 60000),
+    byService: Object.values(c.svc || {}).sort((a, b) => b.revenue - a.revenue),
     lastText: c.lastAt ? new Date(c.lastAt + 8 * 3600e3).toISOString().slice(5, 16).replace("T", " ") : "",
   }));
   const top = [...customers].sort((a, b) => b.revenue - a.revenue).slice(0, 5);

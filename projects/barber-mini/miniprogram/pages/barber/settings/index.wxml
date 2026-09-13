@@ -11,17 +11,7 @@
     </view>
   </view>
 
-  <!-- 今日目标 -->
-  <view class="glass">
-    <view class="row row--between">
-      <text class="item__t">今日目标</text>
-      <view class="row row--gap">
-        <text class="num--sm" id="goalVal">{{hideMoney ? '∗∗∗' : ('¥' + goal)}}</text>
-        <view class="pill" id="eyeBtn" bindtap="toggleEye">{{hideMoney ? '显示' : '隐藏'}}</view>
-      </view>
-    </view>
-    <view class="btn btn--ghost btn--sm mt16" id="goalBtn" bindtap="setGoal">改目标</view>
-  </view>
+  <!-- 今日目标**不在这里**（老板：只留数据看板一处，别折叠在设置里） -->
 
   <!-- 营业时间 -->
   <view class="glass">

@@ -6,6 +6,9 @@ const TONE = { idle: "free", busy: "busy", rest: "rest" };
 const TEXT = { idle: "空闲", busy: "服务中", rest: "休息" };
 const STATUS_TEXT = { reserved: "已预约", queuing: "排队中", serving: "服务中" };
 const TAG_CLASS = { 0: "pill--gold", 1: "pill--busy", 2: "" };
+// 物化头像：男女老少小孩一眼分得清（老板 2026-09-14：「用物化的头像告诉我男女老少」）
+const FACE = { woman: "👩", man: "👨", elder: "🧓", child: "🧒" };
+const TYPE_TEXT = { woman: "女士", man: "男士", elder: "老人", child: "小孩" };
 
 Page({
   data: {
@@ -14,6 +17,7 @@ Page({
     servingId: null, servingStartAt: 0, servingPlanMin: 0,
     picked: null, itemPicked: null, clickCount: 0,
     queue: [], queueTop: [], autoFlow: false,
+    page: 0, currentFace: "🧑", currentTypeText: "", currentTag: "",
     types: [
       { k: "woman", label: "女士", ico: "👩" }, { k: "man", label: "男士", ico: "👨" },
       { k: "elder", label: "老人", ico: "🧓" }, { k: "child", label: "小孩", ico: "🧒" },
@@ -46,19 +50,25 @@ Page({
         _id: o._id, name: o.customerName || "顾客", serviceName: o.serviceName,
         statusText: STATUS_TEXT[o.status] || o.status, status: o.status,
         tag: priorityLabel(o.priority), tagClass: TAG_CLASS[o.priority] || "",
+        face: FACE[o.customerType] || "🧑", faceKey: o.customerType || "man",
       }));
+      const sv = q.serving || null;
       this.setData({
         queue: list, queueTop: list.slice(0, 3),
-        currentName: q.serving ? (q.serving.customerName || "顾客") : "暂无客人",
-        currentItem: q.serving ? q.serving.serviceName : "—",
-        servingId: q.serving ? q.serving._id : null,
-        servingStartAt: q.serving ? Number(q.serving.actualStartTime || 0) : 0,
-        servingPlanMin: q.serving ? Math.round(Number(q.serving.duration || 0) / 60000) : 0,
+        currentName: sv ? (sv.customerName || "顾客") : "现在没有人",
+        currentItem: sv ? sv.serviceName : "点右边一屏接单",
+        currentFace: sv ? (FACE[sv.customerType] || "🧑") : "🪑",
+        currentTypeText: sv ? (TYPE_TEXT[sv.customerType] || "") : "",
+        currentTag: sv ? priorityLabel(sv.priority) : "",
+        servingId: sv ? sv._id : null,
+        servingStartAt: sv ? Number(sv.actualStartTime || 0) : 0,
+        servingPlanMin: sv ? Math.round(Number(sv.duration || 0) / 60000) : 0,
       });
       if (q.serving) this.applyStatus("busy"); else if (this.data.status === "busy") this.applyStatus("idle");
     } catch (e) { /* 云端未就绪：保持占位 */ }
   },
   pickType(e) { this.setData({ picked: e.currentTarget.dataset.k, clickCount: this.data.clickCount + 1 }); },
+  onSwipe(e) { this.setData({ page: e.detail.current }); },
   pickItem(e) { this.setData({ itemPicked: e.currentTarget.dataset.id, clickCount: this.data.clickCount + 1 }); },
   async start() {
     const { picked, itemPicked } = this.data;
