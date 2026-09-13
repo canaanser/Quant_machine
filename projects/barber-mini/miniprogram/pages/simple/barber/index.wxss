@@ -5,3 +5,6 @@
 .type--on { border-color: var(--gold); background: rgba(10,132,255,.08); }
 .type__ico { font-size: 40rpx; }
 .type__t { font-size: 24rpx; margin-top: 6rpx; color: var(--ink-2); }
+.rank { width: 52rpx; height: 52rpx; line-height: 52rpx; text-align: center; border-radius: 16rpx;
+  background: #F2F2F4; color: var(--ink-3); font-weight: 700; font-size: 26rpx; }
+.rank--on { background: #FFFFFF; border: 2rpx solid var(--ink); color: var(--ink); }

@@ -18,6 +18,8 @@ Page({
       { _id: "s1", name: "剪发", price: 38, defaultDuration: 2400000 }, { _id: "s2", name: "烫发", price: 288, defaultDuration: 9000000 },
       { _id: "s3", name: "染发", price: 258, defaultDuration: 7200000 },
     ],
+    showBoard: false,
+    b: { summary: { count: 0, revenue: 0, perCustomer: 0 } }, rank: [], customers: [], byService: [],
   },
   onShow() { this.load(); this.timer = setInterval(() => this.tick(), 30000); },
   onHide() { clearInterval(this.timer); },
@@ -63,4 +65,19 @@ Page({
     catch (err) { wx.showToast({ title: "切不了", icon: "none" }); }
   },
   apply(s) { this.setData({ status: s, tone: TONE[s], statusText: TEXT[s] }); },
+  // 看板（折叠展开时才拉数据，省流量）
+  async toggleBoard() {
+    const on = !this.data.showBoard;
+    this.setData({ showBoard: on });
+    if (!on) return;
+    try {
+      const b = await api.board({ barberId: "b1", range: "today" });
+      this.setData({
+        b,
+        rank: (b.top || []).map((c) => ({ ...c, min: Math.round(c.ms / 60000) })),
+        customers: (b.customers || []).slice(0, 10).map((c) => ({ ...c, min: Math.round(c.ms / 60000), avgMin: Math.round((c.avgMs || 0) / 60000) })),
+        byService: (b.byService || []).map((x) => ({ ...x, avgMin: Math.round(x.ms / Math.max(1, x.count) / 60000) })),
+      });
+    } catch (e) { wx.showToast({ title: "看板数据读不到", icon: "none" }); }
+  },
 });

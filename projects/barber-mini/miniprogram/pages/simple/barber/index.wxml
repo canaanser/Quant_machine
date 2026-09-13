@@ -60,4 +60,41 @@
     </view>
     <view class="btn btn--gold mt20" id="startBtn" bindtap="start">开始服务</view>
   </view>
+
+  <!-- 看板（折叠）：原来在"数据看板"页里的东西，挂到工作台，默认收起 -->
+  <view class="glass glass--tight" id="boardToggle" bindtap="toggleBoard">
+    <view class="row row--between">
+      <text class="item__t">数据看板</text>
+      <text class="muted">{{showBoard ? '收起 ▲' : '展开 ▼'}}</text>
+    </view>
+  </view>
+  <block wx:if="{{showBoard}}">
+    <view class="glass">
+      <view class="tiles">
+        <view class="tile"><view class="tile__k">完成单数</view><view class="tile__v">{{b.summary.count}}<text class="tile__u">单</text></view></view>
+        <view class="tile"><view class="tile__k">收入</view><view class="tile__v">{{b.summary.revenue}}<text class="tile__u">元</text></view></view>
+        <view class="tile"><view class="tile__k">客单价</view><view class="tile__v">{{b.summary.perCustomer}}<text class="tile__u">元</text></view></view>
+      </view>
+      <view class="sec mt24"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">消费排行</text></view>
+      <view class="item" wx:for="{{rank}}" wx:key="key">
+        <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
+        <view class="grow"><view class="item__t">{{item.name}}</view><view class="item__s">{{item.count}} 次 · 累计 {{item.min}} 分钟</view></view>
+        <view class="num--sm">¥{{item.revenue}}</view>
+      </view>
+    </view>
+    <view class="glass">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">客人数据</text></view>
+      <view class="item" wx:for="{{customers}}" wx:key="key">
+        <view class="grow"><view class="item__t">{{item.name}}</view><view class="item__s">{{item.count}} 次 · 累计 {{item.min}} 分钟 · 均 {{item.avgMin}} 分钟</view></view>
+        <view class="num--sm">¥{{item.revenue}}</view>
+      </view>
+    </view>
+    <view class="glass">
+      <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">按项目</text></view>
+      <view class="item" wx:for="{{byService}}" wx:key="name">
+        <view class="grow"><view class="item__t">{{item.name}}</view><view class="item__s">{{item.count}} 单 · 均 {{item.avgMin}} 分钟</view></view>
+        <view class="num--sm">¥{{item.revenue}}</view>
+      </view>
+    </view>
+  </block>
 </view>
