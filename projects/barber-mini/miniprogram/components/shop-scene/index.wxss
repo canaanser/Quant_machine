@@ -12,12 +12,11 @@
   background: linear-gradient(180deg, #FFFFFF, #D9E6FF); box-shadow: 0 4rpx 10rpx rgba(20,22,26,.12); }
 /* 理发师 + 剪刀（咔嚓动画） */
 .sc__barber { position: absolute; left: 176rpx; top: 118rpx; }
-.sc__scissors { font-size: 54rpx; display: inline-block; transform-origin: 30% 70%;
-  animation: snip .55s ease-in-out infinite; }
+.sc__scissors { font-size: 54rpx; display: inline-block; transform: rotate(-8deg); }   /* 先静态（老板：动态图先用静态图代替） */
 @keyframes snip { 0%,100% { transform: rotate(-12deg) translateY(0); } 50% { transform: rotate(10deg) translateY(6rpx); } }
 /* 后排等候的人（各自小动作，错开时间） */
 .sc__row { position: absolute; left: 34rpx; right: 24rpx; bottom: 22rpx; display: flex; justify-content: space-between; }
-.sc__wait { font-size: 52rpx; opacity: .95; animation: bob 2.4s ease-in-out infinite; }
+.sc__wait { font-size: 52rpx; opacity: .95; }
 .sc__wait--1 { animation-delay: 0s; } .sc__wait--2 { animation-delay: .5s; }
 .sc__wait--3 { animation-delay: 1s; } .sc__wait--4 { animation-delay: 1.5s; }
 @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8rpx); } }

@@ -27,7 +27,7 @@
 
       <!-- 现在这位：头像 + 名字 + 项目，一扫就看到 -->
       <view class="now" id="dropNow">
-        <view class="now__ava">{{currentFace}}</view>
+        <view class="now__ava ava-line ava-line--{{currentFaceKey}}"></view>
         <view class="grow">
           <view class="now__name">{{currentName}}</view>
           <view class="now__meta">{{currentItem}} · {{currentTypeText}}{{currentTag ? ' · ' + currentTag : ''}}</view>
@@ -39,7 +39,7 @@
       <view class="strip" wx:if="{{queue.length}}">
         <scroll-view scroll-x class="strip__in">
           <view class="face-card" wx:for="{{queue}}" wx:key="_id">
-            <view class="face-card__ava face-card__ava--{{item.faceKey}}">{{item.face}}</view>
+            <view class="face-card__ava ava-line ava-line--{{item.faceKey}}"></view>
             <view class="face-card__name">{{item.name}}</view>
             <view class="face-card__svc">{{item.serviceName}}</view>
           </view>
@@ -66,7 +66,7 @@
           <view class="relay__card" id="relayCard"
                 style="transform: translateY({{relay.dragY}}rpx);"
                 bindtouchstart="relayStart" catchtouchmove="relayMove" bindtouchend="relayEnd">
-            <view class="relay__ava">{{relay.next.face}}</view>
+            <view class="relay__ava ava-line ava-line--{{relay.next.faceKey}}"></view>
             <view class="grow">
               <view class="item__t">{{relay.next.name}}</view>
               <view class="item__s">{{relay.next.serviceName}} · {{relay.next.tag}}</view>
@@ -75,7 +75,7 @@
           </view>
         </view>
         <view class="relay__foot">
-          <text class="muted">{{relay.counting ? '松手= 接下一位；' + relay.left + ' 秒后自动进入休息' : '已进入休息'}}</text>
+          <text class="muted">{{relay.counting ? '往上拖到「现在这位」松手＝接他；' + relay.left + ' 秒不动＝回到空闲' : '已回到空闲'}}</text>
           <view class="pill" wx:if="{{!relay.counting}}" id="resumeBtn" bindtap="resumeWork">继续接单</view>
         </view>
       </view>

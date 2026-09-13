@@ -6,11 +6,12 @@ page {
   --ink: #14161A;
   --ink-2: #3A3F47;
   --ink-3: #7C838E;
-  --gold: #C9A227;
-  --gold-2: #E8C766;
-  --free: #17B26A;      /* 空闲 = 绿 */
-  --busy: #F0A020;      /* 忙/服务中 = 橙 */
-  --rest: #2FA37A;      /* 休息/打烊 = **绿**（老板 2026-09-14：不要红色） */
+  /* ★ 2026-09-14 苹果风配色（老板：配色太差劲）——中性灰 + 系统蓝/绿/橙，**没有红色** */
+  --gold: #0A84FF;      /* 主色 = iOS 系统蓝 */
+  --gold-2: #4DA2FF;
+  --free: #34C759;      /* 空闲 = iOS 绿 */
+  --busy: #FF9F0A;      /* 忙/服务中 = iOS 橙 */
+  --rest: #30B36B;      /* 休息/打烊 = 绿（不要红） */
   --glass: rgba(255, 255, 255, 0.58);
   --glass-2: rgba(255, 255, 255, 0.42);
   --glass-line: rgba(255, 255, 255, 0.75);
@@ -201,3 +202,10 @@ page {
 .theme--minimal .seg__i--on { background: #FFF; box-shadow: none; border: 1rpx solid #E6E6E6; }
 .theme--minimal .bar { background: #F0F0F0; height: 10rpx; }
 .theme--minimal .tlbar__seg { border-radius: 8rpx; }
+
+/* ── 线条拟物头像（老板：不要 emoji，要"只有线条和颜色"的简约头像）── */
+.ava-line { background-repeat: no-repeat; background-position: center; background-size: 100% 100%; }
+.ava-line--woman { background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMEE4NEZGIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIyNCIgY3k9IjE4IiByPSI5Ii8+PHBhdGggZD0iTTkgNDJjMi04IDgtMTIgMTUtMTJzMTMgNCAxNSAxMiIvPjxwYXRoIGQ9Ik0xNSAxMmMwLTYgNC05IDktOXM5IDMgOSA5Ii8+PC9zdmc+"); }
+.ava-line--man { background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMEE4NEZGIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIyNCIgY3k9IjE4IiByPSI5Ii8+PHBhdGggZD0iTTkgNDJjMi04IDgtMTIgMTUtMTJzMTMgNCAxNSAxMiIvPjwvc3ZnPg=="); }
+.ava-line--elder { background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMEE4NEZGIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIyNCIgY3k9IjE5IiByPSI5Ii8+PHBhdGggZD0iTTkgNDJjMi04IDgtMTIgMTUtMTJzMTMgNCAxNSAxMiIvPjxwYXRoIGQ9Ik0xNiAxMGM1LTQgMTEtNCAxNiAwIi8+PGNpcmNsZSBjeD0iMTkiIGN5PSIxOSIgcj0iMi42Ii8+PGNpcmNsZSBjeD0iMjkiIGN5PSIxOSIgcj0iMi42Ii8+PC9zdmc+"); }
+.ava-line--child { background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMEE4NEZGIiBzdHJva2Utd2lkdGg9IjIuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIyNCIgY3k9IjE3IiByPSI3Ii8+PHBhdGggZD0iTTEyIDQyYzItNyA2LTEwIDEyLTEwczEwIDMgMTIgMTAiLz48Y2lyY2xlIGN4PSIyMSIgY3k9IjE2IiByPSIxLjgiLz48Y2lyY2xlIGN4PSIyNyIgY3k9IjE2IiByPSIxLjgiLz48L3N2Zz4="); }

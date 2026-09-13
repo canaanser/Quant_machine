@@ -20,7 +20,7 @@
   border: 1rpx solid var(--glass-line); border-radius: 28rpx; padding: 26rpx 28rpx;
   box-shadow: var(--shadow); backdrop-filter: blur(20rpx); -webkit-backdrop-filter: blur(20rpx); }
 .now__ava { width: 108rpx; height: 108rpx; border-radius: 34rpx; display: flex; align-items: center;
-  justify-content: center; font-size: 54rpx; background: linear-gradient(135deg, #FFF6DA, #F3E3AE); }
+  justify-content: center; background: #F2F7FF; border: 1rpx solid #E3ECF9; padding: 12rpx; }
 .now__name { font-size: 40rpx; font-weight: 700; }
 .now__meta { font-size: 26rpx; color: var(--ink-3); margin-top: 6rpx; }
 .now__min { font-size: 44rpx; font-weight: 800; color: var(--gold); }
@@ -33,7 +33,7 @@
   margin-right: 16rpx; padding: 18rpx 0; border-radius: 22rpx; background: var(--glass-2);
   border: 1rpx solid var(--glass-line); }
 .face-card__ava { width: 72rpx; height: 72rpx; border-radius: 50%; display: flex; align-items: center;
-  justify-content: center; font-size: 38rpx; background: #fff; }
+  justify-content: center; background: #F2F7FF; border: 1rpx solid #E3ECF9; padding: 8rpx; }
 .face-card__ava--woman { background: #FFE3EF; }
 .face-card__ava--man { background: #E3EEFF; }
 .face-card__ava--elder { background: #EFE7DC; }
@@ -54,9 +54,9 @@
 .relay__fill { height: 100%; background: linear-gradient(90deg, var(--gold-2), var(--gold)); transition: width .2s linear; }
 .relay__row { margin-top: 16rpx; }
 .relay__card { display: flex; align-items: center; gap: 18rpx; padding: 18rpx 20rpx; border-radius: 22rpx;
-  background: rgba(255,255,255,.12); border: 1rpx solid rgba(255,255,255,.22); transition: transform .12s ease-out; }
+  background: rgba(255,255,255,.12); border: 1rpx solid rgba(255,255,255,.22); }   /* ★ 拖动时不要 transition：那是"不跟手"的元凶 */
 .relay__ava { width: 76rpx; height: 76rpx; border-radius: 24rpx; display: flex; align-items: center;
-  justify-content: center; font-size: 42rpx; background: rgba(255,255,255,.9); }
+  justify-content: center; background: rgba(255,255,255,.92); padding: 8rpx; }
 .relay__hint { font-size: 22rpx; color: var(--gold-2); }
 .relay__foot { display: flex; align-items: center; justify-content: space-between; margin-top: 14rpx; }
 

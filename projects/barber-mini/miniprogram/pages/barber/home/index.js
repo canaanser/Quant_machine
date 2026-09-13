@@ -19,7 +19,7 @@ Page({
     picked: null, itemPicked: null, clickCount: 0,
     queue: [], queueTop: [], autoFlow: false,
     relay: { show: false, counting: false, left: 1, pct: 0, dragY: 0, next: { name: "", face: "🧑", serviceName: "", tag: "" } },
-    page: 0, currentFace: "🧑", currentTypeText: "", currentTag: "",
+    page: 0, currentFaceKey: "man", currentTypeText: "", currentTag: "",
     types: [
       { k: "woman", label: "女士", ico: "👩" }, { k: "man", label: "男士", ico: "👨" },
       { k: "elder", label: "老人", ico: "🧓" }, { k: "child", label: "小孩", ico: "🧒" },
@@ -59,7 +59,7 @@ Page({
         queue: list, queueTop: list.slice(0, 3),
         currentName: sv ? (sv.customerName || "顾客") : "现在没有人",
         currentItem: sv ? sv.serviceName : "点右边一屏接单",
-        currentFace: sv ? (FACE[sv.customerType] || "🧑") : "🪑",
+        currentFaceKey: sv ? (sv.customerType || "man") : "man",
         currentTypeText: sv ? (TYPE_TEXT[sv.customerType] || "") : "",
         currentTag: sv ? priorityLabel(sv.priority) : "",
         servingId: sv ? sv._id : null,
@@ -103,16 +103,16 @@ Page({
       this.setData({ "relay.show": false });
       return;
     }
-    this._relayY0 = null; this._relayLeft = 1.0;
+    this._relayY0 = null; this._relayLeft = 3.0;      // ★ 1 秒太急（老板：完成→秒变打烊）；放宽到 3 秒
     this.setData({
-      relay: { show: true, counting: true, left: 1, pct: 0, dragY: 0,
-               next: { name: next.name, face: next.face, serviceName: next.serviceName, tag: next.tag } },
+      relay: { show: true, counting: true, left: 3, pct: 0, dragY: 0,
+        next: { name: next.name, faceKey: next.faceKey || "man", serviceName: next.serviceName, tag: next.tag } },
     });
     if (this._rt) clearInterval(this._rt);
     this._rt = setInterval(() => {
       this._relayLeft = Math.max(0, this._relayLeft - 0.1);
       this.setData({ "relay.left": Math.ceil(this._relayLeft), "relay.pct": Math.round((1 - this._relayLeft) * 100) });
-      if (this._relayLeft <= 0) { clearInterval(this._rt); this._rt = null; this.relayToRest(); }
+      if (this._relayLeft <= 0) { clearInterval(this._rt); this._rt = null; this.relayToIdle(); }
     }, 100);
   },
   relayStart(e) { this._relayY0 = e.touches[0].clientY; },
@@ -132,7 +132,7 @@ Page({
     {                                                 // 往上一拖并落在目标框上 = 继续
       if (this._rt) { clearInterval(this._rt); this._rt = null; }
       const next = (this.data.queue || []).find((o) => o.status !== "serving");
-      if (!next) return this.relayToRest();
+      if (!next) return this.relayToIdle();
       try {
         if (next.status === "reserved") await api.transition({ orderId: next._id, to: "queuing" });
         await api.transition({ orderId: next._id, to: "serving" });
@@ -155,10 +155,12 @@ Page({
       }).exec();
     });
   },
-  relayToRest() {
-    this.setData({ "relay.counting": false, "relay.pct": 100 });
-    this.applyStatus("rest");
-    api.setBarberStatus({ barberId: "b1", status: "rest" }).catch(() => {});
+  // ★ 不拖 = 回到**空闲**（不是打烊！打烊只能手动点）。这样不会吓人，也不会误关店。
+  relayToIdle() {
+    this.setData({ "relay.counting": false, "relay.pct": 100, "relay.show": false });
+    this.applyStatus("idle");
+    api.setBarberStatus({ barberId: "b1", status: "idle" }).catch(() => {});
+    this.refresh();
   },
   async resumeWork() {
     this.setData({ "relay.show": false });
