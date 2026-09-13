@@ -226,7 +226,7 @@ ${openItems.length ? openItems.join("\n") : "- （自动草稿没抓到——**�
 | 本线信箱 | \`outputs/dialog/pending_${slug}.ndjson\`（镜像 \`.private/${slug}/inbox.md\`） |
 | 名册（我这一行） | \`outputs/dialog/agents.json\` |
 | 换实例留痕 | \`outputs/dialog/successions.ndjson\` |
-| 旧实例账本 | \`~/.codex/sessions/**/rollout-*<旧 threadId>*.jsonl\`（只读追溯） |
+| 旧实例账本 | \`~/.codex/sessions\` 目录下任意层级的 \`rollout-*<旧 threadId>*.jsonl\`（只读追溯） |
 
 ## 五、铁律（五条，最短版）
 
