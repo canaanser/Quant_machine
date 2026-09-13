@@ -8,7 +8,7 @@
 用法:  python -B duty/duty_engine.py         常驻(正常跑)
       python -B duty/duty_engine.py --selftest  一回合自检(不真动)
 """
-import io, json, sys, time, datetime, traceback
+import io, json, sys, time, datetime, traceback, subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
@@ -24,6 +24,7 @@ except Exception:
 
 import yaml
 import self_api as api
+import wake_slots as WS          # 到点唤醒 DSH 的时段表（老板 2026-09-14 交办）
 
 SELFTEST = "--selftest" in sys.argv
 SHADOW = ("--shadow" in sys.argv) or ("--dryexec" in sys.argv)   # 演练: 只算+留痕, 不放真单
@@ -34,6 +35,9 @@ LOG = ROOT / "outputs"
 HEART = (LOG / "watch_heartbeat_shadow.txt") if SHADOW else (LOG / "watch_heartbeat.txt")
 STATE = LOG / "duty_state.json"
 DECI = LOG / "duty_decisions.log"
+WAKE_STATE = LOG / "duty_wake_state.json"     # 5 个唤醒时点的当日记档（各叫一次）
+WAKE_LOG = LOG / "wake_dsh_log.txt"           # 每次门铃的结果留痕
+WAKE_OUT = LOG / "wake_outbox"                # 门铃正文落盘（正文永远不拼进命令行）
 
 NAMED = {"603256": "宏和科技", "301358": "湖南裕能", "002595": "豪迈科技",
          "688775": "影石创新", "688702": "盛科通信-U", "688172": "燕东微"}
@@ -80,9 +84,21 @@ def hm(dt=None):
     return dt.hour * 60 + dt.minute
 
 
+def sod(dt=None):
+    """当天秒数（到点唤醒要秒级：提前 10 秒）"""
+    dt = dt or now()
+    return dt.hour * 3600 + dt.minute * 60 + dt.second
+
+
 def H(t):
     h, m = t.split(":")
     return int(h) * 60 + int(m)
+
+
+def Hs(t):
+    """'09:30' -> 当天秒数"""
+    h, m = t.split(":")
+    return int(h) * 3600 + int(m) * 60
 
 
 def log(msg, echo=True):
@@ -383,6 +399,109 @@ def _mark_sent(rows):
 ENGINE_CFG = None
 
 
+def _wake_state_load():
+    try:
+        return json.load(open(WAKE_STATE, encoding="utf-8"))
+    except Exception:
+        return {"date": "", "done": {}}
+
+
+def _wake_state_save(st):
+    try:
+        WAKE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        json.dump(st, open(WAKE_STATE, "w", encoding="utf-8"), ensure_ascii=False)
+    except Exception as e:
+        log(f"[wake] 记档失败 {e}")
+
+
+def _node_exe():
+    """找 node：PATH 里没有就退回默认安装目录（引擎的 PATH 常常很干净）。"""
+    import shutil
+    p = shutil.which("node")
+    if p:
+        return p
+    cand = Path(r"C:\Program Files\nodejs\node.exe")
+    return str(cand) if cand.exists() else "node"
+
+
+def _ring_dsh(slot, label, text, kind="lead"):
+    """叫一次 DSH 门铃。返回 (ok, 末行摘要)。
+
+    正文**先落文件**（不拼进命令行——PowerShell/引号的坑，见 AGENTS.md），
+    再跑 `tools/mobile_chat/dsh_doorbell.mjs --file <正文>`；
+    是否真叫醒由工具自己判（要看到对方 updatedAt 变化，只看 accepted 不算过）。
+    """
+    try:
+        WAKE_OUT.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    kind_cn = f"到点唤醒 · 提前 {WS.LEAD_SEC} 秒"
+    body = (f"【{kind_cn} · {slot} {label}】\n{text}\n"
+            f"（引擎 duty_wake 自动门铃）\n")
+    f = WAKE_OUT / f"{now().strftime('%Y%m%d_%H%M')}_{slot.replace(':', '')}.txt"
+    try:
+        f.write_text(body, encoding="utf-8")
+    except Exception as e:
+        return False, f"正文写盘失败 {e}"
+    tool = ROOT / "tools" / "mobile_chat" / "dsh_doorbell.mjs"
+    if not tool.exists():
+        return False, "门铃工具不存在"
+    try:
+        p = subprocess.run([_node_exe(), str(tool), "--file", str(f)], cwd=str(ROOT),
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=180)
+    except Exception as e:
+        return False, f"调用异常 {e}"
+    lines = ((p.stdout or "") + (p.stderr or "")).strip().splitlines()
+    tail = (lines[-1] if lines else "")[:160]
+    try:
+        with open(WAKE_LOG, "a", encoding="utf-8") as fh:
+            fh.write(f"[{now().strftime('%Y-%m-%d %H:%M:%S')}] {slot} {label} "
+                     f"rc={p.returncode} {tail}\n")
+    except Exception:
+        pass
+    return p.returncode == 0, tail
+
+
+def task_wake_dsh():
+    """5 个在线时点各叫 DSH 一次（老板 2026-09-14 交办）。
+
+    · 只在交易日（`_due` 已挡周末/休市，这里再挡一次，直接调用也安全）；
+    · 每个时点**当日只叫一次**（记档 `outputs/duty_wake_state.json`，跨日自动重置）；
+    · **错过超过 GRACE_MIN 分钟就不补叫**（防"引擎中途起来把早上的铃补响"）。
+    """
+    if now().weekday() > 4:
+        return
+    cur = sod()
+    # 先做"是否临近某个时点"的粗判：不在窗口里就直接返回（每拍都跑也不读文件、零成本）
+    near = any((Hs(s) - WS.LEAD_SEC) - 30 <= cur <= (Hs(s) - WS.LEAD_SEC) + WS.GRACE_SEC
+               for s, _l, _t in WS.SLOTS)
+    if not near:
+        return
+    st = _wake_state_load()
+    today = now().strftime("%Y%m%d")
+    if st.get("date") != today:
+        st = {"date": today, "done": {}}
+    changed = False
+    for slot, label, text in WS.SLOTS:
+        if slot in st["done"]:
+            continue
+        fire_at = Hs(slot) - WS.LEAD_SEC              # ★ 提前 10 秒
+        if cur < fire_at:
+            continue                                   # 还没到"该叫"的时刻
+        if cur > fire_at + WS.GRACE_SEC:               # 过点太久 → 不补叫，只记档
+            st["done"][slot] = "SKIP"
+            changed = True
+            decision(f"[wake] 跳过 {slot}（该叫时刻已过 {cur - fire_at} 秒，不补叫）")
+            continue
+        ok, why = _ring_dsh(slot, label, text)
+        st["done"][slot] = now().strftime("%H:%M:%S")
+        changed = True
+        decision(f"[wake] {slot} {label}（提前 {WS.LEAD_SEC} 秒）-> {'OK' if ok else 'FAIL'} {why}")
+    if changed:
+        _wake_state_save(st)
+
+
 def load_cfg():
     try:
         with open(ROOT / "duty" / "schedule.yaml", encoding="utf-8") as f:
@@ -409,6 +528,10 @@ def main():
             at=t.get("close_sync", {}).get("at_time", "15:05"),
             once=t.get("close_sync", {}).get("once", True),
             enabled=t.get("close_sync", {}).get("enabled", True))
+    _wd = t.get("wake_dsh", {}) or {}
+    eng.reg("wake_dsh", task_wake_dsh, freq_sec=1,
+            window=_wd.get("window", "09:15-19:00"),
+            enabled=_wd.get("enabled", True))
     if SELFTEST:
         log("selftest: 一回合")
         eng.tick()

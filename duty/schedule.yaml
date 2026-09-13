@@ -34,6 +34,11 @@ tasks:
     enabled: false
     at_time: "18:30"
     once: true
+  # 到点唤醒 DSH 的 5 个在线时点（老板 2026-09-14 交办）
+  # 时段表在 duty/wake_slots.py；这里只管总开关与跑动窗口
+  wake_dsh:
+    enabled: true
+    window: "09:15-19:00"
 paths:
   heartbeat: outputs/watch_heartbeat.txt
   state: outputs/duty_state.json
