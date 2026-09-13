@@ -1,17 +1,53 @@
-// 顾客端首页：**三秒看懂忙不忙** —— 顶部实时状态大卡片 + 两个大按钮。
+// 顾客端首页：先出内容（mock 兜底），云环境就绪后用 watch 覆盖 → 永不白屏。
 import { watchBarber } from "../../../utils/watch.js";
+import { api } from "../../../utils/cloud.js";
+
+const TONE = { idle: "free", busy: "busy", rest: "rest" };
+const TEXT = { idle: "空闲中", busy: "正在服务", rest: "休息中" };
+const SUB = { idle: "现在到店可以直接安排", busy: "理发师手上还有一位，稍等一下", rest: "今天暂时不接单，可先预约" };
+const STATUS_TEXT = { reserved: "已预约", queuing: "排队中", serving: "正在服务", completed: "已完成", cancelled: "已取消" };
 
 Page({
-  data: { barber: null, waiting: 0, etaMin: 0, unwatch: null },
+  data: {
+    tone: "busy", statusText: "正在服务", statusSub: SUB.busy,
+    waiting: 2, etaMin: 20, progress: 45, done: 6, updated: "--:--", mine: null,
+    items: [
+      { _id: "s1", name: "剪发", price: 38, duration: 40, icon: "✂️", desc: "洗剪吹" },
+      { _id: "s2", name: "烫发", price: 288, duration: 150, icon: "🌀", desc: "含造型" },
+      { _id: "s3", name: "染发", price: 258, duration: 120, icon: "🎨", desc: "纯色" },
+      { _id: "s4", name: "护理", price: 128, duration: 60, icon: "💚", desc: "头皮护理" },
+    ],
+  },
   onLoad() {
-    // 本地先用 mock 渲染（云环境未就绪也不白屏）；连上后 watch 会覆盖它
-    this.setData({ barber: { _id: "b1", name: "阿明", status: "busy" }, waiting: 2, etaMin: 20 });
+    this.setData({ updated: new Date().toTimeString().slice(0, 5) });
+    this.loadStats();
     try {
       const db = wx.cloud.database();
-      this.data.unwatch = watchBarber(db, "b1", (b) => { if (b) this.setData({ barber: b }); });
-    } catch (e) { /* 云未初始化时静默 */ }
+      this.unwatch = watchBarber(db, "b1", (b) => { if (b) this.applyBarber(b); });
+    } catch (e) { /* 云未初始化：留 mock */ }
   },
-  onUnload() { if (this.data.unwatch) this.data.unwatch(); },
+  onUnload() { if (this.unwatch) this.unwatch(); },
+  applyBarber(b) {
+    this.setData({
+      tone: TONE[b.status] || "rest",
+      statusText: TEXT[b.status] || "休息中",
+      statusSub: SUB[b.status] || "",
+      progress: b.status === "busy" ? 55 : b.status === "idle" ? 12 : 100,
+      updated: new Date().toTimeString().slice(0, 5),
+    });
+  },
+  async loadStats() {
+    try {
+      const s = await api.stats({ barberId: "b1", fromTs: 0, toTs: 0 });
+      this.setData({ done: s.completedCount || 0 });
+    } catch (e) { /* 云端还没数据：用默认值 */ }
+  },
   goBook() { wx.navigateTo({ url: "/pages/customer/book/index" }); },
-  joinQueue() { wx.navigateTo({ url: "/pages/customer/progress/index" }); },
+  async joinQueue() {
+    try {
+      await api.createOrder({ barberId: "b1", serviceItemId: "s1", customerOpenid: "me", customerName: "我", customerType: "man" });
+      this.setData({ waiting: (this.data.waiting || 0) + 1 });
+    } catch (e) { /* 云端未就绪也让他看进度页 */ }
+    wx.navigateTo({ url: "/pages/customer/progress/index" });
+  },
 });

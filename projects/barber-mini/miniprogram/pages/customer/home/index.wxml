@@ -1,8 +1,92 @@
-<view class="card" style="padding:0">
-  <status-card barber="{{barber}}" waiting="{{waiting}}" etaMin="{{etaMin}}" />
+<view class="bg">
+  <view class="bg__blob bg__blob--a"></view>
+  <view class="bg__blob bg__blob--b"></view>
+  <view class="bg__blob bg__blob--c"></view>
 </view>
-<view class="card">
-  <view class="btn btn-primary" bindtap="goBook">立即预约</view>
-  <view class="btn btn-ghost" style="margin-top:20rpx" bindtap="joinQueue">加入排队</view>
+
+<view class="page">
+  <view class="row row--between" style="margin-bottom:22rpx">
+    <view>
+      <view class="lbl">阿明理发 · 今天</view>
+      <view class="h1">看排队</view>
+    </view>
+    <view class="pill pill--{{tone}}">
+      <view class="dot dot--{{tone}} dot--pulse"></view>{{statusText}}
+    </view>
+  </view>
+
+  <view class="glass glass--dark">
+    <view class="row row--between">
+      <view class="grow">
+        <view class="lbl" style="color:rgba(255,255,255,.62)">当前状态</view>
+        <view class="h1" style="color:#fff;margin-top:10rpx">{{statusText}}</view>
+        <view class="muted" style="color:rgba(255,255,255,.72);margin-top:8rpx">{{statusSub}}</view>
+      </view>
+      <view class="center">
+        <view class="num" style="color:#fff">{{etaMin}}</view>
+        <view class="lbl" style="color:rgba(255,255,255,.62)">预计分钟</view>
+      </view>
+    </view>
+    <view class="bar mt20" style="background:rgba(255,255,255,.18)">
+      <view class="bar__in" style="width:{{progress}}%"></view>
+    </view>
+    <view class="row row--between mt12">
+      <text class="muted" style="color:rgba(255,255,255,.72)">前面 {{waiting}} 位</text>
+      <text class="muted" style="color:rgba(255,255,255,.72)">更新于 {{updated}}</text>
+    </view>
+  </view>
+
+  <view class="tiles">
+    <view class="tile">
+      <view class="tile__k">等位</view>
+      <view class="tile__v">{{waiting}}<text class="tile__u">位</text></view>
+    </view>
+    <view class="tile">
+      <view class="tile__k">预计等待</view>
+      <view class="tile__v">{{etaMin}}<text class="tile__u">分钟</text></view>
+    </view>
+    <view class="tile">
+      <view class="tile__k">今日已服务</view>
+      <view class="tile__v">{{done}}<text class="tile__u">单</text></view>
+    </view>
+  </view>
+
+  <view class="grid2 mt24">
+    <view class="btn btn--gold" bindtap="goBook">立即预约</view>
+    <view class="btn btn--ghost" bindtap="joinQueue">加入排队</view>
+  </view>
+
+  <view class="glass mt24" wx:if="{{mine}}">
+    <view class="row row--between">
+      <text class="h2">我的单</text>
+      <view class="pill pill--gold">{{mine.tag}}</view>
+    </view>
+    <view class="row row--between mt16">
+      <view>
+        <view class="item__t">{{mine.serviceName}}</view>
+        <view class="item__s">{{mine.statusText}}</view>
+      </view>
+      <view class="num--sm">{{mine.eta}}</view>
+    </view>
+    <view class="bar mt16"><view class="bar__in" style="width:{{mine.progress}}%"></view></view>
+  </view>
+
+  <view class="glass mt24">
+    <view class="row row--between">
+      <text class="h2">服务项目</text>
+      <text class="muted">时长 · 价格</text>
+    </view>
+    <view class="item" wx:for="{{items}}" wx:key="_id">
+      <view class="item__ico">{{item.icon}}</view>
+      <view class="grow">
+        <view class="item__t">{{item.name}}</view>
+        <view class="item__s">{{item.duration}} 分钟 · {{item.desc}}</view>
+      </view>
+      <view class="num--sm">¥{{item.price}}</view>
+    </view>
+  </view>
+
+  <view class="glass glass--tight center">
+    <text class="muted">预付款仅在同一时间段内优先，不跨时段插队</text>
+  </view>
 </view>
-<view class="card muted">说明：预付款用户**仅在同一时间段内**优先排单，不跨时段插队。</view>
