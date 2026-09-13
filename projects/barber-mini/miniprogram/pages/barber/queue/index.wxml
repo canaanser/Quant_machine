@@ -33,8 +33,8 @@
       <view class="item" wx:for="{{list}}" wx:key="_id" id="row-{{index}}" data-id="{{item._id}}">
         <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
         <view class="grow">
-          <view class="item__t">{{item.customerName}}</view>
-          <view class="item__s">{{item.serviceName}} · {{item.statusText}}</view>
+          <view class="item__t">{{item.face}} {{item.customerName}}</view>
+          <view class="item__s">{{item.typeText}} · {{item.serviceName}} · {{item.statusText}}</view>
         </view>
         <view class="pill {{item.tagClass}}">{{item.tag}}</view>
       </view>

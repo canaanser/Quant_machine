@@ -89,7 +89,9 @@ Page({
       waiting: Math.max(0, ahead), etaMin: Math.max(0, ahead) * 10,
       mine: mine ? {
         tag: ["预付款", "已预约", "现场"][mine.priority] || "现场",
-        serviceName: mine.serviceName, statusText: mine.status === "reserved" ? "已预约（未到点）" : "排队中",
+        serviceName: mine.serviceName,
+        typeText: ({ woman: "女士", man: "男士", elder: "老人", child: "小孩" })[mine.customerType] || "",
+        statusText: mine.status === "reserved" ? "已预约（未到点）" : "排队中",
         eta: mine.appointmentTime ? hhmm(mine.appointmentTime) : "等待叫号",
         progress: Math.min(100, Math.max(10, 100 - Math.max(0, ahead) * 15)),
       } : null,

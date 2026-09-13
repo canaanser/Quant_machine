@@ -96,7 +96,7 @@
       <view class="row row--between">
         <view>
           <view class="item__t">我的{{mine.tag === '已预约' ? '预约' : '排队'}}</view>
-          <view class="item__s">{{mine.serviceName}} · {{mine.statusText}} · {{mine.eta}}</view>
+          <view class="item__s">{{mine.typeText}} · {{mine.serviceName}} · {{mine.statusText}} · {{mine.eta}}</view>
         </view>
         <view class="btn btn--gold btn--sm" style="width:220rpx" id="myQueue" bindtap="goProgress">看排队进度</view>
       </view>

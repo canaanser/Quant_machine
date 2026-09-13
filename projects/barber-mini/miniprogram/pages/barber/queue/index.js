@@ -10,6 +10,8 @@ Page({
         serving: (r.serving ? { customerName: r.serving.customerName || "顾客", serviceName: r.serving.serviceName } : null),
         list: (r.list || []).map((o) => ({
           _id: o._id, customerName: o.customerName || "顾客", serviceName: o.serviceName,
+          face: ({ woman: "👩", man: "👨", elder: "🧓", child: "🧒" })[o.customerType] || "🧑",
+          typeText: ({ woman: "女士", man: "男士", elder: "老人", child: "小孩" })[o.customerType] || "",
           priority: o.priority, status: o.status, tag: priorityLabel(o.priority),
           statusText: ({ reserved: "已预约", queuing: "排队中", serving: "服务中" })[o.status] || o.status,
           tagClass: ({ 0: "pill--gold", 1: "pill--busy", 2: "" })[o.priority] || "",
