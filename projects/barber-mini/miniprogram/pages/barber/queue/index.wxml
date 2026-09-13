@@ -1,7 +1,50 @@
-<view class="card" wx:for="{{list}}" wx:key="_id">
-  <view class="row">
-    <view class="title">{{item.customerName}} · {{item.serviceName}}</view>
-    <view class="tag">{{item.tag}}</view>
+<view class="bg">
+  <view class="bg__blob bg__blob--a"></view>
+  <view class="bg__blob bg__blob--b"></view>
+</view>
+
+<view class="page">
+  <view class="row row--between" style="margin:6rpx 4rpx 26rpx">
+    <view>
+      <view class="lbl">先到先得 · 预付款同段优先</view>
+      <view class="h1">排队</view>
+    </view>
+    <view class="pill pill--gold">{{list.length}} 人在队</view>
   </view>
-  <view class="muted" style="margin-top:8rpx">{{item.status}}</view>
+
+  <view class="glass glass--dark" wx:if="{{serving}}">
+    <view class="row row--between">
+      <view class="grow">
+        <view class="lbl" style="color:rgba(255,255,255,.62)">正在服务</view>
+        <view class="h1" style="color:#fff;margin-top:8rpx;font-size:40rpx">{{serving.customerName}}</view>
+        <view class="muted" style="color:rgba(255,255,255,.72);margin-top:6rpx">{{serving.serviceName}}</view>
+      </view>
+      <view class="pill pill--gold">服务中</view>
+    </view>
+  </view>
+
+  <view class="glass">
+    <view class="sec">
+      <view class="sec__bar"></view>
+      <text class="sec__t" style="font-size:30rpx">队伍顺序</text>
+      <text class="muted grow" style="text-align:right">点一行可看详情</text>
+    </view>
+    <block wx:if="{{list.length}}">
+      <view class="item" wx:for="{{list}}" wx:key="_id" id="row-{{index}}" data-id="{{item._id}}">
+        <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
+        <view class="grow">
+          <view class="item__t">{{item.customerName}}</view>
+          <view class="item__s">{{item.serviceName}} · {{item.statusText}}</view>
+        </view>
+        <view class="pill {{item.tagClass}}">{{item.tag}}</view>
+      </view>
+    </block>
+    <view wx:else class="center" style="padding:30rpx 0">
+      <text class="muted">现在没人排队，休息一下</text>
+    </view>
+  </view>
+
+  <view class="glass glass--tight">
+    <text class="muted">顺序规则：同时间段内 预付款 → 已预约 → 现场；跨时段按时间先后，谁也不插队。</text>
+  </view>
 </view>
