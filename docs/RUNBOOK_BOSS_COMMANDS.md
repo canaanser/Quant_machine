@@ -15,8 +15,14 @@ node tools/mobile_chat/wake.mjs --me codex-看板编辑 --msg "【门铃】请�
 
 ## ② 「有窗重生」三步（推荐）
 
+> ⛔ **那句话必须由你亲手粘——Agent 一个字都不许替你粘。**
+> 实测 **3 次**：任何**程序**往"有窗"线程里写字，都会留下一条 app 读不懂的记录
+> （报错 `input: missing field call_id`），那条线**此后每轮 400、永久锁死**——
+> 用 app 的跨线程工具会坏，用 `codex exec resume` 也会坏。
+> **这不是"省事的写法"，是平台缺陷的必然要求。** 三条合法通道见 `AGENTS.md`「往线程里写字 · 合法通道只有三条」。
+
 1. **你点一次**：Codex 里 **新建一个对话框**；
-2. **在新窗里粘这一句**（把名字换成要重生的线）：
+2. **你亲手把这一句粘进新窗**（把名字换成要重生的线）：
    ```
    读 docs/reports/REBIRTH_codex-director_202609130819.md，跑 node tools/mobile_chat/whoami.mjs --me codex-总监，清空自己信箱，然后回看板一行现状。
    ```
@@ -26,6 +32,9 @@ node tools/mobile_chat/wake.mjs --me codex-看板编辑 --msg "【门铃】请�
    node scripts/crew_rebirth.mjs --apply --me codex-总监 --thread <新窗的 threadId>
    ```
    → 名册里 `codex-总监` 的实例换成新窗，**名字/工号/资产一字不变**，旧实例进 `failedThreadIds`。
+
+**绑定之后**：叫醒走**门铃**（`codex queue`），或由你在这个窗里直接说话。
+**不要再让任何工具"把话写进那个窗"**——那正是前面三次坏窗的同一个动作。
 
 ## ③ 回退（一键）
 
