@@ -201,6 +201,6 @@ else {
   console.log("  · **app 的跨线程委派通道有缺陷**：`create_thread`/`send_message_to_thread` 会在目标线写下一条"
     + "**缺 `call_id` 的 `function_call_output`** → 该线此后每轮 400（活样本 01a09817，工具建窗 1 条残项）；");
   console.log("  · **绕开它**：壳外小工用 `codex exec` 起**无窗实例** → 实测**首回合 0 残项**（样本 01a09819）✅；");
-  console.log("  · 代价：这种实例**不在 UI 侧边栏**（看不见）。要"看得见的窗"就人在 Codex 里点一次新建；"
+  console.log("  · 代价：这种实例**不在 UI 侧边栏**（看不见）。要「看得见的窗」就人在 Codex 里点一次新建；"
     + "身份/资产不依赖窗口（名册+信箱+门铃+重生包）。");
 }
