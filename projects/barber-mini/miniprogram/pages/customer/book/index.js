@@ -27,9 +27,9 @@ Page({
     this.setData({
       slots,
       items: [
-        { _id: "s1", name: "剪发", price: 38, duration: 40, icon: "✂️" },
-        { _id: "s2", name: "烫发", price: 288, duration: 150, icon: "🌀" },
-        { _id: "s3", name: "染发", price: 258, duration: 120, icon: "🎨" },
+        { _id: "s1", name: "剪发", price: 38, duration: 40, icon: "scissors" },
+        { _id: "s2", name: "烫发", price: 288, duration: 150, icon: "perm" },
+        { _id: "s3", name: "染发", price: 258, duration: 120, icon: "dye" },
       ],
     });
   },

@@ -46,7 +46,7 @@
       <view wx:for="{{items}}" wx:key="_id"
             class="cardx {{pickedItem === item._id ? 'cardx--on' : ''}}"
             data-id="{{item._id}}" bindtap="pickItem">
-        <view class="item__ico">{{item.icon}}</view>
+        <view class="item__ico ico ico--{{item.icon}}"></view>
         <view class="grow">
           <view class="item__t">{{item.name}}</view>
           <view class="item__s">{{item.duration}} 分钟</view>

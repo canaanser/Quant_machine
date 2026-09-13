@@ -11,20 +11,32 @@ Page({
   data: {
     tone: "busy", statusText: "正在服务", statusSub: SUB.busy,
     waiting: 2, etaMin: 20, progress: 45, done: 6, updated: "--:--", mine: null,
+    faces: ["王", "李", "张"],
+    slots: [],
     items: [
-      { _id: "s1", name: "剪发", price: 38, duration: 40, icon: "✂️", desc: "洗剪吹" },
-      { _id: "s2", name: "烫发", price: 288, duration: 150, icon: "🌀", desc: "含造型" },
-      { _id: "s3", name: "染发", price: 258, duration: 120, icon: "🎨", desc: "纯色" },
-      { _id: "s4", name: "护理", price: 128, duration: 60, icon: "💚", desc: "头皮护理" },
+      { _id: "s1", name: "剪发", price: 38, duration: 40, icon: "scissors", desc: "洗剪吹" },
+      { _id: "s2", name: "烫发", price: 288, duration: 150, icon: "perm", desc: "含造型" },
+      { _id: "s3", name: "染发", price: 258, duration: 120, icon: "dye", desc: "纯色" },
+      { _id: "s4", name: "护理", price: 128, duration: 60, icon: "care", desc: "头皮护理" },
     ],
   },
   onLoad() {
     this.setData({ updated: new Date().toTimeString().slice(0, 5) });
+    this.buildSlots();
     this.loadStats();
     try {
       const db = wx.cloud.database();
       this.unwatch = watchBarber(db, "b1", (b) => { if (b) this.applyBarber(b); });
     } catch (e) { /* 云未初始化：留 mock */ }
+  },
+  buildSlots() {
+    const base = new Date(); base.setMinutes(0, 0, 0);
+    const slots = [];
+    for (let i = 1; i <= 6; i++) {
+      const ts = base.getTime() + i * 40 * 60000;
+      slots.push({ ts, label: new Date(ts).toTimeString().slice(0, 5), busy: false, state: i === 1 ? "now" : "free" });
+    }
+    this.setData({ slots });
   },
   onUnload() { if (this.unwatch) this.unwatch(); },
   applyBarber(b) {

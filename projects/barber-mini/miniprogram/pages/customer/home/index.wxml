@@ -5,10 +5,11 @@
 </view>
 
 <view class="page">
-  <view class="row row--between" style="margin-bottom:22rpx">
-    <view>
-      <view class="lbl">阿明理发 · 今天</view>
-      <view class="h1">看排队</view>
+  <view class="head">
+    <view class="head__ava">明</view>
+    <view class="grow">
+      <view class="head__name">阿明理发</view>
+      <view class="head__sub">今天营业中 · 更新 {{updated}}</view>
     </view>
     <view class="pill pill--{{tone}}">
       <view class="dot dot--{{tone}} dot--pulse"></view>{{statusText}}
@@ -34,6 +35,12 @@
       <text class="muted" style="color:rgba(255,255,255,.72)">前面 {{waiting}} 位</text>
       <text class="muted" style="color:rgba(255,255,255,.72)">更新于 {{updated}}</text>
     </view>
+    <view class="row row--between mt16">
+      <view class="faces">
+        <view class="face" wx:for="{{faces}}" wx:key="*this">{{item}}</view>
+      </view>
+      <text class="muted" style="color:rgba(255,255,255,.72)">在排队</text>
+    </view>
   </view>
 
   <view class="tiles">
@@ -56,6 +63,19 @@
     <view class="btn btn--ghost" bindtap="joinQueue">加入排队</view>
   </view>
 
+  <view class="glass mt24">
+    <view class="sec">
+      <view class="sec__bar"></view>
+      <text class="sec__t" style="font-size:30rpx">今天接着可约</text>
+      <text class="muted grow" style="text-align:right">点一下去预约</text>
+    </view>
+    <view class="tl">
+      <view wx:for="{{slots}}" wx:key="ts"
+            class="tl__i {{item.state === 'now' ? 'tl__i--now' : (item.busy ? 'tl__i--busy' : 'tl__i--free')}}"
+            bindtap="goBook">{{item.label}}</view>
+    </view>
+  </view>
+
   <view class="glass mt24" wx:if="{{mine}}">
     <view class="row row--between">
       <text class="h2">我的单</text>
@@ -72,12 +92,13 @@
   </view>
 
   <view class="glass mt24">
-    <view class="row row--between">
-      <text class="h2">服务项目</text>
-      <text class="muted">时长 · 价格</text>
+    <view class="sec">
+      <view class="sec__bar"></view>
+      <text class="sec__t" style="font-size:30rpx">服务项目</text>
+      <text class="muted grow" style="text-align:right">时长 · 价格</text>
     </view>
     <view class="item" wx:for="{{items}}" wx:key="_id">
-      <view class="item__ico">{{item.icon}}</view>
+      <view class="item__ico ico ico--{{item.icon}}"></view>
       <view class="grow">
         <view class="item__t">{{item.name}}</view>
         <view class="item__s">{{item.duration}} 分钟 · {{item.desc}}</view>
