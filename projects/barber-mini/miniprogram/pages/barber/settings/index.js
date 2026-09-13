@@ -12,8 +12,15 @@ Page({
     goal: 300, openTime: "09:00", closeTime: "21:00",
     list: [], edit: null, form: { name: "", price: 38, min: 30, icon: "scissors" },
     hideMoney: false, saving: false,
+    autoFlow: false,
   },
-  onShow() { this.load(); },
+  onShow() { this.load(); this.setData({ autoFlow: !!getApp().globalData.autoFlow }); },
+  toggleFlow(e) {
+    const on = e.currentTarget.dataset.v === "on";
+    getApp().setAutoFlow(on);
+    this.setData({ autoFlow: on });
+    wx.showToast({ title: on ? "调试滚动已开" : "已关闭", icon: "none" });
+  },
   async load() {
     try {
       const db = wx.cloud.database();

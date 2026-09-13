@@ -5,7 +5,8 @@
 </view>
 
 <view class="page">
-  <view class="row row--between" style="margin-bottom:22rpx">
+  <!-- 页头 -->
+  <view class="row row--between" style="margin:6rpx 4rpx 24rpx">
     <view class="row row--gap">
       <view class="ava">明</view>
       <view>
@@ -18,7 +19,7 @@
     </view>
   </view>
 
-  <!-- ① 顾客端同款状态卡（经营者也一眼看到"现在多少人"） -->
+  <!-- ① 顾客看到的状态（同款卡片，但这里是"当前共几位"） -->
   <view class="status status--{{tone}}">
     <view class="row row--between">
       <view>
@@ -33,46 +34,8 @@
     </view>
   </view>
 
-  <view class="tiles">
-    <view class="tile"><view class="tile__k">今日单数</view><view class="tile__v">{{today}}<text class="tile__u">单</text></view></view>
-    <view class="tile"><view class="tile__k">今日收入</view><view class="tile__v">{{hideMoney ? '∗∗∗' : revenue}}<text class="tile__u">元</text></view></view>
-    <view class="tile"><view class="tile__k">平均耗时</view><view class="tile__v">{{avgMin}}<text class="tile__u">分</text></view></view>
-  </view>
-
-  <!-- ② 排队与积压（第一眼要看的就是这个） -->
-  <view class="glass mt24">
-    <view class="row row--between">
-      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">排队与积压</text></view>
-      <view class="pill">{{queue.length}} 位在队</view>
-    </view>
-    <view class="tiles mt16">
-      <view class="tile"><view class="tile__k">等待中</view><view class="tile__v">{{waitingCount}}<text class="tile__u">位</text></view></view>
-      <view class="tile"><view class="tile__k">服务中</view><view class="tile__v">{{servingId ? 1 : 0}}<text class="tile__u">位</text></view></view>
-      <view class="tile"><view class="tile__k">已预约</view><view class="tile__v">{{reservedCount}}<text class="tile__u">位</text></view></view>
-    </view>
-    <view class="muted mt12">{{queue.length > 3 ? '积压偏多，加把劲 💪' : (queue.length ? '队伍正常，稳住节奏' : '现在没人排队，休息一下')}}</view>
-  </view>
-
-  <!-- 今日目标：给自己一个进度条（要的就是"有干劲"） -->
-  <view class="glass glass--tight mt24">
-    <view class="row row--between">
-      <view class="row row--gap">
-        <view class="sec__bar"></view>
-        <text class="item__t">今日目标 ¥{{hideMoney ? '∗∗∗' : goal}}</text>
-      </view>
-      <view class="row row--gap">
-        <text class="muted">{{goalPct}}% · 还差 {{hideMoney ? '∗∗∗' : ('¥' + goalLeft)}}</text>
-        <view class="pill" id="eyeBtn" bindtap="toggleEye">{{hideMoney ? '显示' : '隐藏'}}</view>
-      </view>
-    </view>
-    <view class="bar mt16"><view class="bar__in" style="width:{{goalPct}}%"></view></view>
-    <view class="row row--gap mt16">
-      <view class="btn btn--ghost btn--sm grow" id="boardBtn" bindtap="goBoard">数据看板</view>
-      <view class="btn btn--ghost btn--sm grow" id="settingsBtn" bindtap="goSettings">设置</view>
-    </view>
-  </view>
-
-  <view class="glass glass--dark mt24">
+  <!-- ② 当前服务（干活的中心） -->
+  <view class="glass glass--dark">
     <view class="row row--between">
       <view class="grow">
         <view class="lbl" style="color:rgba(255,255,255,.62)">当前服务</view>
@@ -88,6 +51,7 @@
     <view class="btn btn--gold mt20" id="finishBtn" bindtap="finish">完成本单</view>
   </view>
 
+  <!-- ③ 接单状态 -->
   <view class="glass">
     <view class="row row--between">
       <text class="h2">接单状态</text>
@@ -100,23 +64,7 @@
     </view>
   </view>
 
-  <!-- 调试专用：让队列自动滚动（生产环境请勿开启） -->
-  <view class="glass glass--tight">
-    <view class="row row--between">
-      <view class="grow">
-        <view class="row row--gap">
-          <text class="item__t">调试：队列自动滚动</text>
-          <view class="pill {{autoFlow ? 'pill--gold' : ''}}">{{autoFlow ? '开' : '关'}}</view>
-        </view>
-        <view class="muted mt8">开着时每 4 秒自动：到点的单完成 → 下一位自动开始（**仅调试用**）</view>
-      </view>
-      <view class="seg" style="width:200rpx">
-        <view class="seg__i {{autoFlow ? '' : 'seg__i--on'}}" id="flowOff" bindtap="toggleFlow" data-v="off">关</view>
-        <view class="seg__i {{autoFlow ? 'seg__i--on' : ''}}" id="flowOn" bindtap="toggleFlow" data-v="on">开</view>
-      </view>
-    </view>
-  </view>
-
+  <!-- ④ 快捷接单（≤3 击） -->
   <view class="glass">
     <view class="row row--between">
       <text class="h2">快捷接单</text>
@@ -140,13 +88,14 @@
     <view class="btn btn--gold mt20" id="startBtn" bindtap="start">开始服务</view>
   </view>
 
+  <!-- ⑤ 排队（只看前三位，全部去排队页） -->
   <view class="glass">
     <view class="row row--between">
-      <text class="h2">排队（{{queue.length}}）</text>
-      <text class="muted">预付款同段优先</text>
+      <view class="sec" style="margin-bottom:0"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">排队</text></view>
+      <view class="pill pill--gold" id="queueAll" bindtap="goQueue">全部 {{queue.length}} 位 ›</view>
     </view>
-    <view wx:if="{{queue.length}}">
-      <view class="item" wx:for="{{queue}}" wx:key="_id">
+    <block wx:if="{{queue.length}}">
+      <view class="item" wx:for="{{queueTop}}" wx:key="_id">
         <view class="rank {{index === 0 ? 'rank--on' : ''}}">{{index + 1}}</view>
         <view class="grow">
           <view class="item__t">{{item.name}}</view>
@@ -154,9 +103,31 @@
         </view>
         <view class="pill {{item.tagClass}}">{{item.tag}}</view>
       </view>
+    </block>
+    <view wx:else class="center" style="padding:26rpx 0"><text class="muted">现在没人排队，休息一下</text></view>
+  </view>
+
+  <!-- ⑥ 四个入口（经营与配置都在这里） -->
+  <view class="grid2">
+    <view class="entry" id="boardBtn" bindtap="goBoard">
+      <view class="entry__t">数据看板</view>
+      <view class="entry__s">排行 · 客户 · 时段</view>
     </view>
-    <view wx:else class="center" style="padding:30rpx 0">
-      <text class="muted">现在没人排队，休息一下</text>
+    <view class="entry" id="ledgerBtn" bindtap="goLedger">
+      <view class="entry__t">今日流水</view>
+      <view class="entry__s">逐单对账</view>
     </view>
+    <view class="entry" id="settingsBtn" bindtap="goSettings">
+      <view class="entry__t">设置</view>
+      <view class="entry__s">目标 · 营业时间 · 项目</view>
+    </view>
+    <view class="entry" id="queueBtn" bindtap="goQueue">
+      <view class="entry__t">排队管理</view>
+      <view class="entry__s">全部队伍与规则</view>
+    </view>
+  </view>
+
+  <view class="glass glass--tight center" wx:if="{{autoFlow}}">
+    <text class="muted">调试滚动中（自动完成 + 自动补客）· 关掉去 设置 → 调试</text>
   </view>
 </view>

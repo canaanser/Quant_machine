@@ -10,6 +10,7 @@ Page({
     ranges: RANGES, sorts: SORTS, range: "today", sort: "revenue",
     board: null, rank: [], customers: [], hideMoney: false, openKey: "",
     barMax: 1, hourMax: 1,
+    goal: 300, goalPct: 0, goalLeft: 300,
   },
   onShow() { this.load(); },
   async load() {
@@ -18,6 +19,11 @@ Page({
       const barMax = Math.max(1, ...b.byService.map((x) => x.count));
       const hourMax = Math.max(1, ...b.byHour.map((x) => x.count));
       this.setData({ board: b, barMax, hourMax, openKey: "" });
+      const g = await this.loadGoal();
+      this.setData({
+        goalPct: Math.min(100, Math.round(((b.summary.revenue || 0) / Math.max(1, g)) * 100)),
+        goalLeft: Math.max(0, g - (b.summary.revenue || 0)),
+      });
       // WXML **不支持方法调用**（.toFixed/.slice 都会编译报错）→ 在这里先算成字符串
       const am = Math.round((b.summary.avgMs || 0) / 60000);
       this.setData({ avgMinText: am < 1 ? "<1 分" : am + " 分" });
@@ -25,6 +31,24 @@ Page({
     } catch (e) {
       wx.showModal({ title: "看板读取失败", content: String((e && (e.errMsg || e.message)) || e).slice(0, 110), showCancel: false });
     }
+  },
+  async loadGoal() {
+    try {
+      const db = wx.cloud.database();
+      const r = await db.collection("barbers").doc("b1").get();
+      const g = Number((r.data || {}).dailyGoal || 0) || 300;
+      this.setData({ goal: g });
+      return g;
+    } catch (e) { this.setData({ goal: 300 }); return 300; }
+  },
+  setGoal() {
+    wx.showModal({ title: "今日目标（元）", editable: true, placeholderText: String(this.data.goal),
+      success: async (r) => {
+        if (!r.confirm || !r.content) return;
+        const g = Math.max(0, Number(r.content) || 0);
+        try { await api.saveSettings({ barberId: "b1", dailyGoal: g }); this.setData({ goal: g }); this.load(); }
+        catch (e) { wx.showToast({ title: "保存失败", icon: "none" }); }
+      } });
   },
   applySort() {
     const b = this.data.board; if (!b) return;

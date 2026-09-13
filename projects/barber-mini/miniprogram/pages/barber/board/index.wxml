@@ -20,6 +20,25 @@
     </view>
   </view>
 
+  <!-- 今日目标（从工作台挪过来，配眼睛） -->
+  <view class="glass">
+    <view class="row row--between">
+      <view class="row row--gap">
+        <view class="sec__bar"></view>
+        <text class="item__t">今日目标</text>
+      </view>
+      <view class="row row--gap">
+        <text class="num--sm">{{hideMoney ? '∗∗∗' : ('¥' + goal)}}</text>
+        <view class="pill" id="goalBtn" bindtap="setGoal">改目标</view>
+      </view>
+    </view>
+    <view class="bar mt16"><view class="bar__in" style="width:{{goalPct}}%"></view></view>
+    <view class="row row--between mt12">
+      <text class="muted">已完成 {{goalPct}}%</text>
+      <text class="muted">还差 {{hideMoney ? '∗∗∗' : ('¥' + goalLeft)}}</text>
+    </view>
+  </view>
+
   <!-- 摘要 -->
   <view class="tiles" wx:if="{{board}}">
     <view class="tile"><view class="tile__k">完成单数</view><view class="tile__v">{{board.summary.count}}<text class="tile__u">单</text></view></view>

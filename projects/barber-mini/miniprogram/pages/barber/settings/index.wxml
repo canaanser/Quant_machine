@@ -74,4 +74,19 @@
   <view class="glass glass--tight">
     <view class="btn btn--ghost btn--sm" id="ledgerBtn" bindtap="goLedger">查看今日流水</view>
   </view>
+
+  <!-- 调试分组（上线前关掉/删掉） -->
+  <view class="glass">
+    <view class="sec"><view class="sec__bar"></view><text class="sec__t" style="font-size:30rpx">调试</text><text class="muted grow" style="text-align:right">正式经营请保持关闭</text></view>
+    <view class="row row--between">
+      <view class="grow">
+        <view class="item__t">队列自动滚动</view>
+        <view class="item__s">每 4 秒自动：到点的单完成 → 下一位开始；队列少于 4 位自动补一位</view>
+      </view>
+      <view class="seg" style="width:200rpx">
+        <view class="seg__i {{autoFlow ? '' : 'seg__i--on'}}" id="flowOff" data-v="off" bindtap="toggleFlow">关</view>
+        <view class="seg__i {{autoFlow ? 'seg__i--on' : ''}}" id="flowOn" data-v="on" bindtap="toggleFlow">开</view>
+      </view>
+    </view>
+  </view>
 </view>

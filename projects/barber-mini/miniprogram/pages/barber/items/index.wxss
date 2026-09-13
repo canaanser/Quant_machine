@@ -1,3 +1,0 @@
-.field { display: flex; flex-direction: column; gap: 10rpx; }
-.inp { height: 84rpx; background: rgba(255,255,255,.7); border: 1rpx solid var(--glass-line);
-  border-radius: 18rpx; padding: 0 22rpx; font-size: 30rpx; }

@@ -162,6 +162,10 @@ page {
 
 /* ── 布局工具 ── */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16rpx; }
+.entry { background: var(--glass-2); border: 1rpx solid var(--glass-line); border-radius: 24rpx;
+  padding: 26rpx 24rpx; backdrop-filter: blur(16rpx); -webkit-backdrop-filter: blur(16rpx); }
+.entry__t { font-size: 30rpx; font-weight: 700; }
+.entry__s { font-size: 22rpx; color: var(--ink-3); margin-top: 8rpx; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16rpx; }
 .grid4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14rpx; }
 .stick { position: fixed; left: 24rpx; right: 24rpx; bottom: 32rpx; z-index: 5; }

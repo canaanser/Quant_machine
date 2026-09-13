@@ -91,19 +91,14 @@
     <view class="bar mt16"><view class="bar__in" style="width:{{mine.progress}}%"></view></view>
   </view>
 
-  <view class="glass mt24">
-    <view class="sec">
-      <view class="sec__bar"></view>
-      <text class="sec__t" style="font-size:30rpx">服务项目</text>
-      <text class="muted grow" style="text-align:right">时长 · 价格</text>
-    </view>
-    <view class="item" wx:for="{{items}}" wx:key="_id">
-      <view class="item__ico ico ico--{{item.icon}}"></view>
-      <view class="grow">
-        <view class="item__t">{{item.name}}</view>
-        <view class="item__s">{{item.duration}} 分钟 · {{item.desc}}</view>
+  <!-- 服务与价格完整清单在「预约」页（这里只放入口，保持首页干净） -->
+  <view class="glass glass--tight">
+    <view class="row row--between" id="bookEntry" bindtap="goBook">
+      <view>
+        <view class="item__t">服务与价格</view>
+        <view class="item__s">剪发 ¥38 · 烫发 ¥288 · 染发 ¥258 · 护理 ¥128</view>
       </view>
-      <view class="num--sm">¥{{item.price}}</view>
+      <text class="muted">去预约 ›</text>
     </view>
   </view>
 
