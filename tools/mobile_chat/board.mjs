@@ -122,7 +122,7 @@ const UI_REPORT_FILE = process.env.MCHAT_UI_REPORT || path.join(WORKSPACE, "outp
 const DIALOG_CTX_N = Number(process.env.MCHAT_DIALOG_CTX || 25);
 // 页面版本：改动页面时把它 +1。服务把它塞进 /api/ping，页面发现对不上就自动整页刷新，
 // 这样手机端不会一直跑着旧的 JS（今天已经因为旧页面误诊过两次）。
-const PAGE_VER = "2026-09-10.56"; // .56：减法② 公告"免回执"开关（发布入口勾一下 = 知道类公告不回执、不催办）
+const PAGE_VER = "2026-09-10.57"; // .57：回归修复——头像只放大"消息/资料卡"，顶部条子（群组/状态/候选）压回 18px
 // ————————————————————————————————————————————————
 // 看板命名真源：docs/BOARD_NAMES.md（老板 2026-09-10 定）。
 // 规则：每个实例只有一串名字 `前缀-短名`（dsh- / codex-），`老板` 例外；
@@ -3632,6 +3632,11 @@ header h1{font-size:var(--fs-title);margin:0;font-weight:650;flex:1;white-space:
 .av img{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}
 .av.lg{width:60px;height:60px;font-size:24px}
 .av.sm{width:28px;height:28px;font-size:13px}
+/* ★ 回归修复（老板 2026-09-13 10:1x）：**头像放大只该放大"消息/资料卡"那一档**。
+   顶部那几条（群组条 / 员工状态条 / 候选人列表）原先用 sm=18px；HUB-AVATAR 把 sm 提到 28px，
+   于是**整条被撑高、看着不如原来**。这里给"条子里的头像"单独开一档 xs=18px（＝改造前的尺寸），
+   只动这三处调用点——**消息里的头像与资料卡一点不动**。 */
+.av.xs{width:18px;height:18px;font-size:9px}
 .av.plain{cursor:default}
 .row .av,.entry .av{margin-right:8px}
 /* —— 资料卡（点头像弹出）：字段缺了显示「—」，绝不编数字 —— */
@@ -4139,8 +4144,8 @@ function renderGroups(){
   }
   for(const g of GROUPS){
     const c=document.createElement("div");
-    c.className="gchip"+(FILTER.group===g.id?" on":"");
-    c.appendChild(avNode(g.name,"sm",{noClick:true}));
+  c.className="gchip"+(FILTER.group===g.id?" on":"");
+  c.appendChild(avNode(g.name,"xs",{noClick:true})); // 回归修复：群组条别被撑高（见 .av.xs 注释）
     const b=document.createElement("span");
     b.textContent=g.name+(g.members&&g.members.length?("（"+g.members.length+"）"):"");
     c.appendChild(b);
@@ -4178,8 +4183,8 @@ function renderGroupPick(){
     const bx=document.createElement("span");
     bx.className="gp-box";
     bx.textContent=PICKED.has(a.alias)?"✓":"";
-    row.appendChild(bx);
-    row.appendChild(avNode(a.alias,"sm",{noClick:true}));
+  row.appendChild(bx);
+  row.appendChild(avNode(a.alias,"xs",{noClick:true})); // 回归修复：新建群组的候选行也压回原尺寸
     const main=document.createElement("div");
     main.className="ct-main";
     const nm=document.createElement("div");
@@ -4878,8 +4883,8 @@ function renderAgents(list){
       renderDialog(CACHE);
       syncTools();
     });
-    // 头像 + 状态色环（原来那个纯色圆点保留成"环"的信息量，但更好看）
-    const dot=avNode(a.alias,"sm",{noClick:true});
+  // 头像 + 状态色环（原来那个纯色圆点保留成"环"的信息量，但更好看）
+  const dot=avNode(a.alias,"xs",{noClick:true}); // 回归修复：员工状态条别被撑高
     dot.style.boxShadow="0 0 0 2px "+(a.status==="active"?"#3fb950":a.status==="idle"?"#d29922":a.status==="stale"?"#6e7681":"#484f58");
     const nm=document.createElement("b");
     nm.textContent=a.alias;
