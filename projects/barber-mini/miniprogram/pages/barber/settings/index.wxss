@@ -1,6 +1,0 @@
-.field { display: flex; flex-direction: column; gap: 10rpx; }
-.inp { height: 84rpx; line-height: 84rpx; background: rgba(255,255,255,.7); border: 1rpx solid var(--glass-line);
-  border-radius: 18rpx; padding: 0 22rpx; font-size: 30rpx; }
-.pickico { width: 96rpx; height: 96rpx; border-radius: 24rpx; background-color: #FBF2D8; }
-.pickico--on { outline: 4rpx solid var(--gold); }
-.editbox { background: rgba(255,255,255,.5); border: 1rpx solid var(--glass-line); border-radius: 22rpx; padding: 24rpx; }

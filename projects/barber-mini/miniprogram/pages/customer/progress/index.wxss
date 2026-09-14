@@ -1,5 +1,0 @@
-.rank { width: 52rpx; height: 52rpx; line-height: 52rpx; text-align: center; border-radius: 16rpx;
-  background: rgba(20,22,26,.06); color: var(--ink-3); font-weight: 700; font-size: 26rpx; }
-.stickbar { position: fixed; left: 30rpx; right: 30rpx; bottom: 34rpx; padding: 12rpx; border-radius: 26rpx;
-  background: rgba(255,255,255,.72); backdrop-filter: blur(18rpx); -webkit-backdrop-filter: blur(18rpx);
-  border: 1rpx solid var(--glass-line); box-shadow: var(--shadow); }

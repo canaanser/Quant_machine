@@ -1,6 +1,0 @@
-.sc { border-radius: 24rpx; padding: 44rpx 32rpx; color: #fff; text-align: center; }
-.free { background: var(--free); }
-.busy { background: var(--busy); }
-.rest { background: var(--rest); }
-.sc-text { font-size: 44rpx; font-weight: 700; }
-.sc-sub { color: rgba(255,255,255,.85); margin-top: 12rpx; font-size: 26rpx; }

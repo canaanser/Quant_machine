@@ -1,4 +1,0 @@
-# ⚠️ 注意：这里的文件**必须提交**（不忽略）——
-#   微信开发者工具打包云函数时会**跳过 .gitignore 命中的文件**，
-#   一旦忽略 `_shared/`，云端就报 `Cannot find module './_shared/orders.js'`（实测）。
-#   真源仍是 shared/ 与 cloudfn-common/，这些是 `npm run sync` 生成的副本，改完要一起提交。
